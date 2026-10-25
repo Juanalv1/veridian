@@ -134,6 +134,8 @@ def connect(path: str) -> Iterator[sqlite3.Connection]:
     """Open a connection, commit on success, roll back on error, always close."""
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    # Only control-plane tables declare foreign keys; the data tables have none (see 0003).
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
         conn.commit()

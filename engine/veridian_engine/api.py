@@ -9,6 +9,7 @@ from . import db
 from .activity import list_activity
 from .auth import Unauthorized, project_id_from_request
 from .check import CheckRequest, check_event
+from .control_plane.legacy import seed_legacy
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
@@ -25,6 +26,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         load_dotenv(find_dotenv(usecwd=True))
         settings = Settings.from_env()
     db.init_db(settings.db_path)
+    with db.connect(settings.db_path) as conn:
+        seed_legacy(conn, settings.tokens, settings.clock())
     route_classes = RouteClasses.load(settings.routes_file)
 
     app = FastAPI(title="Veridian engine")

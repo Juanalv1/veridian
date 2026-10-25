@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from veridian_engine.control_plane import apply_schema, repository
+from veridian_engine import db
+from veridian_engine.control_plane import repository
 from veridian_engine.control_plane.repository import (
     InvitationUnavailable,
     LastOwnerError,
@@ -20,10 +21,11 @@ T0 = datetime(2026, 10, 26, 12, 0, 0, tzinfo=timezone.utc)
 
 @pytest.fixture
 def conn(tmp_path):
-    connection = sqlite3.connect(tmp_path / "control.db")
+    path = tmp_path / "control.db"
+    db.init_db(str(path))  # the control plane ships as migration 0003
+    connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    apply_schema(connection)
     yield connection
     connection.close()
 
