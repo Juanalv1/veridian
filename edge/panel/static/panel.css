@@ -454,3 +454,15 @@ select:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
   .tm-filter { flex:1 1 100%; }
 }
 
+
+/* Logout: icon + label; the collapsed rail of Actividad keeps only the icon (label stays for screen readers). */
+.session .logout { display:inline-flex; align-items:center; justify-content:center; gap:var(--space-2); }
+@media (min-width:901px) {
+  .shell:has(.view-actividad) .session { align-items:center; }
+  .shell:has(.view-actividad) .session .who,
+  .shell:has(.view-actividad) .session .logout-label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .shell:has(.view-actividad) .session .logout { width:44px; padding:0; }
+}
+/* Activity with nothing to list yet: one column, no orphan list title. */
+main.view-actividad:not(:has(.row, .item)) { grid-template-columns:minmax(0, 1fr); }
+main.view-actividad:not(:has(.row, .item)) > nav { display:none; }
