@@ -58,6 +58,7 @@ Akamai, Traceable o Salt lo hacen para grandes empresas. Nosotros, para startups
 | [docs/HALLAZGOS.md](docs/HALLAZGOS.md) | Competencia, casos reales, cifras, validación y críticas |
 | [docs/DEMO.md](docs/DEMO.md) | Estructura del pitch y guion de la demo |
 | [docs/PENDIENTES.md](docs/PENDIENTES.md) | Qué falta construir, riesgos y preguntas abiertas |
+| [docs/REPARTO.md](docs/REPARTO.md) | Reparto del trabajo y contratos entre motor y middleware |
 
 ## Origen
 
