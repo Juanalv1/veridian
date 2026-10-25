@@ -95,7 +95,9 @@ Lo que Maikol ya cerró en el motor queda en `main`: el contrato 11 (`45f965a`) 
 
 **Pendiente:**
 - **Registro en un paso y primera clave** (pedido de Juan, 2026-10-25; lo más importante del backoffice). Cualquier persona tiene que poder registrarse sola y dejar Veridian configurado en su app:
-  1. **Entrar con Google** (OAuth; ya existe desde T3). Sin formulario de registro aparte.
+  1. **Entrar con Google o con GitHub** (OAuth). Google ya existe desde T3; falta GitHub. Sin formulario de registro aparte.
+     - GitHub puede ocultar el correo del perfil: pedir el permiso `user:email` y usar el correo principal verificado.
+     - La misma persona entrando con Google y con GitHub (mismo correo verificado) es una sola cuenta, no dos.
   2. **Primera vez, sin organización:** el panel pide solo el nombre de la empresa y crea la organización (con la persona como `owner`) y su primer proyecto. Hoy eso está cerrado a los correos de `VERIDIAN_ORG_CREATORS`; ver la tarea 5 de Carlos en el motor (y el mismo cambio en el motor falso).
   3. **Crear la clave de API** (la página de claves ya existe, contrato 12) y mostrar el snippet con esa clave ya puesta, listo para copiar.
   4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
