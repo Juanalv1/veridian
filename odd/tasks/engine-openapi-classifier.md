@@ -21,3 +21,4 @@ Read the customer's OpenAPI 3 document and classify each `METHOD /path-template`
 
 ## Progress
 T1-T3 done on the worktree branch. Next: T4 at integration.
+- 2026-10-25: wiring: `classify_openapi.py` now writes a file with the same shape as `routes.yaml` (loadable by the engine) behind a review header, and reads `.env`. Live run on the demo app spec (8 routes, generated in-process): the same classes in 5 of 5 runs, ~16 s each. It differs from the hand-written file: `GET /invoices` and `GET /invoices/{id}` sensitive (hand: normal) and `POST /login` critical (hand: normal). `routes.yaml` stays hand-reviewed: `POST /login` as critical would block any first login from a new network.
