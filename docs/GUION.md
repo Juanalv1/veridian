@@ -20,9 +20,9 @@
 
 **[Slide 4: Instalación]**
 
-> Instalarlo es una llamada en tu app: solo le dices cómo identificas al usuario.
+> Y todo esto se activa con tres líneas de código en tu app: le dices cómo identificas al usuario, y Veridian se encarga del resto, hasta de clasificar tus rutas.
 >
-> Al arrancar, tu app le envía sus rutas a Veridian y se clasifican solas. Es lo que van a ver ahora.
+> Ahora, veámoslo en vivo.
 
 **[Demo: app y panel lado a lado]**
 
