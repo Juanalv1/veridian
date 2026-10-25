@@ -137,27 +137,40 @@ def _audit_person(conn, actor_id: str, action: str, target_type: str, target_id:
 # --- people ---
 
 
-def upsert_person(conn: sqlite3.Connection, *, google_sub: str, email: str, name: str, now: datetime) -> str:
-    """Create or refresh the person behind a verified Google login. Returns the person id."""
+def upsert_person(conn: sqlite3.Connection, *, google_sub: str, email: str, name: str | None, now: datetime) -> str:
+    """Create or refresh the person behind a verified login. Returns the person id.
+
+    A person is their verified email. `google_sub` is the provider id (the Google sub, or
+    `github:<id>`): an id already seen is the same person; a new id whose email (lowercased)
+    already belongs to a person joins the oldest such person. Without a name the previous one
+    is kept (a new person is named after the email)."""
     ts = format_ts(now)
+    email = email.strip().lower()
     with atomic(conn):
-        conn.execute(
-            "INSERT INTO person (id, google_sub, email, name, created_at, last_login_at) VALUES (?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT (google_sub) DO UPDATE SET"
-            " email = excluded.email, name = excluded.name, last_login_at = excluded.last_login_at",
-            (new_id("per"), google_sub, email, name, ts, ts),
-        )
-        return conn.execute("SELECT id FROM person WHERE google_sub = ?", (google_sub,)).fetchone()[0]
+        row = conn.execute("SELECT person_id FROM person_identity WHERE sub = ?", (google_sub,)).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT id FROM person WHERE lower(email) = ? ORDER BY created_at, id LIMIT 1", (email,)
+            ).fetchone()
+        if row is None:
+            person_id = new_id("per")
+            conn.execute(
+                "INSERT INTO person (id, google_sub, email, name, created_at, last_login_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (person_id, google_sub, email, name or email, ts, ts),
+            )
+        else:
+            person_id = row[0]
+            conn.execute(
+                "UPDATE person SET email = ?, name = COALESCE(NULLIF(?, ''), name), last_login_at = ? WHERE id = ?",
+                (email, name, ts, person_id),
+            )
+        conn.execute("INSERT OR IGNORE INTO person_identity (sub, person_id) VALUES (?, ?)", (google_sub, person_id))
+        return person_id
 
 
 def get_person(conn: sqlite3.Connection, person_id: str) -> dict | None:
     row = conn.execute("SELECT id, email, name FROM person WHERE id = ?", (person_id,)).fetchone()
     return {"id": row[0], "email": row[1], "name": row[2]} if row else None
-
-
-def person_name_by_sub(conn: sqlite3.Connection, google_sub: str) -> str | None:
-    row = conn.execute("SELECT name FROM person WHERE google_sub = ?", (google_sub,)).fetchone()
-    return row[0] if row else None
 
 
 # --- organizations and roles ---

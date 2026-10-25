@@ -227,6 +227,29 @@ def test_login_is_an_upsert_by_google_sub(client):
     assert again["person"]["email"] == "new@example.com" and again["person"]["name"] == "Old"
 
 
+def test_same_provider_id_twice_is_the_same_person(client):
+    first = login(client, "g-1", "ana@example.com", "Ana")
+    again = login(client, "g-1", "ana@example.com", "Ana")
+    assert again["person"]["id"] == first["person"]["id"]
+
+
+def test_google_then_github_with_the_same_email_is_one_person_with_the_same_orgs(client):
+    google = login(client, "g-1", "Ana@Example.com", "Ana")
+    org = client.post("/v1/orgs", json={"name": "Acme"}, headers=acting(google["person"]["id"])).json()
+    github = login(client, "github:42", "ana@EXAMPLE.com", None)
+    assert github["person"]["id"] == google["person"]["id"]
+    assert github["person"]["email"] == "ana@example.com" and github["person"]["name"] == "Ana"
+    assert [o["id"] for o in github["orgs"]] == [org["id"]]
+    # The new provider id is remembered: it no longer depends on the email.
+    assert login(client, "github:42", "other@example.com", None)["person"]["id"] == google["person"]["id"]
+
+
+def test_different_emails_are_different_people(client):
+    first = login(client, "g-1", "ana@example.com")
+    second = login(client, "github:42", "bob@example.com")
+    assert first["person"]["id"] != second["person"]["id"]
+
+
 def test_login_requires_the_panel_credential(client):
     body = {"google_sub": "s", "email": "a@example.com"}
     assert client.post("/v1/people/login", json=body).status_code == 401

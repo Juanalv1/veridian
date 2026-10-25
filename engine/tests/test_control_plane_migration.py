@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime, timezone
 
 import pytest
 from conftest import TOKEN_A, TOKEN_B, make_settings
@@ -7,6 +8,7 @@ from test_migrations import applied_versions, populated_legacy_db, table_names
 
 from veridian_engine import db
 from veridian_engine.api import create_app
+from veridian_engine.control_plane import repository
 from veridian_engine.keys import LEGACY_CREATED_BY, LEGACY_PREFIX, hash_key
 
 CONTROL_TABLES = {"person", "project", "membership", "invitation", "api_key", "audit_log"}
@@ -214,3 +216,41 @@ def test_startup_seeds_legacy_projects_into_org_demo(tmp_path, clock):
 
     assert query(path, "SELECT id, name FROM organization") == [("org_demo", "Demo")]
     assert query(path, "SELECT id, org_id FROM project ORDER BY id") == [("client_a", "org_demo"), ("client_b", "org_demo")]
+
+
+# --- 0011: provider identities, so one person can sign in with Google and GitHub ---
+
+
+def test_0011_backfills_identities_and_lowercases_emails(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path), migrations_up_to(tmp_path, 10))
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO person (id, google_sub, email, name, created_at, last_login_at)"
+                 " VALUES ('per_old', 'sub-old', 'Old@Example.com', 'Old', '2026-10-20T00:00:00Z', '2026-10-20T00:00:00Z')")
+    conn.commit()
+    conn.close()
+
+    db.init_db(str(path))
+
+    assert query(path, "SELECT sub, person_id FROM person_identity") == [("sub-old", "per_old")]
+    assert query(path, "SELECT email FROM person WHERE id = 'per_old'") == [("old@example.com",)]
+
+
+def test_0011_existing_person_keeps_its_id_on_the_next_login(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path), migrations_up_to(tmp_path, 10))
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO person (id, google_sub, email, name, created_at, last_login_at)"
+                 " VALUES ('per_old', 'sub-old', 'old@example.com', 'Old', '2026-10-20T00:00:00Z', '2026-10-20T00:00:00Z')")
+    conn.commit()
+    conn.close()
+    db.init_db(str(path))
+
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    same = repository.upsert_person(conn, google_sub="sub-old", email="old@example.com", name=None,
+                                    now=datetime(2026, 10, 27, tzinfo=timezone.utc))
+    joined = repository.upsert_person(conn, google_sub="github:1", email="OLD@example.com", name=None,
+                                      now=datetime(2026, 10, 27, tzinfo=timezone.utc))
+    conn.close()
+    assert same == joined == "per_old"

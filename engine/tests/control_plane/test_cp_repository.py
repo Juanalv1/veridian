@@ -138,6 +138,22 @@ def test_upsert_person_is_keyed_by_google_sub(conn):
     assert row["last_login_at"] == "2026-10-27T12:00:00Z"
 
 
+def test_upsert_person_without_a_name_keeps_the_previous_one(conn):
+    first = repository.upsert_person(conn, google_sub="s1", email="a@example.com", name="Ana", now=T0)
+    again = repository.upsert_person(conn, google_sub="s1", email="a@example.com", name=None, now=T0)
+    assert first == again and repository.get_person(conn, first)["name"] == "Ana"
+    nameless = repository.upsert_person(conn, google_sub="s2", email="n@example.com", name=None, now=T0)
+    assert repository.get_person(conn, nameless)["name"] == "n@example.com"
+
+
+def test_a_new_provider_id_with_a_known_email_joins_the_oldest_person(conn):
+    older = repository.upsert_person(conn, google_sub="s1", email="a@example.com", name="A", now=T0)
+    conn.execute("INSERT INTO person (id, google_sub, email, name, created_at, last_login_at)"
+                 " VALUES ('per_dup', 'sd', 'A@Example.com', 'Dup', '2026-10-27T00:00:00Z', '2026-10-27T00:00:00Z')")
+    conn.commit()
+    assert repository.upsert_person(conn, google_sub="github:7", email="a@example.com", name=None, now=T0) == older
+
+
 # --- an org role covers every project of the org, and no other ---
 
 

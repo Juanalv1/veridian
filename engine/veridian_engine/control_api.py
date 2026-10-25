@@ -124,14 +124,14 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
 
     @router.post("/v1/people/login")
     def post_login(body: LoginIn, caller: Caller = Depends(caller_from_request)) -> dict:
-        """Upsert by google_sub, take the bootstrap and the pending invitations, answer with the orgs."""
+        """A person is their verified email: a known provider id (`google_sub`: the Google sub or `github:<id>`)
+        or a known email is the same person. Take the bootstrap and the pending invitations, answer with the orgs."""
         if caller.kind != "panel":
             raise Forbidden()
         email = body.email.strip().lower()
         now = settings.clock()
         with write_lock, db.connect(settings.db_path) as conn:
-            name = body.name or repository.person_name_by_sub(conn, body.google_sub) or email
-            person_id = repository.upsert_person(conn, google_sub=body.google_sub, email=email, name=name, now=now)
+            person_id = repository.upsert_person(conn, google_sub=body.google_sub, email=email, name=body.name, now=now)
             repository.bootstrap_owner(conn, person_id=person_id, email=email, owners=settings.bootstrap_owners, now=now)
             repository.accept_pending_invitations(conn, person_id=person_id, verified_email=email, now=now)
             return {"person": repository.get_person(conn, person_id), "orgs": repository.list_orgs_for(conn, person_id)}
