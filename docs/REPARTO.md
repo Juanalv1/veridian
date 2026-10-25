@@ -371,7 +371,10 @@ Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app
   - `PATCH`/`DELETE .../members/{person_id}`, `POST`/`DELETE .../invitations`: admin; solo un owner toca owners.
   - Errores: `404 not_found`, `409 cannot_change_self`, `409 last_owner`, `409 already_member`.
   - Reinvitar el mismo correo reemplaza la pendiente. La vigencia es `VERIDIAN_INVITATION_DAYS` (14 por defecto, no medido).
-  - **Diferencia pendiente con el fake engine:** los nombres de las acciones de auditoría (`member.role`, `member.remove`, `invitation.create`, `invitation.revoke` en el motor; `member.role_changed`, `member.removed`, `invitation.created`, `invitation.resent`, `invitation.revoked` en el fake). Se alinean con el contrato 15.
+- Contrato 15 (auditoría, solo lectura): `GET /v1/orgs/{id}/audit?project=&limit=&before=`, solo admin+. Usa las formas y los nombres de acción del fake engine.
+  - Devuelve `{entries, next_before}`, la más nueva primero; `limit` va de 1 a 200 (50 por defecto).
+  - Las acciones del motor que el fake no tiene (`org.create`, `project.update`, `project.delete`, `invitation.accept`, `retention.purge`, etc.) salen con su nombre.
+  - La migración `0007` renombra las filas escritas antes con los nombres viejos.
 
 ### 12. Claves de API: panel → motor
 

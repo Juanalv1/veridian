@@ -488,3 +488,22 @@ def test_migrated_demo_database_keeps_blocking(tmp_path, clock):
     assert unchanged.status_code == 304
     assert verdict.status_code == 200
     assert verdict.json() == {"verdict": "block", "decision_id": "d_3"}
+
+
+def test_0007_renames_audit_actions_to_the_contract_15_names(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path), migrations_dir=migrations_up_to(tmp_path, 6))
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO organization (id, name, created_at) VALUES ('org_1', 'Org', '2026-10-26T00:00:00Z')")
+    old = ["member.role", "member.remove", "invitation.create", "invitation.revoke", "api_key.create",
+           "api_key.revoke", "decision.mark_normal", "org.create"]
+    for action in old:
+        conn.execute("INSERT INTO audit_log (org_id, actor_kind, action, ts) VALUES ('org_1', 'system', ?, 'x')", (action,))
+    conn.commit()
+    conn.close()
+    db.init_db(str(path))
+    conn = sqlite3.connect(path)
+    actions = [row[0] for row in conn.execute("SELECT action FROM audit_log ORDER BY seq")]
+    conn.close()
+    assert actions == ["member.role_changed", "member.removed", "invitation.created", "invitation.revoked",
+                       "api_key.created", "api_key.revoked", "decision.marked_normal", "org.create"]

@@ -189,6 +189,16 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
                                       now=settings.clock())
         return Response(status_code=204)
 
+    # --- contract 15: audit log (read only; no endpoint changes or deletes it) ---
+
+    @router.get("/v1/orgs/{org_id}/audit")
+    def get_audit(org_id: str, person_id: str = Depends(panel_actor), project: str | None = None,
+                  limit: int = Query(50, ge=1, le=200), before: int | None = Query(None, ge=1)) -> dict:
+        with db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "read_audit")
+            entries, next_before = repository.list_audit(conn, org_id, project_id=project, limit=limit, before=before)
+        return {"entries": entries, "next_before": next_before}
+
     # --- contract 11: members and invitations of the organization ---
     # The router only checks membership and the coarse action; which roles an actor may touch,
     # self-changes and the last owner are domain rules in the repository.

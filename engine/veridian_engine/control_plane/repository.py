@@ -388,6 +388,12 @@ def get_member(conn: sqlite3.Connection, org_id: str, person_id: str) -> dict | 
     return _member_dict(row) if row else None
 
 
+def _person_meta(conn, person_id: str) -> dict:
+    """Email and name in the audit row, so the entry still reads after the person leaves."""
+    row = conn.execute("SELECT email, name FROM person WHERE id = ?", (person_id,)).fetchone()
+    return {"email": row[0], "name": row[1]} if row else {}
+
+
 def _target_role(conn, org_id: str, actor_id: str, person_id: str) -> str:
     """The target's role, after 404 for a stranger and the rule that nobody acts on themselves."""
     current = get_role(conn, org_id, person_id)
@@ -411,8 +417,8 @@ def set_member_role(
         if role == current:
             return
         conn.execute("UPDATE membership SET role = ? WHERE org_id = ? AND person_id = ?", (role, org_id, person_id))
-        _audit_person(conn, actor_id, "member.role", "person", person_id, now, org_id=org_id,
-                      meta={"from": current, "to": role})
+        _audit_person(conn, actor_id, "member.role_changed", "person", person_id, now, org_id=org_id,
+                      meta={**_person_meta(conn, person_id), "from": current, "to": role})
 
 
 def remove_member(conn: sqlite3.Connection, *, actor_id: str, org_id: str, person_id: str, now: datetime) -> None:
@@ -423,7 +429,8 @@ def remove_member(conn: sqlite3.Connection, *, actor_id: str, org_id: str, perso
         if current == "owner" and _owner_count(conn, org_id) <= 1:
             raise LastOwnerError(org_id)
         conn.execute("DELETE FROM membership WHERE org_id = ? AND person_id = ?", (org_id, person_id))
-        _audit_person(conn, actor_id, "member.remove", "person", person_id, now, org_id=org_id, meta={"role": current})
+        _audit_person(conn, actor_id, "member.removed", "person", person_id, now, org_id=org_id,
+                      meta={**_person_meta(conn, person_id), "role": current})
 
 
 # --- invitations ---
@@ -460,8 +467,8 @@ def create_invitation(
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (invitation_id, org_id, email, role, actor_id, format_ts(now), format_ts(now + ttl)),
         )
-        _audit_person(conn, actor_id, "invitation.create", "invitation", invitation_id, now, org_id=org_id,
-                      meta={"role": role})
+        _audit_person(conn, actor_id, "invitation.resent" if replaced else "invitation.created", "invitation",
+                      invitation_id, now, org_id=org_id, meta={"email": email, "role": role})
     return invitation_id
 
 
@@ -494,7 +501,7 @@ def list_pending_invitations(conn: sqlite3.Connection, org_id: str, now: datetim
 def revoke_invitation(conn: sqlite3.Connection, *, actor_id: str, org_id: str, invitation_id: str, now: datetime) -> None:
     with atomic(conn):
         row = conn.execute(
-            "SELECT role FROM invitation WHERE id = ? AND org_id = ? AND accepted_at IS NULL AND revoked_at IS NULL",
+            "SELECT role, email FROM invitation WHERE id = ? AND org_id = ? AND accepted_at IS NULL AND revoked_at IS NULL",
             (invitation_id, org_id),
         ).fetchone()
         if row is None:
@@ -502,7 +509,37 @@ def revoke_invitation(conn: sqlite3.Connection, *, actor_id: str, org_id: str, i
         if not can_manage_role(get_role(conn, org_id, actor_id), row[0]):
             raise PermissionDenied("manage_members")
         conn.execute("UPDATE invitation SET revoked_at = ? WHERE id = ?", (format_ts(now), invitation_id))
-        _audit_person(conn, actor_id, "invitation.revoke", "invitation", invitation_id, now, org_id=org_id)
+        _audit_person(conn, actor_id, "invitation.revoked", "invitation", invitation_id, now, org_id=org_id,
+                      meta={"email": row[1], "role": row[0]})
+
+
+# --- audit (contract 15, read only) ---
+
+_AUDIT_COLUMNS = ("seq", "ts", "org_id", "project_id", "project_name", "actor_person_id", "actor_name", "actor_kind",
+                  "action", "target_type", "target_id", "meta")
+
+
+def list_audit(
+    conn: sqlite3.Connection, org_id: str, *, project_id: str | None = None, limit: int = 50, before: int | None = None
+) -> tuple[list[dict], int | None]:
+    """The organization's entries, newest first, and the `before` cursor of the next page (or None).
+    With `project_id`, only rows that reference it: organization actions have none."""
+    where, params = ["a.org_id = ?"], [org_id]
+    if project_id is not None:
+        where.append("a.project_id = ?")
+        params.append(project_id)
+    if before is not None:
+        where.append("a.seq < ?")
+        params.append(before)
+    rows = conn.execute(
+        "SELECT a.seq, a.ts, a.org_id, a.project_id, p.name, a.actor_person_id, pe.name, a.actor_kind, a.action,"
+        " a.target_type, a.target_id, a.meta FROM audit_log a"
+        " LEFT JOIN project p ON p.id = a.project_id LEFT JOIN person pe ON pe.id = a.actor_person_id"
+        f" WHERE {' AND '.join(where)} ORDER BY a.seq DESC LIMIT ?",
+        (*params, limit + 1),
+    ).fetchall()
+    entries = [{**dict(zip(_AUDIT_COLUMNS, row)), "meta": json.loads(row[11] or "{}")} for row in rows[:limit]]
+    return entries, (entries[-1]["seq"] if len(rows) > limit else None)
 
 
 def accept_pending_invitations(
@@ -551,7 +588,7 @@ def create_api_key(conn: sqlite3.Connection, *, actor_id: str, project_id: str, 
             " VALUES (?, ?, ?, ?, ?, 'sdk', ?, ?)",
             (key_id, project_id, name, generated.prefix, generated.key_hash, actor_id, format_ts(now)),
         )
-        _audit_person(conn, actor_id, "api_key.create", "api_key", key_id, now, org_id=org_id, project_id=project_id)
+        _audit_person(conn, actor_id, "api_key.created", "api_key", key_id, now, org_id=org_id, project_id=project_id)
     return CreatedKey(id=key_id, name=name, prefix=generated.prefix, key=generated.key)
 
 
@@ -583,4 +620,4 @@ def revoke_api_key(conn: sqlite3.Connection, *, actor_id: str, project_id: str, 
         ).rowcount
         if updated == 0:
             raise NotFound("api_key")
-        _audit_person(conn, actor_id, "api_key.revoke", "api_key", key_id, now, org_id=org_id, project_id=project_id)
+        _audit_person(conn, actor_id, "api_key.revoked", "api_key", key_id, now, org_id=org_id, project_id=project_id)

@@ -20,6 +20,7 @@ ADMIN_ACTIONS = VIEWER_ACTIONS | {
     "erase_user_data",
     "create_project",
     "edit_org",
+    "read_audit",
 }
 OWNER_ACTIONS = ADMIN_ACTIONS | {"manage_owners", "erase_project_data", "delete_project"}
 
@@ -34,6 +35,7 @@ ACTIONS = (
     "erase_user_data",
     "create_project",
     "edit_org",
+    "read_audit",
     "manage_owners",
     "erase_project_data",
     "delete_project",

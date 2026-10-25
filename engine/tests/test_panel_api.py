@@ -194,7 +194,7 @@ def test_mark_normal_is_audited_with_the_actor(client):
     response = client.post(f"/v1/decisions/{decision['id']}/normal", headers=acting(admin, "client_a"))
 
     assert response.status_code == 200
-    [row] = audit(client, "decision.mark_normal")
+    [row] = audit(client, "decision.marked_normal")
     assert (row["org_id"], row["project_id"], row["actor_person_id"], row["actor_kind"]) == (
         DEMO_ORG_ID, "client_a", admin, "person")
     assert (row["target_type"], row["target_id"]) == ("decision", decision["id"])
@@ -206,7 +206,7 @@ def test_a_denied_or_missing_mark_normal_writes_no_audit(client):
     viewer = member_as(client, "viewer")
     assert client.post(f"/v1/decisions/{decision['id']}/normal", headers=acting(viewer, "client_a")).status_code == 403
     assert client.post("/v1/decisions/d_nope/normal", headers=as_panel(client)).status_code == 404
-    assert audit(client, "decision.mark_normal") == []
+    assert audit(client, "decision.marked_normal") == []
     assert client.get("/v1/blocklist", headers=AUTH_A).json()["sessions"] == ["s_att"]
 
 
@@ -459,7 +459,7 @@ def test_an_admin_creates_a_key_shown_once_that_authenticates_the_sdk(client):
     assert mine["last_used_at"] is not None
     assert created["key"] not in json.dumps(listed)
     assert all(set(k) == {"id", "name", "prefix", "created_by", "created_at", "last_used_at", "revoked_at"} for k in listed)
-    assert audit(client, "api_key.create")[-1]["actor_person_id"] == admin
+    assert audit(client, "api_key.created")[-1]["actor_person_id"] == admin
 
 
 def test_revoking_a_key_stops_it_at_once(client):
@@ -626,7 +626,7 @@ def test_an_admin_invites_viewers_and_admins_but_not_owners(client):
         "new@example.com", "admin", admin, False)
     assert invitation["id"].startswith("inv_")
     assert invite(client, admin, "o@example.com", "owner").status_code == 403
-    assert audit(client, "invitation.create")[-1]["target_id"] == invitation["id"]
+    assert audit(client, "invitation.created")[-1]["target_id"] == invitation["id"]
 
 
 def test_an_invitation_lasts_fourteen_days_by_default(client):
@@ -673,7 +673,7 @@ def test_the_invitation_list_keeps_expired_ones_and_drops_used_ones(client, cloc
     login(client, "sub-a", "a@example.com")
     listed = client.get(invitations_url(), headers=acting(owner_id)).json()["invitations"]
     assert [(i["id"], i["expired"]) for i in listed] == [(pending["id"], False)]
-    assert audit(client, "invitation.revoke")[-1]["target_id"] == revoked["id"]
+    assert audit(client, "invitation.revoked")[-1]["target_id"] == revoked["id"]
     clock.now = NOW + timedelta(days=15)
     listed = client.get(invitations_url(), headers=acting(owner_id)).json()["invitations"]
     assert [(i["id"], i["expired"]) for i in listed] == [(pending["id"], True)]
@@ -710,7 +710,7 @@ def test_an_admin_changes_a_viewer_role_and_it_is_audited(client):
     assert response.status_code == 200
     assert set(response.json()) == {"person_id", "email", "name", "role", "joined_at"}
     assert (response.json()["person_id"], response.json()["role"]) == (viewer, "admin")
-    [row] = audit(client, "member.role")
+    [row] = audit(client, "member.role_changed")
     assert (row["actor_person_id"], row["target_id"]) == (admin, viewer)
 
 
@@ -718,7 +718,7 @@ def test_setting_the_same_role_writes_no_audit(client):
     owner_id = owner(client)
     viewer = member_as(client, "viewer")
     assert client.patch(f"{members_url()}/{viewer}", json={"role": "viewer"}, headers=acting(owner_id)).status_code == 200
-    assert audit(client, "member.role") == []
+    assert audit(client, "member.role_changed") == []
 
 
 def test_an_admin_does_not_manage_owners(client):
@@ -747,7 +747,7 @@ def test_nobody_changes_their_own_role_or_removes_themselves(client):
         assert response.status_code == 409 and response.json() == {"error": "cannot_change_self"}
         response = client.delete(f"{members_url()}/{actor}", headers=acting(actor))
         assert response.status_code == 409 and response.json() == {"error": "cannot_change_self"}
-    assert audit(client, "member.role") == [] and audit(client, "member.remove") == []
+    assert audit(client, "member.role_changed") == [] and audit(client, "member.removed") == []
 
 
 def test_removing_a_member_takes_away_their_access(client):
@@ -755,7 +755,7 @@ def test_removing_a_member_takes_away_their_access(client):
     viewer = member_as(client, "viewer")
     assert client.delete(f"{members_url()}/{viewer}", headers=acting(owner_id)).status_code == 204
     assert client.get("/v1/projects/client_a", headers=acting(viewer)).status_code == 403
-    assert audit(client, "member.remove")[-1]["target_id"] == viewer
+    assert audit(client, "member.removed")[-1]["target_id"] == viewer
     assert client.delete(f"{members_url()}/{viewer}", headers=acting(owner_id)).status_code == 404
     assert client.patch(f"{members_url()}/{viewer}", json={"role": "admin"}, headers=acting(owner_id)).status_code == 404
 
@@ -764,3 +764,92 @@ def test_patching_a_member_validates_the_role(client):
     owner_id = owner(client)
     viewer = member_as(client, "viewer")
     assert client.patch(f"{members_url()}/{viewer}", json={"role": "god"}, headers=acting(owner_id)).status_code == 422
+
+
+# --- contract 15: audit log of the organization (read only) ---
+
+
+def audit_url(org_id=DEMO_ORG_ID, **params):
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    return f"/v1/orgs/{org_id}/audit" + (f"?{query}" if query else "")
+
+
+def test_only_an_admin_reads_the_audit_log(client):
+    owner(client)
+    viewer = member_as(client, "viewer", sub="s-v", email="v@example.com")
+    admin = member_as(client, "admin", sub="s-a", email="a@example.com")
+    creator, _ = other_org_project(client)
+    assert client.get(audit_url(), headers=acting(viewer)).status_code == 403
+    assert client.get(audit_url(), headers=acting(creator)).status_code == 403
+    assert client.get(audit_url(), headers=acting(admin)).status_code == 200
+
+
+def test_entries_are_newest_first_with_actor_and_project_names(client):
+    owner_id = owner(client)
+    viewer = member_as(client, "viewer")
+    client.patch(f"{members_url()}/{viewer}", json={"role": "admin"}, headers=acting(owner_id))
+    client.post("/v1/projects/client_a/api-keys", json={"name": "ci"}, headers=acting(owner_id))
+    body = client.get(audit_url(), headers=acting(owner_id)).json()
+    entries = body["entries"]
+    assert [e["action"] for e in entries[:2]] == ["api_key.created", "member.role_changed"]
+    assert entries[0]["seq"] > entries[1]["seq"]
+    assert set(entries[0]) == {"seq", "ts", "org_id", "project_id", "project_name", "actor_person_id", "actor_name",
+                               "actor_kind", "action", "target_type", "target_id", "meta"}
+    owner_name = next(m["name"] for m in client.get(members_url(), headers=acting(owner_id)).json()["members"]
+                      if m["person_id"] == owner_id)
+    project_name = client.get("/v1/projects/client_a", headers=acting(owner_id)).json()["name"]
+    assert (entries[0]["project_id"], entries[0]["project_name"]) == ("client_a", project_name)
+    assert (entries[0]["actor_person_id"], entries[0]["actor_name"], entries[0]["actor_kind"]) == (
+        owner_id, owner_name, "person")
+    assert entries[1]["project_id"] is None and entries[1]["project_name"] is None
+    assert entries[1]["meta"]["from"] == "viewer" and entries[1]["meta"]["to"] == "admin"
+    assert body["next_before"] is None
+
+
+def test_the_project_filter_keeps_only_that_project(client):
+    owner_id = owner(client)
+    client.post("/v1/projects/client_a/api-keys", json={"name": "a"}, headers=acting(owner_id))
+    client.post("/v1/projects/client_b/api-keys", json={"name": "b"}, headers=acting(owner_id))
+    invite(client, owner_id, "x@example.com")
+    entries = client.get(audit_url(project="client_b"), headers=acting(owner_id)).json()["entries"]
+    assert entries and {e["project_id"] for e in entries} == {"client_b"}
+
+
+def test_the_audit_log_pages_with_before(client):
+    owner_id = owner(client)
+    for i in range(5):
+        invite(client, owner_id, f"p{i}@example.com")
+    first = client.get(audit_url(limit=2), headers=acting(owner_id)).json()
+    assert len(first["entries"]) == 2 and first["next_before"] == first["entries"][-1]["seq"]
+    second = client.get(audit_url(limit=2, before=first["next_before"]), headers=acting(owner_id)).json()
+    assert all(e["seq"] < first["next_before"] for e in second["entries"])
+    seen = [e["seq"] for e in first["entries"] + second["entries"]]
+    assert seen == sorted(seen, reverse=True) and len(set(seen)) == 4
+
+
+@pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 201}, {"before": 0}, {"limit": "x"}])
+def test_the_audit_query_is_validated(client, params):
+    assert client.get(audit_url(**params), headers=acting(owner(client))).status_code == 422
+
+
+def test_another_org_entries_never_appear(client):
+    owner_id = owner(client)
+    creator, project_id = other_org_project(client)
+    client.post(f"/v1/projects/{project_id}/api-keys", json={"name": "x"}, headers=acting(creator))
+    entries = client.get(audit_url(), headers=acting(owner_id)).json()["entries"]
+    assert all(e["org_id"] == DEMO_ORG_ID for e in entries)
+    assert client.get(audit_url(project=project_id), headers=acting(owner_id)).json()["entries"] == []
+
+
+def test_reinviting_is_audited_as_resent(client):
+    owner_id = owner(client)
+    invite(client, owner_id, "x@example.com")
+    invite(client, owner_id, "x@example.com", "admin")
+    actions = [e["action"] for e in client.get(audit_url(), headers=acting(owner_id)).json()["entries"]]
+    assert actions[:2] == ["invitation.resent", "invitation.created"]
+
+
+def test_there_is_no_way_to_change_the_audit_log(client):
+    owner_id = owner(client)
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        assert client.request(method, audit_url(), headers=acting(owner_id)).status_code == 405

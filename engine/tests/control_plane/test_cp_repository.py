@@ -239,7 +239,7 @@ def test_change_writes_audit_with_actor(conn, owner, org, add_member):
     viewer = add_member(org, owner, "vic", "viewer")
     repository.remove_member(conn, actor_id=owner, org_id=org, person_id=viewer, now=T0)
     last = audit_rows(conn, org)[-1]
-    assert last["action"] == "member.remove"
+    assert last["action"] == "member.removed"
     assert last["project_id"] is None  # an org action names no project
     assert last["actor_person_id"] == owner
     assert last["actor_kind"] == "person"
@@ -277,7 +277,7 @@ def test_failed_org_creation_leaves_no_rows(conn, owner, monkeypatch):
 def test_audit_derives_the_org_from_the_project_and_hashes_user_targets(conn, owner, org, project):
     repository.record_audit(
         conn, project_id=project, actor_person_id=owner, actor_kind="person",
-        action="decision.mark_normal", target_type="user", target_id="alice@shop.com", now=T0,
+        action="decision.marked_normal", target_type="user", target_id="alice@shop.com", now=T0,
     )
     last = audit_rows(conn, org)[-1]
     assert last["project_id"] == project
@@ -362,7 +362,7 @@ def test_api_key_uses_the_contract_format_and_stores_only_hash_and_prefix(conn, 
     assert row["scope"] == "sdk"
     assert row["created_by"] == owner
     assert row["last_used_at"] is None and row["revoked_at"] is None
-    assert audit_rows(conn, org)[-1]["action"] == "api_key.create"
+    assert audit_rows(conn, org)[-1]["action"] == "api_key.created"
 
 
 def test_list_and_revoke_api_keys(conn, owner, org, project):
@@ -375,7 +375,7 @@ def test_list_and_revoke_api_keys(conn, owner, org, project):
     repository.revoke_api_key(conn, actor_id=owner, project_id=project, key_id=created.id, now=T0)
     row = conn.execute("SELECT revoked_at FROM api_key WHERE id = ?", (created.id,)).fetchone()
     assert row["revoked_at"] == "2026-10-26T12:00:00Z"
-    assert audit_rows(conn, org)[-1]["action"] == "api_key.revoke"
+    assert audit_rows(conn, org)[-1]["action"] == "api_key.revoked"
     with pytest.raises(NotFound):
         repository.revoke_api_key(conn, actor_id=owner, project_id=project, key_id=created.id, now=T0)
 
