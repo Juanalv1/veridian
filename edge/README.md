@@ -5,6 +5,7 @@ Todo lo que toca la app del cliente y lo que se ve en el escenario:
 | Carpeta | Qué es |
 |---|---|
 | `../sdk/python/` | Middleware ASGI (paquete `veridian-sdk`, import `veridian_sdk`): envía eventos al motor en segundo plano responde `403 {"error": "blocked"}` a lo que esté en la lista de bloqueos y consulta al motor (`POST /v1/check`) antes de ejecutar las rutas `critical` |
+| `../sdk/node/` | Mismo middleware para Node (paquete `veridian-sdk` de npm): Express 4 y 5 y route handlers de Next.js (runtime Node). Mismos contratos, ver su README |
 | `demo_app/` | App de facturas de ejemplo (login, facturas, cuenta bancaria de cobros) protegida por el middleware |
 | `panel/` | Página que lista `GET /v1/decisions` y se actualiza sola |
 | `fake_engine/` | Motor falso en memoria que respeta los contratos de `docs/REPARTO.md`, para trabajar sin el motor real |
