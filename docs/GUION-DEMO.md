@@ -1,6 +1,6 @@
 # Guion de la demo
 
-Borrador: se escribe por partes (2026-10-25). Partes 1 y 2 aprobadas; el resto está pendiente.
+Borrador: se escribe por partes (2026-10-25). Partes 1 a 3 aprobadas; el resto está pendiente.
 
 Va después de la slide 4 y antes de la slide 5 (`GUION.md`). Tiempo disponible: 125-140 s (sin medir todavía).
 
@@ -38,7 +38,15 @@ Estructura: una sola persona, la dueña de la cuenta.
 
 ## Parte 3: bloqueo
 
-Pendiente.
+**[En la PC, va a la cuenta bancaria de cobro e intenta cambiarla]**
+
+> Ahora voy a cambiar la cuenta bancaria donde la empresa recibe sus pagos, una ruta de alto impacto.
+
+**[La app: «Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú». Panel: «Bloqueado»]**
+
+> Veridian bloquea el cambio antes de que ocurra. La app me avisa, y en el panel la IA explica por qué lo bloqueó:
+
+**[Leer la explicación del panel]**
 
 ## Parte 4: desbloqueo por correo
 
