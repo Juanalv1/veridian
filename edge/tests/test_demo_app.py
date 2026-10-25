@@ -220,3 +220,121 @@ async def test_blocked_bank_change_still_answers_the_sdk_json_the_page_reads():
         r = await atk.post("/payouts/bank-account", data={"bank": "Evil", "account_number": "1"},
                            headers={"Accept": "text/html"})
         assert r.status_code == 403 and r.json()["error"] == "blocked"
+
+
+# --- one-tap demo preparation (/demo/preparar) -------------------------------
+
+PREPARE_KEY = "k-prepare"
+PANEL_TOKEN = "panel-tok"
+PHONE_IP = "190.202.14.7"
+
+
+class StubEngine:
+    """The engine endpoints the preparation calls, enough to drive it in tests."""
+
+    def __init__(self, owner=True, blocked_session="s_attacker"):
+        self.owner = owner
+        self.calls: list[tuple[str, str]] = []
+        self.events: list[dict] = []
+        self.blocklist = {"version": 3, "users": [], "sessions": [blocked_session], "ips": []}
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        import json as _json
+        path, method = request.url.path, request.method
+        self.calls.append((method, path))
+        auth = request.headers.get("authorization", "")
+        panel = auth == f"Bearer {PANEL_TOKEN}"
+        if method == "GET" and path == "/v1/blocklist":
+            return httpx.Response(200, json=self.blocklist)
+        if method == "POST" and path == "/v1/events":
+            if auth != f"Bearer {TOKEN}":
+                return httpx.Response(401)
+            self.events += _json.loads(request.content)["events"]
+            return httpx.Response(202, json={"accepted": len(self.events)})
+        if not panel:
+            return httpx.Response(401)
+        if method == "POST" and path == "/v1/people/login":
+            return httpx.Response(200, json={"person": {"id": "p_1"}})
+        if method == "GET" and path == "/v1/projects/demo":
+            return httpx.Response(200, json={"role": "owner" if self.owner else "viewer"})
+        if method == "DELETE" and path == "/v1/projects/demo/data":
+            self.events.clear()
+            self.blocklist = {"version": 4, "users": [], "sessions": [], "ips": []}
+            return httpx.Response(200, json={"deleted": True})
+        if method == "GET" and path == "/v1/users/u_42/profile":
+            mine = [e for e in self.events if e["user_id"] == "u_42"]
+            days = {e["ts"][:10] for e in mine}
+            return httpx.Response(200, json={
+                "state": "normal", "history_days": len(days),
+                "networks": sorted({".".join(e["ip"].split(".")[:3]) + ".0/24" for e in mine}),
+                "devices": sorted({e["device_id"] for e in mine if e["device_id"]}),
+            })
+        return httpx.Response(404)
+
+
+def make_prepared_demo(stub, prepare_key=PREPARE_KEY):
+    ec = httpx.AsyncClient(transport=httpx.MockTransport(stub.handler), base_url="http://engine")
+    return create_app(
+        engine_url="http://engine", token=TOKEN, password=PASSWORD, http_client=ec, background=False,
+        prepare_key=prepare_key, panel_token=PANEL_TOKEN,
+    )
+
+
+async def test_prepare_page_is_off_without_the_key_env_and_404_with_a_wrong_key():
+    stub = StubEngine()
+    async with browser(make_prepared_demo(stub, prepare_key=None)) as c:
+        assert (await c.get("/demo/preparar", params={"clave": "anything"})).status_code == 404
+        assert (await c.post("/demo/preparar", params={"clave": "anything"})).status_code == 404
+    async with browser(make_prepared_demo(stub)) as c:
+        assert (await c.get("/demo/preparar")).status_code == 404
+        assert (await c.get("/demo/preparar", params={"clave": "wrong"})).status_code == 404
+        assert (await c.post("/demo/preparar", params={"clave": "wrong"})).status_code == 404
+    assert ("DELETE", "/v1/projects/demo/data") not in stub.calls
+
+
+async def test_prepare_page_shows_one_button_issues_the_device_cookie_and_hides_secrets():
+    async with browser(make_prepared_demo(StubEngine())) as c:
+        r = await c.get("/demo/preparar", params={"clave": PREPARE_KEY})
+        assert r.status_code == 200
+        assert "Preparar demo" in r.text and '<form method="post"' in r.text
+        assert PREPARE_KEY not in r.text and PANEL_TOKEN not in r.text
+        assert "vrd_did=" in r.headers.get("set-cookie", "")
+
+
+async def test_prepare_without_the_device_cookie_explains_and_touches_nothing():
+    stub = StubEngine()
+    async with browser(make_prepared_demo(stub)) as c:
+        r = await c.post("/demo/preparar", params={"clave": PREPARE_KEY})
+        assert r.status_code == 400 and "dispositivo" in r.text
+    assert ("DELETE", "/v1/projects/demo/data") not in stub.calls and stub.events == []
+
+
+async def test_prepare_erases_seeds_the_phone_and_clears_the_blocklist_in_memory():
+    stub = StubEngine()
+    app = make_prepared_demo(stub)
+    await app.refresh_blocklist()
+    assert app.blocked["sessions"] == {"s_attacker"}
+    async with browser(app, peer=PHONE_IP) as c:
+        await c.get("/demo/preparar", params={"clave": PREPARE_KEY})  # the phone gets its device cookie
+        device = c.cookies["vrd_did"]
+        r = await c.post("/demo/preparar", params={"clave": PREPARE_KEY})
+        assert r.status_code == 200, r.text
+        assert "Listo: 1 red, 1 dispositivo, 14 días" in r.text
+        assert PREPARE_KEY not in r.text and PANEL_TOKEN not in r.text
+    assert stub.calls.index(("DELETE", "/v1/projects/demo/data")) < stub.calls.index(("POST", "/v1/events"))
+    assert ("POST", "/v1/admin/reset") not in stub.calls
+    seeded = stub.events
+    assert seeded and {e["ip"] for e in seeded} == {PHONE_IP} and {e["device_id"] for e in seeded} == {device}
+    assert {e["user_id"] for e in seeded} == {"u_42"}
+    assert app.blocked == {"users": set(), "sessions": set(), "ips": set()}
+    # the preparation pages are never reported as the presenter's activity
+    assert list(app.queue) == []
+
+
+async def test_prepare_reports_an_engine_problem_without_leaking_the_token():
+    stub = StubEngine(owner=False)
+    async with browser(make_prepared_demo(stub)) as c:
+        await c.get("/demo/preparar", params={"clave": PREPARE_KEY})
+        r = await c.post("/demo/preparar", params={"clave": PREPARE_KEY})
+        assert r.status_code == 502 and "owner" in r.text and PANEL_TOKEN not in r.text
+    assert ("DELETE", "/v1/projects/demo/data") not in stub.calls
