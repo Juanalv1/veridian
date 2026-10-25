@@ -23,6 +23,24 @@
   .item .v { font-size:15px; font-weight:700; }
   .item .what { grid-column:2; font-size:14px; color:var(--ink); overflow-wrap:anywhere; }
   .block { color:var(--state-block); } .alert { color:var(--state-review); } .allow { color:var(--state-normal); } .lifted { color:var(--muted); }
+  .feed { flex:1 1 300px; max-width:360px; min-width:0; display:flex; flex-direction:column; }
+  .row { text-decoration:none; color:inherit; display:grid; grid-template-columns:76px minmax(0, 1fr); gap:2px 12px; padding:9px 14px; border:1px solid transparent; border-left:2px solid transparent; border-radius:var(--radius-md); }
+  a.row { transition:background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+  a.row:hover { background:var(--surface-hover); }
+  /* The selected row keeps its state-colored left edge: only the other sides get the line. */
+  a.row[aria-current] { background:var(--surface); border-top-color:var(--line); border-right-color:var(--line); border-bottom-color:var(--line); }
+  a.row[aria-current]:hover { background:var(--surface-hover); border-top-color:var(--line-hover); border-right-color:var(--line-hover); border-bottom-color:var(--line-hover); }
+  .row .t { font-family:var(--font-mono); font-size:13px; color:var(--muted); }
+  .row .v { font-size:14px; font-weight:600; }
+  .row .what { grid-column:2; font-size:14px; overflow-wrap:anywhere; }
+  .row .what .mono { font-size:13px; }
+  .row.k-normal .v { font-weight:400; color:var(--muted); }
+  .row.k-normal .what { color:var(--muted); }
+  .row.k-alert { border-left-color:var(--state-review); }
+  .row.k-block { border-left-color:var(--state-block); padding-top:13px; padding-bottom:13px; }
+  .row.k-block .v { font-size:15px; font-weight:700; }
+  .row .rejected { font-weight:600; color:var(--state-block); }
+  .note.calm { color:var(--ink); font-size:20px; line-height:1.4; padding:24px; }
   #detalle { flex:999 1 640px; min-width:0; display:flex; flex-direction:column; gap:28px; }
   .head { display:flex; flex-direction:column; gap:10px; }
   .meta { font-size:15px; color:var(--muted); overflow-wrap:anywhere; }
@@ -51,6 +69,10 @@
   .consequence { font-size:15px; color:var(--muted); }
   .note { padding:16px 18px; border-radius:var(--radius-md); border:1px solid var(--line); color:var(--muted); }
   .note.warn { color:var(--state-review); } .note.err { color:var(--state-block); }
+  @media (max-width:960px) {
+    /* A long feed must not push the verdict below the fold when the columns stack. */
+    .feed { order:1; max-width:none; flex-basis:100%; }
+  }
   @media (max-width:600px) {
     .wrap { padding-left:16px; padding-right:16px; }
     main.wrap { gap:28px; }

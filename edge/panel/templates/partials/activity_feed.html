@@ -1,0 +1,12 @@
+  <nav class="feed" aria-label="Actividad" hx-boost="true" hx-target="#live" hx-sync="#live:replace">
+    <span class="nav-title">Actividad</span>
+    {% for a in activity %}
+      {% if a.href %}<a class="row k-{{ a.verdict_kind }}" href="{{ a.href }}"{% if current and a.decision_id == current.id %} aria-current="true"{% endif %}>
+      {% else %}<div class="row k-{{ a.verdict_kind }}">
+      {% endif %}
+        <span class="t"><time class="ts" datetime="{{ a.ts }}">{{ a.time }} UTC</time></span>
+        <span class="v {{ a.verdict_kind }}">{{ a.verdict_word }}</span>
+        <span class="what">{{ a.user_id }}{% if a.action %} · <span class="mono">{{ a.action }}</span>{% endif %}{% if a.rejected %} <span class="rejected">rechazado</span>{% endif %}</span>
+      {% if a.href %}</a>{% else %}</div>{% endif %}
+    {% endfor %}
+  </nav>

@@ -35,9 +35,12 @@ def decision_id(engine):
     return TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["id"]
 
 
-def stub_panel(decisions, profile=None):
-    """Panel over a canned engine: `profile` None means 404 (no profile yet)."""
+def stub_panel(decisions, profile=None, activity=None):
+    """Panel over a canned engine: `profile` None means 404 (no profile yet);
+    `activity` None means the engine has no /v1/activity (404)."""
     def handler(request):
+        if request.url.path == "/v1/activity" and activity is not None:
+            return httpx.Response(200, json={"activity": activity})
         if request.url.path == "/v1/decisions":
             return httpx.Response(200, json={"decisions": decisions})
         if profile is not None and request.url.path.endswith("/profile"):
@@ -128,7 +131,8 @@ def test_marked_normal_block_shows_lifted_muted_line_and_no_button():
     engine, panel = blocked_setup()
     TestClient(engine).post(f"/v1/decisions/{decision_id(engine)}/normal", headers=AUTH)
     r = panel.get("/")
-    assert "Bloqueo levantado" in r.text and "Levantado" in r.text
+    # (the decision list's short "Levantado" word is covered by the no-activity fallback test below)
+    assert "Bloqueo levantado" in r.text
     assert "Marcado como normal. Veridian lo suma al perfil de u_42." in r.text
     assert "Esto era normal" not in r.text
     assert "<button" not in r.text
@@ -279,7 +283,7 @@ def test_panel_empty_state():
     engine = create_engine(tokens={TOKEN}, seed=[])
     panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine)))
     r = panel.get("/")
-    assert r.status_code == 200 and "Sin decisiones" in r.text and "En vivo" in r.text
+    assert r.status_code == 200 and "Todavía no hay accesos" in r.text and "En vivo" in r.text
 
 
 def test_panel_engine_down_shows_friendly_message():
@@ -453,3 +457,150 @@ def test_detection_time_hidden_when_missing_negative_or_invalid(access):
 def test_detection_time_is_muted_evidence_not_the_accent():
     r = stub_panel([dec(access=_access("2026-10-26T10:14:02Z"))]).get("/")
     assert 'class="detected"' in r.text
+
+
+
+# --- live activity feed (contract 5) ---------------------------------------
+
+
+def act(event_id="e_1", user="u_1", method="GET", route="/invoices", verdict="normal",
+        decision_id=None, ts="2026-10-26T10:14:03Z"):
+    return {"event_id": event_id, "ts": ts, "user_id": user, "session_id": "s_1", "ip": "1.2.3.4",
+            "device_id": "d_1", "method": method, "route": route, "verdict": verdict,
+            "decision_id": decision_id}
+
+
+def feed(html):
+    """The activity nav, as text."""
+    m = re.search(r'<nav[^>]*aria-label="Actividad".*?</nav>', html, re.S)
+    assert m, "no Actividad feed"
+    return m.group(0)
+
+
+def rows(html):
+    return re.findall(r'<(?:a|div)[^>]*class="[^"]*\brow\b[^"]*"[^>]*>.*?</(?:a|div)>', feed(html), re.S)
+
+
+def test_feed_rows_show_time_verdict_word_user_and_action():
+    acts = [act("e_3", verdict="block", method="POST", route="/payouts/bank-account", decision_id="d_1"),
+            act("e_2", verdict="review", decision_id="d_2"), act("e_1")]
+    decisions = [dec(id="d_1", event_ids=["e_3"]), dec(id="d_2", decision="alert", event_ids=["e_2"])]
+    html = stub_panel(decisions, activity=acts).get("/").text
+    r = rows(html)
+    assert len(r) == 3
+    assert "Bloqueado" in r[0] and "u_1" in r[0] and "POST /payouts/bank-account" in r[0]
+    assert "Raro" in r[1]
+    assert "Normal" in r[2] and "GET /invoices" in r[2]
+    for row in r:
+        assert re.search(r'<time class="ts" datetime="2026-10-26T10:14:03Z">10:14:03 UTC</time>', row)
+    assert 'class="v block"' in r[0] and 'class="v alert"' in r[1] and 'class="v normal"' in r[2]
+
+
+def test_feed_replaces_the_decisions_nav_when_the_engine_has_activity():
+    html = stub_panel([dec(event_ids=["e_1"])], activity=[act(verdict="block", decision_id="d_1")]).get("/").text
+    assert "Decisiones recientes" not in html
+    assert 'aria-label="Actividad"' in html and "Actividad</span>" in html
+
+
+def test_rows_with_a_decision_link_to_its_detail_and_others_do_not():
+    acts = [act("e_2", user="u 1", verdict="block", decision_id="d_1"), act("e_1")]
+    html = stub_panel([dec(user="u 1", event_ids=["e_2"])], activity=acts).get("/").text
+    r = rows(html)
+    assert r[0].startswith("<a") and 'href="/users/u%201/decisions/d_1"' in r[0]
+    assert r[1].startswith("<div") and "href" not in r[1]
+    assert 'hx-boost="true"' in re.search(r"<nav[^>]*>", feed(html)).group(0)
+
+
+def test_rejected_rows_say_rechazado_and_the_triggering_row_does_not():
+    acts = [act("e_r", verdict="block", decision_id="d_1", route="/invoices"),
+            act("e_t", verdict="block", decision_id="d_1", method="POST", route="/payouts/bank-account")]
+    r = rows(stub_panel([dec(event_ids=["e_t"])], activity=acts).get("/").text)
+    assert "rechazado" in r[0] and "rechazado" not in r[1]
+
+
+def test_rows_back_to_normal_after_marking_are_quiet_and_not_rejected():
+    acts = [act("e_r", verdict="normal", decision_id="d_1"), act("e_t", verdict="normal", decision_id="d_1")]
+    html = stub_panel([dec(status="marked_normal", event_ids=["e_t"])], activity=acts).get("/").text
+    assert all("rechazado" not in r and "Normal" in r for r in rows(html))
+
+
+def test_unknown_verdict_is_shown_as_review_not_hidden_as_normal():
+    r = rows(stub_panel([], activity=[act(verdict="quarantine")]).get("/").text)
+    assert "Raro" in r[0]
+
+
+def test_empty_state_without_decisions_uses_real_counts():
+    acts = [act("e_3", user="u_1"), act("e_2", user="u_2"), act("e_1", user="u_1")]
+    html = stub_panel([], activity=acts).get("/").text
+    assert "Todo normal. Veridian está vigilando 3 accesos de 2 usuarios." in html
+    assert "Sin decisiones" not in html and "<h1" not in html
+
+
+def test_empty_state_singular_and_window_wording():
+    html = stub_panel([], activity=[act()]).get("/").text
+    assert "Todo normal. Veridian está vigilando 1 acceso de 1 usuario." in html
+    full = [act(f"e_{n}") for n in range(50)]
+    html = stub_panel([], activity=full).get("/").text
+    assert "Todo normal. Veridian está vigilando los últimos 50 accesos de 1 usuario." in html
+
+
+def test_empty_state_with_no_activity_yet():
+    html = stub_panel([], activity=[]).get("/").text
+    assert "Todavía no hay accesos" in html and "<h1" not in html
+
+
+def test_decision_stays_the_hero_next_to_the_feed():
+    acts = [act("e_t", verdict="block", decision_id="d_1")]
+    html = stub_panel([dec(event_ids=["e_t"])], activity=acts).get("/").text
+    assert "<h1" in html and "Bloqueado" in html and "Todo normal" not in html
+    assert 'aria-current="true"' in rows(html)[0]
+
+
+def test_engine_without_activity_degrades_to_the_decisions_list_without_error():
+    html = stub_panel([dec()], activity=None).get("/").text
+    assert "Decisiones recientes" in html and 'aria-label="Actividad"' not in html
+    assert "note warn" not in html and "En vivo" in html
+
+
+def test_engine_without_activity_and_without_decisions_keeps_old_empty_state():
+    r = stub_panel([], activity=None).get("/")
+    assert "Sin decisiones por ahora. Todo normal." in r.text
+
+
+def test_mark_normal_is_hidden_for_allow_decisions():
+    html = stub_panel([dec(decision="allow")]).get("/").text
+    assert "Esto era normal" not in html and "<h1" in html and "Permitido" in html
+
+
+def test_end_to_end_owner_then_attacker_then_rejections_then_mark_normal():
+    engine = create_engine(tokens={TOKEN}, seed=SEED, learn_delay=0)
+    api = TestClient(engine)
+    panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine)), follow_redirects=False)
+    api.post("/v1/events", json={"events": [event(id="e_own", ip="190.202.14.7", session_id="s_own",
+                                                  method="GET", route="/invoices")]}, headers=AUTH)
+    html = panel.get("/").text
+    assert "Todo normal. Veridian está vigilando 1 acceso de 1 usuario." in html and "<h1" not in html
+    api.post("/v1/events", json={"events": [event(id="e_atk")]}, headers=AUTH)
+    api.post("/v1/events", json={"events": [event(id="e_r1", method="GET", route="/invoices", status=403, bytes=21),
+                                            event(id="e_r2", method="GET", route="/invoices", status=403, bytes=21)]}, headers=AUTH)
+    html = panel.get("/").text
+    r = rows(html)
+    assert [("Bloqueado" in x, "rechazado" in x) for x in r] == [(True, True), (True, True), (True, False), (False, False)]
+    assert "Normal" in r[3]
+    did = decision_id(engine)
+    panel.post(f"/decisions/{did}/normal", data={"user": "u_42"})
+    r = rows(panel.get("/").text)
+    assert all("Normal" in x and "Bloqueado" not in x and "rechazado" not in x for x in r)
+
+
+def test_lifted_block_is_listed_as_levantado_when_the_engine_has_no_activity():
+    html = stub_panel([dec(status="marked_normal")], activity=None).get("/").text
+    assert "Levantado" in html and "Bloqueo levantado" in html
+
+
+def test_feed_css_keeps_normal_rows_quiet_and_block_rows_loud():
+    css = TestClient(create_app("http://engine", TOKEN)).get("/static/panel.css").text
+    assert re.search(r"\.row\.k-normal \.what \{[^}]*color:var\(--muted\)", css)
+    assert re.search(r"\.row\.k-block \{[^}]*border-left-color:var\(--state-block\)", css)
+    assert re.search(r"\.row\.k-alert \{[^}]*var\(--state-review\)", css)
+    assert "box-shadow" not in css and "--viridian" not in css.split(".feed")[1]

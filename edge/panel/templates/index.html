@@ -7,12 +7,18 @@
       hx-get="{{ refresh_url }}" hx-trigger="every {{ refresh }}s [refreshAllowed()]"
       hx-select="#live" hx-select-oob="#conn" hx-target="this" hx-swap="outerHTML settle:0ms"
       hx-sync="this:replace">
-  {% include "partials/decision_nav.html" %}
+  {% if activity is not none %}
+    {% include "partials/activity_feed.html" %}
+  {% else %}
+    {% include "partials/decision_nav.html" %}
+  {% endif %}
 
   <section id="detalle" aria-label="Detalle de la decisión">
     {% if notice %}<div class="note err" role="alert">{{ notice }}</div>{% endif %}
     {% if engine_error %}
       <div class="note warn">{{ engine_error }}</div>
+    {% elif not current and activity is not none %}
+      <div class="note calm">{{ watching }}</div>
     {% elif not current %}
       <div class="note">Sin decisiones por ahora. Todo normal.</div>
     {% endif %}

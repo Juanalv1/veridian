@@ -12,7 +12,7 @@
   <div class="actions">
     {% if d.marked_normal %}
       <span class="consequence">Marcado como normal. Veridian lo suma al perfil de {{ d.user_id }}.</span>
-    {% else %}
+    {% elif d.decision != 'allow' %}
       <form method="post" action="/decisions/{{ d.id | urlencode }}/normal">
         <input type="hidden" name="user" value="{{ d.user_id }}">
         <button class="btn btn-primary" type="submit"

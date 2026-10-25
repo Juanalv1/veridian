@@ -1,4 +1,4 @@
-"""Panel: recent decisions, each compared against the user's profile; refreshed every 2 s.
+"""Panel: live activity feed and the selected decision compared against the user's profile; refreshed every 2 s.
 
 Env: VERIDIAN_URL (engine base URL), VERIDIAN_TOKEN (Bearer token).
 """
@@ -18,7 +18,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "3"
+ASSET_VERSION = "4"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -27,6 +27,9 @@ VERDICTS = {
     "allow": ("Permitido", "Permitido", "allow"),
     "step_up": ("Segundo factor", "Segundo factor", "alert"),
 }
+ACTIVITY_LIMIT = 50
+# activity verdict -> (word, color class). Normal rows are quiet (muted), never green.
+ACTIVITY_VERDICTS = {"normal": ("Normal", "normal"), "review": ("Raro", "alert"), "block": ("Bloqueado", "block")}
 LIFTED = ("Levantado", "Bloqueo levantado", "lifted")
 ROUTE_CLASSES = {"critical": "crítico", "sensitive": "sensible"}
 MARK_ERROR = "No se pudo marcar la decisión como normal. Inténtalo de nuevo."
@@ -57,6 +60,37 @@ def _decorate(d: dict) -> dict:
     d["detected"] = (f"Detectado y bloqueado en {took}" if d.get("decision") == "block" else f"Detectado en {took}") if took else ""
     d["blocks_ip"] = access.get("ip") if d.get("decision") == "block" else None
     return d
+
+
+def _decorate_activity(a: dict, decisions: dict[str, dict]) -> dict:
+    # An unknown verdict is shown as "Raro" rather than hidden as normal.
+    word, kind = ACTIVITY_VERDICTS.get(a.get("verdict"), ACTIVITY_VERDICTS["review"])
+    method, route = a.get("method"), a.get("route") or ""
+    decision = decisions.get(a.get("decision_id"))
+    a["verdict_word"], a["verdict_kind"] = word, kind
+    a["time"] = str(a.get("ts", ""))[11:19]
+    a["action"] = f"{method} {route}" if method and route else route
+    # The contract has no status on activity rows: a block row that is not the
+    # access which triggered the decision is a request the middleware rejected.
+    a["rejected"] = bool(kind == "block" and decision is not None
+                         and a.get("event_id") not in (decision.get("event_ids") or []))
+    a["href"] = (f"/users/{quote(str(a.get('user_id') or ''), safe='')}/decisions/{quote(str(a['decision_id']), safe='')}"
+                 if a.get("decision_id") and a.get("user_id") else None)
+    return a
+
+
+def _count(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def _watching(activity: list[dict]) -> str:
+    """Empty-state sentence with real counts. Only the window is known, so a
+    full window is worded as "los últimos N"."""
+    n, users = len(activity), len({a.get("user_id") for a in activity})
+    if n == 0:
+        return "Todavía no hay accesos. Veridian está listo para vigilar."
+    window = f"los últimos {n} accesos" if n >= ACTIVITY_LIMIT else _count(n, "acceso", "accesos")
+    return f"Todo normal. Veridian está vigilando {window} de {_count(users, 'usuario', 'usuarios')}."
 
 
 def _detected_in(decision_ts, access_ts) -> str:
@@ -117,6 +151,19 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         except (ValueError, KeyError, TypeError, AttributeError):
             return [], "Respuesta inesperada del motor. Reintentando…"
 
+    async def load_activity(decisions: list[dict]) -> list[dict] | None:
+        """None when the engine has no /v1/activity (or it fails): the panel then
+        shows the decisions list, with no error."""
+        try:
+            r = await client.get(f"{base}/v1/activity", params={"limit": ACTIVITY_LIMIT}, headers=headers)
+            if r.status_code != 200:
+                return None
+            items = [a for a in r.json()["activity"] if isinstance(a, dict)]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+        by_id = {d.get("id"): d for d in decisions}
+        return [_decorate_activity(a, by_id) for a in items]
+
     async def load_profile(user_id: str) -> dict | None:
         try:
             r = await client.get(f"{base}/v1/users/{quote(user_id, safe='')}/profile", headers=headers)
@@ -139,6 +186,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         decisions, engine_error = await load_decisions()
         for d in decisions:
             d["href"] = decision_url(d)
+        activity = await load_activity(decisions) if engine_error is None else None
         by_user = [d for d in decisions if d.get("user_id") == user]
         current = (next((d for d in by_user if d.get("id") == decision_id), None)
                    or (by_user[0] if by_user else None)
@@ -155,7 +203,8 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                            "routes_shown": routes[:MAX_PROFILE_ROUTES],
                            "routes_more": max(0, len(routes) - MAX_PROFILE_ROUTES)}
         return templates.TemplateResponse(request, "index.html", {
-            "decisions": decisions, "engine_error": engine_error, "refresh": REFRESH_SECONDS,
+            "decisions": decisions, "activity": activity,
+            "watching": _watching(activity) if activity is not None else "", "engine_error": engine_error, "refresh": REFRESH_SECONDS,
             "asset_version": ASSET_VERSION,
             "current": current, "profile": profile,
             "notice": MARK_ERROR if error else None,
