@@ -2,7 +2,7 @@
 {% block title %}Factura {{ invoice.number }}{% endblock %}
 {% block content %}
 <nav class="crumbs" aria-label="Ruta"><a href="/invoices">Facturas</a><span aria-hidden="true">/</span><span aria-current="page">{{ invoice.number }}</span></nav>
-<div class="page-head">
+<div class="page-head start">
   <h1>Factura {{ invoice.number }}</h1>
   <span class="status {{ invoice.status }}">{{ invoice.status }}</span>
 </div>
