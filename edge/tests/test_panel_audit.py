@@ -207,7 +207,7 @@ def test_owner_and_admin_see_keys_members_and_audit_links():
     owner = panel_of(engine)
     admin = member_panel(engine, org_a(engine), "admin")
     for panel in (owner, admin):
-        assert nav_links(panel.get("/").text) == ["/", "/actividad", "/usuarios", "/rutas", "/claves", "/proyectos",
+        assert nav_links(panel.get("/").text) == ["/", "/actividad", "/usuarios", "/rutas", "/claves", "/webhook", "/proyectos",
                                                    "/miembros", "/auditoria"]
         html = side(panel.get("/").text)
         assert html.index("PROYECTO") < html.index("ORGANIZACIÓN")
