@@ -4,12 +4,12 @@ Todo lo que toca la app del cliente y lo que se ve en el escenario:
 
 | Carpeta | Qué es |
 |---|---|
-| `../sdk/python/` | Middleware ASGI (paquete `veridian-sdk`, import `veridian_sdk`): envía eventos al motor en segundo plano y responde `403 {"error": "blocked"}` a lo que esté en la lista de bloqueos |
+| `../sdk/python/` | Middleware ASGI (paquete `veridian-sdk`, import `veridian_sdk`): envía eventos al motor en segundo plano responde `403 {"error": "blocked"}` a lo que esté en la lista de bloqueos y consulta al motor (`POST /v1/check`) antes de ejecutar las rutas `critical` |
 | `demo_app/` | App de facturas de ejemplo (login, facturas, cuenta bancaria de cobros) protegida por el middleware |
 | `panel/` | Página que lista `GET /v1/decisions` y se actualiza sola |
 | `fake_engine/` | Motor falso en memoria que respeta los contratos de `docs/REPARTO.md`, para trabajar sin el motor real |
 
-El middleware nunca envía cuerpos de peticiones, contraseñas ni datos de clientes, y falla abierto: si el motor no responde, la app sigue con la última lista conocida.
+El middleware nunca envía cuerpos de peticiones, contraseñas ni datos de clientes, y falla abierto: si el motor no responde, la app sigue con la última lista conocida; si la consulta previa de una ruta crítica falla o tarda más de 12 s, la petición pasa.
 
 ## Instalar
 
@@ -71,13 +71,13 @@ curl -s -b dueno.txt -H 'X-Forwarded-For: 127.0.0.1' -o /dev/null -w '%{http_cod
 # Atacante: misma contraseña, otra red (el primer valor es falso y se ignora)
 H='X-Forwarded-For: 9.9.9.9, 203.0.113.9'
 curl -s -c atacante.txt -d 'email=ana@facturas.demo&password=demo1234' -H "$H" $APP/login -o /dev/null
-curl -s -b atacante.txt -d 'bank=Otro&account_number=1' -H "$H" -o /dev/null -w '%{http_code}\n' $APP/payouts/bank-account   # 200: pasa la petición que dispara el bloqueo
+curl -s -b atacante.txt -d 'bank=Otro&account_number=1' -H "$H" -o /dev/null -w '%{http_code}\n' $APP/payouts/bank-account   # 403: la ruta es crítica, el motor la frena antes de que la app la ejecute
 sleep 5
 curl -s -b atacante.txt -H "$H" $APP/invoices                                                                              # 403 {"error":"blocked"}
 curl -s -b dueno.txt -H 'X-Forwarded-For: 127.0.0.1' -o /dev/null -w '%{http_code}\n' $APP/invoices                       # 200
 ```
 
-El panel muestra la decisión `block` con sus señales y la explicación. Se bloquea la petición siguiente, no la sospechosa, por los ciclos de ~2 s.
+El panel muestra la decisión `block` con sus señales y la explicación. Las rutas `critical` se consultan antes de ejecutarse (contrato 9), así que la petición sospechosa ya no pasa; en las demás rutas se bloquea la petición siguiente, por los ciclos de ~2 s.
 
 Sin proxy (`TRUSTED_PROXIES=0`), la IP es siempre la de la conexión y `X-Forwarded-For` se ignora, aunque el atacante lo falsifique.
 

@@ -1,6 +1,7 @@
 """Tests for VeridianMiddleware. No real network and no sleeps: background
 tasks are disabled and flush()/refresh_blocklist() are driven by hand."""
 
+import asyncio
 import json
 
 import httpx
@@ -75,11 +76,29 @@ class Recorder:
         self.version = 0
         self.blocklist = {"users": [], "sessions": [], "ips": []}
         self.fail = False
+        self.routes = [
+            {"method": "POST", "route": "/payouts/bank-account", "class": "critical"},
+            {"method": "GET", "route": "/invoices/export", "class": "sensitive"},
+        ]
+        self.routes_status = 200
+        self.checks = []  # bodies received on POST /v1/check
+        self.check_status = 200
+        self.check_body = {"verdict": "allow", "decision_id": None}
+        self.check_hang = None  # an asyncio.Event that is never set makes /v1/check hang
 
-    def handler(self, request: httpx.Request) -> httpx.Response:
+    async def handler(self, request: httpx.Request) -> httpx.Response:
         if self.fail:
             raise httpx.ConnectError("engine down")
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
+        if request.url.path == "/v1/routes":
+            return httpx.Response(self.routes_status, json={"routes": self.routes, "default": "normal"})
+        if request.url.path == "/v1/check":
+            self.checks.append(json.loads(request.content))
+            if self.check_hang is not None:
+                await self.check_hang.wait()
+            if isinstance(self.check_body, bytes):
+                return httpx.Response(self.check_status, content=self.check_body)
+            return httpx.Response(self.check_status, json=self.check_body)
         if request.url.path == "/v1/events":
             self.batches.append(json.loads(request.content)["events"])
             return httpx.Response(202, json={"accepted": len(self.batches[-1])})
@@ -508,3 +527,250 @@ async def test_excluded_paths_blocked_or_not_are_never_reported(rec):
         await c.get("/static/app.css", cookies={"uid": "u_42", "sid": "s_bad"})
     await mw.flush()
     assert rec.events == []
+
+
+# --- pre-check of critical routes (contract 9) --------------------------------
+
+BANK = {"uid": "u_42", "sid": "s_atk"}
+
+
+async def post_bank(mw, cookies=BANK):
+    async with client_for(mw) as c:
+        return await c.post("/payouts/bank-account", content=b"x", cookies=cookies)
+
+
+async def test_check_block_verdict_answers_403_and_app_not_called(rec):
+    rec.check_body = {"verdict": "block", "decision_id": "d_1"}
+    calls = []
+    mw = make_mw(build_app(calls), rec.client())
+    await mw.refresh_routes()
+    r = await post_bank(mw)
+    assert r.status_code == 403 and r.json() == {"error": "blocked"}
+    assert calls == []
+    assert len(rec.checks) == 1
+
+
+async def test_check_allow_verdict_calls_app(rec):
+    calls = []
+    mw = make_mw(build_app(calls), rec.client())
+    await mw.refresh_routes()
+    r = await post_bank(mw)
+    assert r.status_code == 200 and calls == ["bank"]
+    assert len(rec.checks) == 1
+
+
+@pytest.mark.parametrize(
+    "status, body",
+    [
+        (500, {"error": "boom"}),
+        (404, {"error": "not_found"}),
+        (401, {"error": "unauthorized"}),
+        (200, {"verdict": "step_up"}),
+        (200, {"verdict": None}),
+        (200, {"nope": 1}),
+        (200, ["block"]),
+        (200, b"<html>not json</html>"),
+    ],
+)
+async def test_check_failure_or_garbage_lets_the_request_through(rec, status, body):
+    rec.check_status, rec.check_body = status, body
+    calls = []
+    mw = make_mw(build_app(calls), rec.client())
+    await mw.refresh_routes()
+    r = await post_bank(mw)
+    assert r.status_code == 200 and calls == ["bank"]
+
+
+async def test_check_engine_down_lets_the_request_through(rec):
+    calls = []
+    mw = make_mw(build_app(calls), rec.client())
+    await mw.refresh_routes()
+    rec.fail = True
+    r = await post_bank(mw)
+    assert r.status_code == 200 and calls == ["bank"]
+
+
+async def test_check_slower_than_the_timeout_lets_the_request_through(rec):
+    rec.check_hang = asyncio.Event()  # never set: the engine "hangs"
+    calls = []
+    mw = make_mw(build_app(calls), rec.client(), check_timeout=0.05)
+    await mw.refresh_routes()
+    r = await post_bank(mw)
+    assert r.status_code == 200 and calls == ["bank"]
+
+
+async def test_check_timeout_defaults_to_12_seconds(rec):
+    mw = make_mw(build_app(), rec.client())
+    assert mw.check_timeout == 12.0 and mw.routes_poll_interval > 0
+
+
+async def test_non_critical_routes_are_not_checked(rec):
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_routes()
+    async with client_for(mw) as c:
+        await c.get("/items/1", cookies=BANK)  # normal
+    assert rec.checks == []
+
+
+async def test_same_method_and_template_only_gets_checked(rec):
+    # GET on the bank route is not the critical POST (the class is per method + route)
+    app = build_app()
+
+    @app.get("/payouts/bank-account")
+    async def view():
+        return {"ok": True}
+
+    mw = make_mw(app, rec.client())
+    await mw.refresh_routes()
+    async with client_for(mw) as c:
+        r = await c.get("/payouts/bank-account", cookies=BANK)
+    assert r.status_code == 200 and rec.checks == []
+
+
+async def test_check_event_matches_the_batched_event_id(rec):
+    mw = make_mw(build_app(), rec.client(), trusted_proxies=1)
+    await mw.refresh_routes()
+    async with client_for(mw) as c:
+        await c.post(
+            "/payouts/bank-account", content=b"x", cookies={**BANK, "vrd_did": "d_7"},
+            headers={"X-Forwarded-For": "203.0.113.9", "User-Agent": "UA-test"},
+        )
+    await mw.flush()
+    (check,) = rec.checks
+    (sent,) = rec.events
+    ev = check["event"]
+    assert ev["id"] == sent["id"]
+    assert ev["user_id"] == "u_42" and ev["session_id"] == "s_atk"
+    assert ev["ip"] == "203.0.113.9" and ev["device_id"] == "d_7"
+    assert ev["method"] == "POST" and ev["route"] == "/payouts/bank-account"
+    assert ev["ts"].endswith("Z") and ev["user_agent"] == "UA-test"
+    # The engine keeps the first write for an id, so the pre-check carries a
+    # placeholder status and the real one only travels in the batch.
+    assert ev["status"] == 200 and ev["bytes"] == 0
+    assert sent["status"] == 200
+
+
+async def test_blocked_by_check_is_batched_as_403_with_the_same_id(rec):
+    rec.check_body = {"verdict": "block", "decision_id": "d_1"}
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_routes()
+    r = await post_bank(mw)
+    await mw.flush()
+    (sent,) = rec.events
+    assert sent["id"] == rec.checks[0]["event"]["id"]
+    assert sent["status"] == 403 and sent["bytes"] == len(r.content)
+    assert sent["route"] == "/payouts/bank-account"
+    assert "set-cookie" not in r.headers  # no device cookie for a refused client
+
+
+async def test_new_device_cookie_is_issued_on_allow_and_matches_the_check(rec):
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_routes()
+    r = await post_bank(mw)
+    did = rec.checks[0]["event"]["device_id"]
+    assert did.startswith("d_") and f"vrd_did={did}" in r.headers["set-cookie"]
+
+
+async def test_critical_request_without_user_or_session_is_not_checked(rec):
+    calls = []
+    mw = make_mw(build_app(calls), rec.client())
+    await mw.refresh_routes()
+    async with client_for(mw) as c:
+        await c.post("/payouts/bank-account", content=b"x")
+        await c.post("/payouts/bank-account", content=b"x", cookies={"uid": "u_42"})
+    assert rec.checks == [] and calls == ["bank", "bank"]
+
+
+async def test_routes_never_loaded_means_no_check(rec):
+    calls = []
+    mw = make_mw(build_app(calls), rec.client())
+    r = await post_bank(mw)
+    assert r.status_code == 200 and rec.checks == [] and calls == ["bank"]
+
+
+async def test_routes_load_failure_means_no_check(rec):
+    rec.routes_status = 500
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_routes()
+    await post_bank(mw)
+    assert rec.checks == []
+
+
+async def test_routes_refresh_picks_up_a_newly_critical_route(rec):
+    rec.routes = []
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_routes()
+    await post_bank(mw)
+    assert rec.checks == []
+    rec.routes = [{"method": "POST", "route": "/payouts/bank-account", "class": "critical"}]
+    await mw.refresh_routes()
+    await post_bank(mw)
+    assert len(rec.checks) == 1
+
+
+async def test_routes_refresh_keeps_last_critical_set_on_errors(rec):
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_routes()
+    rec.routes_status = 503
+    await mw.refresh_routes()
+    rec.routes_status = 200
+    rec.fail = True
+    await mw.refresh_routes()
+    rec.fail = False
+    await post_bank(mw)
+    assert len(rec.checks) == 1
+
+
+async def test_routes_garbage_payload_keeps_last_critical_set(rec):
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_routes()
+    rec.routes = "nonsense"
+    await mw.refresh_routes()
+    await post_bank(mw)
+    assert len(rec.checks) == 1
+
+
+async def test_blocklisted_request_is_refused_without_a_check(rec):
+    rec.version = 1
+    rec.blocklist["sessions"] = ["s_atk"]
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_blocklist()
+    await mw.refresh_routes()
+    r = await post_bank(mw)
+    assert r.status_code == 403 and rec.checks == []
+
+
+async def test_end_to_end_critical_request_is_stopped_before_it_runs():
+    engine = create_engine(tokens={TOKEN}, seed=SEED, routes=ROUTES)
+    engine_client = httpx.AsyncClient(transport=httpx.ASGITransport(app=engine), base_url=ENGINE_URL)
+    calls = []
+    mw = make_mw(build_app(calls), engine_client, trusted_proxies=1)
+    await mw.refresh_routes()
+
+    def xff(ip):
+        return {"X-Forwarded-For": f"9.9.9.9, {ip}"}
+
+    async with client_for(mw) as c:
+        r = await c.post("/payouts/bank-account", content=b"x", cookies={"uid": "u_42", "sid": "s_atk"},
+                         headers=xff("203.0.113.9"))
+        assert r.status_code == 403 and r.json() == {"error": "blocked"} and calls == []
+        # the owner's own use of the critical route is allowed
+        r = await c.post("/payouts/bank-account", content=b"x", cookies={"uid": "u_42", "sid": "s_own"},
+                         headers=xff("190.202.14.7"))
+        assert r.status_code == 200 and calls == ["bank"]
+        await mw.flush()
+        # the engine already blocked the attacker's session: even a normal route is refused
+        await mw.refresh_blocklist()
+        r = await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_atk"}, headers=xff("203.0.113.9"))
+        assert r.status_code == 403
+
+
+async def test_background_loads_routes_on_startup(rec):
+    mw = make_mw(build_app(), rec.client(), background=True, routes_poll_interval=3600.0,
+                 flush_interval=3600.0, poll_interval=3600.0)
+    async with client_for(mw) as c:
+        await c.get("/items/1")  # the first request starts the background tasks
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+    assert ("POST", "/payouts/bank-account") in mw.critical
+    await mw.aclose()

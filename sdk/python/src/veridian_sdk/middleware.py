@@ -2,7 +2,9 @@
 
 Reports one event per request to the engine (in the background, batched) and
 refuses requests whose session, IP or user is on the engine's blocklist
-(each refusal is reported as a 403 event too). It is fail-open: the engine being slow or down never delays or breaks the app.
+(each refusal is reported as a 403 event too). Requests on `critical` routes
+are also checked with the engine before the app runs. It is fail-open: the engine
+being slow or down never delays or breaks the app.
 Request and response bodies are never read into events.
 """
 
@@ -24,6 +26,8 @@ DEVICE_COOKIE = "vrd_did"
 DEVICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 MAX_BATCH = 200
 DEFAULT_EXCLUDE_PATHS = ("/static",)
+CHECK_TIMEOUT = 12.0  # contract 9: the engine's judge may take up to ~10 s on a gray deviation
+ROUTES_POLL_INTERVAL = 30.0
 
 
 def resolve_client_ip(scope: dict, trusted_proxies: int = 0) -> str:
@@ -119,6 +123,8 @@ class VeridianMiddleware:
         flush_interval: float = 2.0,
         poll_interval: float = 2.0,
         max_queue: int = 1000,
+        routes_poll_interval: float = ROUTES_POLL_INTERVAL,
+        check_timeout: float = CHECK_TIMEOUT,
         background: bool = True,
         exclude_paths: tuple[str, ...] = DEFAULT_EXCLUDE_PATHS,
     ):
@@ -131,7 +137,14 @@ class VeridianMiddleware:
         `exclude_paths` are path prefixes (whole segments) that pass straight
         through: no event, no device cookie and no blocklist check. Static
         assets are not user actions, and a blocked attacker only needs to be
-        stopped on the app's routes, so `/static` is excluded by default."""
+        stopped on the app's routes, so `/static` is excluded by default.
+
+        Routes the engine classifies `critical` (GET /v1/routes, read at start
+        and every `routes_poll_interval` seconds) are checked with
+        POST /v1/check before the app runs; a `block` verdict answers 403 and
+        the app is never called. Every other outcome (error, non-200, unknown
+        verdict, more than `check_timeout` seconds) lets the request through,
+        and with no routes loaded nothing is checked."""
         self.app = app
         self.token = token
         self.base_url = base_url.rstrip("/")
@@ -142,16 +155,20 @@ class VeridianMiddleware:
         self.client = http_client or httpx.AsyncClient(timeout=2.0)
         self.flush_interval = flush_interval
         self.poll_interval = poll_interval
+        self.routes_poll_interval = routes_poll_interval
+        self.check_timeout = check_timeout
         self.background = background
         self.queue: deque[dict] = deque(maxlen=max_queue)  # drops oldest when full
         self.blocklist_version: int | None = None
         self.blocked = {"users": set(), "sessions": set(), "ips": set()}
+        self.critical: set[tuple[str, str]] = set()  # (METHOD, route template); last known
         self._tasks: list[asyncio.Task] = []
 
     # --- ASGI --------------------------------------------------------------
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
+            self._ensure_background()  # load the routes at startup, before the first request
             await self.app(scope, self._watch_shutdown(receive), send)
             return
         if scope["type"] != "http":
@@ -165,21 +182,33 @@ class VeridianMiddleware:
         request = Request(scope)
         ip = resolve_client_ip(scope, self.trusted_proxies)
 
+        def template() -> str:
+            # The app has not run yet, so the route template is matched by hand.
+            return _template_without_calling(scope, _routes_of(scope.get("app") or self.app))
+
         if self._is_blocked(request, ip):
             response = JSONResponse({"error": "blocked"}, status_code=403)
             await response(scope, receive, send)
-            # The app is not called, so the route template is matched by hand.
             # The device cookie is only read here, never issued to a blocked client.
-            self._record(
-                scope, request, ip, _cookie(scope, DEVICE_COOKIE), 403, len(response.body),
-                route=_template_without_calling(scope, _routes_of(scope.get("app") or self.app)),
-            )
+            self._record(scope, request, ip, _cookie(scope, DEVICE_COOKIE), 403, len(response.body), route=template())
             return
 
         device_id = _cookie(scope, DEVICE_COOKIE)
         new_device = device_id is None
         if new_device:
             device_id = "d_" + uuid.uuid4().hex[:12]
+
+        event_id = "e_" + uuid.uuid4().hex
+        route = template() if self.critical else None
+        if route is not None and (scope["method"].upper(), route) in self.critical and await self._check_blocks(
+            scope, request, ip, device_id, route, event_id
+        ):
+            response = JSONResponse({"error": "blocked"}, status_code=403)
+            await response(scope, receive, send)
+            # Same id as the pre-check. The engine keeps the first write of an id, so the
+            # 403 only reaches it when the pre-check never got through; no cookie either.
+            self._record(scope, request, ip, device_id, 403, len(response.body), route=route, event_id=event_id)
+            return
         status = 0
         size = 0
 
@@ -203,7 +232,7 @@ class VeridianMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         finally:
-            self._record(scope, request, ip, device_id, status, size)
+            self._record(scope, request, ip, device_id, status, size, event_id=event_id)
 
     def _is_excluded(self, path: str) -> bool:
         return any(path == p or path.startswith(p + "/") for p in self.exclude_paths)
@@ -260,28 +289,81 @@ class VeridianMiddleware:
 
     # --- events ------------------------------------------------------------
 
-    def _record(self, scope, request, ip, device_id, status, size, route=None) -> None:
+    def _event(self, scope, request, ip, device_id, status, size, route=None, event_id=None) -> dict | None:
+        """One contract 1 event, or None when there is no user to attribute it to."""
+        user = self._safe(self.user_id, request)
+        if not user:
+            return None
+        return {
+            "id": event_id or "e_" + uuid.uuid4().hex,
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "user_id": user,
+            "session_id": self._safe(self.session_id, request),
+            "ip": ip,
+            "user_agent": (_header(scope, b"user-agent") or "")[:200],
+            "device_id": device_id,
+            "method": scope["method"],
+            "route": route if route is not None else _route_template(scope),
+            "status": status,
+            "bytes": size,
+        }
+
+    def _record(self, scope, request, ip, device_id, status, size, route=None, event_id=None) -> None:
         try:
-            user = self._safe(self.user_id, request)
-            if not user:
-                return
-            self.queue.append(
-                {
-                    "id": "e_" + uuid.uuid4().hex,
-                    "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "user_id": user,
-                    "session_id": self._safe(self.session_id, request),
-                    "ip": ip,
-                    "user_agent": (_header(scope, b"user-agent") or "")[:200],
-                    "device_id": device_id,
-                    "method": scope["method"],
-                    "route": route if route is not None else _route_template(scope),
-                    "status": status,
-                    "bytes": size,
-                }
-            )
+            event = self._event(scope, request, ip, device_id, status, size, route, event_id)
+            if event is not None:
+                self.queue.append(event)
         except Exception:
             log.exception("veridian: could not record event")
+
+    # --- critical routes ---------------------------------------------------
+
+    async def refresh_routes(self) -> None:
+        """Read the route classification once. Any failure keeps the last known set."""
+        try:
+            r = await self.client.get(f"{self.base_url}/v1/routes", headers=self._auth())
+            if r.status_code != 200:
+                return
+            self.critical = {
+                (str(row["method"]).upper(), str(row["route"]))
+                for row in r.json()["routes"]
+                if row["class"] == "critical"
+            }
+        except Exception as exc:
+            log.warning("veridian: routes refresh failed: %s", exc)
+
+    async def _check_blocks(self, scope, request, ip, device_id, route, event_id) -> bool:
+        """Ask the engine (contract 9) whether this critical request must be refused.
+
+        True only on an explicit `block`; every failure answers False (fail-open).
+
+        The engine stores the first event it sees for an id, so the pre-check
+        carries the id the batched event will have, `status` 200 (the engine
+        accepts 100-599 only; the app has not run) and `bytes` 0. Consequence: a
+        request stopped here is stored with status 200 and not 403 on the
+        engine side; the batched 403 is ignored as a duplicate. The engine needs
+        a user and a session to judge, so without them the check is skipped.
+        """
+        try:
+            event = self._event(scope, request, ip, device_id, 200, 0, route, event_id)
+            if event is None or not event["session_id"] or not ip:
+                return False
+            r = await asyncio.wait_for(
+                self.client.post(
+                    f"{self.base_url}/v1/check",
+                    json={"event": event},
+                    headers=self._auth(),
+                    timeout=self.check_timeout,
+                ),
+                self.check_timeout,
+            )
+            if r.status_code != 200:
+                return False
+            body = r.json()
+            return isinstance(body, dict) and body.get("verdict") == "block"
+        except Exception as exc:
+            log.warning("veridian: check failed, letting the request through: %s", exc)
+            return False
 
     async def flush(self) -> None:
         """Send queued events once. On failure they stay queued (ids make the
@@ -315,6 +397,7 @@ class VeridianMiddleware:
         self._tasks = [
             loop.create_task(self._loop(self.flush, self.flush_interval)),
             loop.create_task(self._loop(self.refresh_blocklist, self.poll_interval)),
+            loop.create_task(self._loop(self.refresh_routes, self.routes_poll_interval)),
         ]
 
     @staticmethod
