@@ -1,0 +1,219 @@
+<title>Ensayo del jurado</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+/* Layout: one question card at a time, a rail of numbered questions above it, coach controls below. */
+:root{
+  --bg:#eef1f6; --surface:#ffffff; --fg:#1b2333; --muted:#5b6578; --line:#d6dbe6;
+  --accent:#b4540f; --accent-soft:#fbeadb; --good:#1f7a4d; --warn:#9a3412;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121826; --surface:#1b2335; --fg:#e7ebf3; --muted:#9aa4b8; --line:#2c3650;
+  --accent:#f0a05a; --accent-soft:#3a2a1c; --good:#5fd39a; --warn:#fb923c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121826; --surface:#1b2335; --fg:#e7ebf3; --muted:#9aa4b8; --line:#2c3650;
+  --accent:#f0a05a; --accent-soft:#3a2a1c; --good:#5fd39a; --warn:#fb923c; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.55}
+.wrap{max-width:820px;margin:0 auto;padding-block:28px 60px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;gap:20px}
+h1{font-family:var(--display);font-size:clamp(28px,5vw,40px);margin:0;text-wrap:balance;line-height:1.1}
+.lede{color:var(--muted);margin:6px 0 0;max-width:62ch}
+.rail{display:flex;flex-wrap:wrap;gap:6px}
+.rail button{font-family:var(--mono);font-size:14px;width:40px;height:40px;border-radius:8px;
+  border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.rail button[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.rail button.done{border-color:var(--good);color:var(--good)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;display:grid;gap:16px}
+.tag{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.q{font-family:var(--display);font-size:clamp(21px,3.2vw,26px);font-weight:700;margin:0;text-wrap:balance;line-height:1.25}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{font:600 15px var(--body);padding:10px 16px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--fg);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn:focus-visible,.rail button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.timer{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:22px;color:var(--muted);margin-left:auto}
+.timer.hot{color:var(--warn)}
+.answer{display:grid;gap:14px;border-top:1px dashed var(--line);padding-top:16px}
+.answer h3{font:600 13px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 4px}
+.say{background:var(--accent-soft);border-radius:10px;padding:14px 16px;margin:0;max-width:65ch}
+.answer ul{margin:0;padding-left:20px}
+.avoid li{color:var(--warn)}
+.proof{font-family:var(--mono);font-size:13px;color:var(--muted)}
+.settings{display:flex;flex-wrap:wrap;gap:12px;align-items:center;color:var(--muted);font-size:14px}
+select,input[type=range]{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px}
+.note{font-size:14px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Ensayo del jurado · Veridian</h1>
+    <p class="lede">Escucha la pregunta, responde en voz alta antes de que acabe el tiempo y luego compara con la respuesta modelo. Las respuestas salen del código del repo; lo que aún no está medido se dice como tal.</p>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="Preguntas"></nav>
+
+  <article class="card" aria-live="polite">
+    <div class="tag" id="tag"></div>
+    <p class="q" id="q"></p>
+    <div class="controls">
+      <button class="btn primary" id="ask">▶ Escuchar pregunta</button>
+      <button class="btn" id="start">Responder (45 s)</button>
+      <button class="btn" id="reveal">Ver respuesta</button>
+      <span class="timer" id="timer">0:45</span>
+    </div>
+    <section class="answer" id="answer" hidden>
+      <div>
+        <h3>Qué decir (≈30 s)</h3>
+        <p class="say" id="say"></p>
+      </div>
+      <div class="controls">
+        <button class="btn primary" id="speak">▶ Escuchar respuesta</button>
+        <button class="btn" id="stop">■ Parar</button>
+        <button class="btn" id="next">Siguiente →</button>
+      </div>
+      <div><h3>Puntos clave</h3><ul id="keys"></ul></div>
+      <div><h3>Evita</h3><ul class="avoid" id="avoid"></ul></div>
+      <div class="proof" id="proof"></div>
+    </section>
+  </article>
+
+  <div class="settings">
+    <label for="voice">Voz</label><select id="voice"></select>
+    <label for="rate">Velocidad</label><input type="range" id="rate" min="0.7" max="1.4" step="0.1" value="1">
+    <label><input type="checkbox" id="shuffle"> Orden aleatorio</label>
+  </div>
+  <p class="note" id="ttsnote">La voz usa el sintetizador de tu navegador (funciona mejor en Chrome o Edge).</p>
+</div>
+
+<script>
+const QS = [
+ {tag:"Precisión", q:"Si el dueño viaja o cambia de wifi y Veridian lo bloquea en medio de un pago, ¿qué tasa de falsos positivos tienen?",
+  say:"Todavía no tenemos una tasa medida con usuarios reales, y no vamos a inventar una. Lo que sí está diseñado para reducirlos: una red nueva sola no bloquea. El bloqueo inmediato exige dos cosas a la vez, red nueva y una ruta crítica que esa persona nunca usó. Los casos dudosos los juzga la IA con el contexto del perfil, y si es un falso positivo, el panel tiene 'marcar como normal', que desbloquea y enseña al perfil.",
+  keys:["Admitir que no hay cifra medida","Bloqueo inmediato = red nueva + ruta crítica nunca usada","'Marcar normal' corrige y aprende"],
+  avoid:["Dar un porcentaje sin fuente","Decir 'cero falsos positivos'"],
+  proof:"engine/veridian_engine/rules.py · contrato 3 'Marcar normal' en docs/REPARTO.md"},
+ {tag:"Arranque en frío", q:"Los primeros días no hay perfil. ¿El usuario queda desprotegido justo cuando la credencial recién filtrada es más peligrosa?",
+  say:"El perfil se empieza a construir desde los primeros eventos: aprende de lo que pasó hace más de diez minutos y no fue marcado como sospechoso. Mientras el perfil es pobre, las rutas críticas siguen protegidas por la consulta previa y el juez. Es un límite real del enfoque y lo decimos: el primer día protege menos que el día treinta.",
+  keys:["Aprende con un retraso de 10 minutos (configurable)","Rutas críticas siempre pasan por /v1/check","Reconocerlo como límite"],
+  avoid:["Negar el problema"],
+  proof:"settings.py: learn_delay_min = 10 · profile.py"},
+ {tag:"Disponibilidad", q:"Si el motor se cae, las rutas críticas quedan abiertas. ¿No basta con tumbar Veridian para atacar sin que nadie lo vea?",
+  say:"Elegimos fail-open a propósito: una startup no nos instala si una caída nuestra le tumba su app. Pero el atacante no controla nuestra caída desde la credencial robada, y los eventos se siguen reportando en lote cuando el motor vuelve, así que el acceso queda registrado y se evalúa después. Es un compromiso explícito, documentado en las decisiones.",
+  keys:["Fail-open es una decisión consciente","La app del cliente nunca se cae por nosotros","El evento se registra igual y se revisa"],
+  avoid:["Fingir que no es un trade-off"],
+  proof:"docs/REPARTO.md contrato 9 (timeout 12 s, fail-open)"},
+ {tag:"Evasión", q:"Si el ladrón usa un proxy residencial en la misma ciudad y entra en horario normal, ¿qué lo delata?",
+  say:"La red es solo una señal. Comparamos también dispositivo, horario, ritmo y, sobre todo, qué partes del sistema toca. Un ladrón casi siempre va directo a lo valioso: exportar clientes, cambiar la cuenta bancaria. Esa ruta crítica que el dueño nunca usó es la señal más difícil de imitar, porque para imitarla tendría que conocer la rutina exacta de la víctima.",
+  keys:["Varias señales, no solo IP","El recorrido hacia lo crítico es lo que delata","Imitar la rutina exacta es caro"],
+  avoid:["Prometer que se detecta todo"],
+  proof:"README 'Cómo funciona' · route_classes.py"},
+ {tag:"IA", q:"¿Qué decide el modelo que no podría decidir una regla?",
+  say:"La regla resuelve lo obvio, rápido y sin costo. La IA entra solo en la zona gris, donde ninguna regla fija acierta: por ejemplo, red conocida con dispositivo nuevo a una hora rara. Ahí combina todas las señales con el historial de esa persona y además explica en español por qué bloqueó, algo que el dueño de la startup necesita para confiar. Si la IA falla, decide una regla de respaldo.",
+  keys:["Regla para lo obvio, IA para lo gris","La explicación legible es parte del valor","Respaldo determinista si la IA falla"],
+  avoid:["'Usamos IA porque es más inteligente'"],
+  proof:"engine/veridian_engine/ai/judge.py (_fallback)"},
+ {tag:"Costo y latencia", q:"Hasta diez segundos de espera en un caso gris y una llamada al LLM por desvío. ¿Cuánto cuesta y qué pasa con la experiencia?",
+  say:"El dueño legítimo casi nunca espera: sin desvío no hay IA. Solo espera lo que es a la vez sospechoso y crítico, y para ese camino usamos un modelo rápido, Haiku. El costo por usuario todavía no lo medimos en producción, así que no damos cifra, pero escala con los desvíos, no con el tráfico total.",
+  keys:["Sin desvío = sin IA = sin espera","Modelo rápido en la ruta síncrona","El costo escala con desvíos, no con tráfico"],
+  avoid:["Inventar un costo mensual"],
+  proof:"settings.py: VERIDIAN_SYNC_MODEL por defecto Haiku"},
+ {tag:"Seguridad de la IA", q:"El evento trae datos que controla el atacante. ¿Puede manipular al juez con prompt injection?",
+  say:"Lo pensamos desde el inicio. Todo lo que viene del evento va dentro de un bloque marcado como datos no confiables, y el prompt le dice al modelo que nunca siga instrucciones de ahí. Además escapamos el contenido para que un texto no pueda cerrar ese bloque. Y la IA no tiene herramientas: solo devuelve una decisión, no puede ejecutar nada.",
+  keys:["Bloque <untrusted_data> delimitado","Escape para que no se pueda cerrar el bloque","El juez no tiene permisos ni herramientas"],
+  avoid:["Decir que es imposible de engañar"],
+  proof:"ai/judge.py: DATA_OPEN / DATA_CLOSE"},
+ {tag:"Privacidad", q:"Envían IP, horario y rutas de cada usuario final a un tercero. ¿Cómo encaja con la ley de datos?",
+  say:"Recogemos lo mínimo: un identificador que la app ya tiene, red, hora y ruta, nada del contenido de las peticiones. Cada proyecto tiene retención configurable y los datos viejos se borran solos, salvo los bloqueos abiertos y su evidencia. También hay borrado explícito por usuario. La política de privacidad está en el repo.",
+  keys:["Datos mínimos, sin contenido","Retención por proyecto con purga automática","Borrado a pedido"],
+  avoid:["'Cumplimos con todo' sin detalle"],
+  proof:"engine/veridian_engine/retention.py · docs/privacidad/"},
+ {tag:"Mercado", q:"Akamai, Cloudflare o Auth0 ya detectan anomalías. ¿Por qué una startup los elegiría a ustedes?",
+  say:"Esas soluciones existen, pero son enterprise o miran solo el login. Veridian mira qué hace la credencial después de entrar, dentro de la app, que es donde ocurre el daño. Y se instala en minutos con un middleware, pensado para startups sin equipo de seguridad.",
+  keys:["Después del login, no solo en el login","Minutos de instalación","Para equipos sin seguridad dedicada"],
+  avoid:["Hablar mal de la competencia"],
+  proof:"README 'Ya existe, pero enterprise' · docs/HALLAZGOS.md"},
+ {tag:"Honestidad", q:"De lo que vimos en la demo, ¿qué funciona de punta a punta y qué está simulado?",
+  say:"El motor, el middleware, el juez de IA y el panel son reales y corren desplegados. Lo que preparamos para la demo es el historial: sembramos días de uso normal para que el perfil exista, porque no podemos esperar una semana en vivo. La app bancaria es nuestra, de ejemplo.",
+  keys:["Separar real de preparado sin rodeos","El historial sembrado es lo único simulado","La app es de ejemplo"],
+  avoid:["Ocultar el seed","Exagerar clientes o usuarios"],
+  proof:"engine/scripts/seed_demo_history.py · edge/demo_app"}
+];
+
+const $ = id => document.getElementById(id);
+const synth = window.speechSynthesis;
+let order = QS.map((_,i)=>i), pos = 0, timerId = null, voices = [];
+const done = new Set();
+
+function pickVoices(){
+  if(!synth) return;
+  voices = synth.getVoices().filter(v=>v.lang.toLowerCase().startsWith("es"));
+  const sel = $("voice"); sel.innerHTML = "";
+  (voices.length ? voices : synth.getVoices()).forEach((v,i)=>{
+    const o = document.createElement("option"); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; sel.append(o);
+  });
+}
+function speak(text){
+  if(!synth){ $("ttsnote").textContent = "Este navegador no tiene síntesis de voz; lee el texto en voz alta tú."; return; }
+  synth.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = synth.getVoices().find(x=>x.name===$("voice").value);
+  if(v){ u.voice = v; u.lang = v.lang; } else u.lang = "es-ES";
+  u.rate = parseFloat($("rate").value);
+  synth.speak(u);
+}
+function stopAll(){ if(synth) synth.cancel(); clearInterval(timerId); timerId = null; }
+
+function renderRail(){
+  const r = $("rail"); r.innerHTML = "";
+  order.forEach((qi,i)=>{
+    const b = document.createElement("button");
+    b.textContent = String(i+1).padStart(2,"0");
+    b.setAttribute("aria-label", `Pregunta ${i+1}`);
+    b.setAttribute("aria-current", i===pos ? "true" : "false");
+    if(done.has(qi)) b.classList.add("done");
+    b.onclick = ()=>{ pos = i; show(); };
+    r.append(b);
+  });
+}
+function list(el, items){ el.innerHTML = ""; items.forEach(t=>{ const li=document.createElement("li"); li.textContent=t; el.append(li); }); }
+function show(){
+  stopAll();
+  const d = QS[order[pos]];
+  $("tag").textContent = `${pos+1} de ${QS.length} · ${d.tag}`;
+  $("q").textContent = d.q;
+  $("say").textContent = d.say;
+  list($("keys"), d.keys); list($("avoid"), d.avoid);
+  $("proof").textContent = "Respaldo en el repo: " + d.proof;
+  $("answer").hidden = true;
+  $("timer").textContent = "0:45"; $("timer").classList.remove("hot");
+  renderRail();
+}
+function reveal(){ clearInterval(timerId); timerId=null; $("answer").hidden = false; done.add(order[pos]); renderRail(); }
+function startTimer(){
+  clearInterval(timerId); if(synth) synth.cancel();
+  let t = 45; const el = $("timer");
+  const paint = ()=>{ el.textContent = `0:${String(t).padStart(2,"0")}`; el.classList.toggle("hot", t<=10); };
+  paint();
+  timerId = setInterval(()=>{ t--; paint(); if(t<=0){ reveal(); } }, 1000);
+}
+
+$("ask").onclick = ()=> speak(QS[order[pos]].q);
+$("start").onclick = startTimer;
+$("reveal").onclick = reveal;
+$("speak").onclick = ()=> speak(QS[order[pos]].say);
+$("stop").onclick = stopAll;
+$("next").onclick = ()=>{ pos = (pos+1) % QS.length; show(); };
+$("shuffle").onchange = e=>{
+  order = QS.map((_,i)=>i);
+  if(e.target.checked) for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+  pos = 0; show();
+};
+if(synth){ pickVoices(); synth.onvoiceschanged = pickVoices; }
+else $("ttsnote").textContent = "Este navegador no tiene síntesis de voz; lee el texto en voz alta tú.";
+show();
+</script>
