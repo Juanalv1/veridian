@@ -463,3 +463,60 @@ def test_patch_changes_only_the_given_fields(client, engine):
 def test_patch_validates_fields(client, engine, body):
     admin, pid = member_as(client, engine, "admin")
     assert client.patch(f"/v1/projects/{pid}", json=body, headers=acting(admin)).status_code == 422
+
+
+# --- deleting an organization: owner only, and only when it has no projects left ---------------
+
+
+def _new_org(client, sub="s-c", email=CREATOR, name="Acme"):
+    person = login(client, sub=sub, email=email)
+    org = client.post("/v1/orgs", json={"name": name}, headers=acting(person)).json()
+    return person, org["id"]
+
+
+def test_an_owner_deletes_an_empty_org(client):
+    person, oid = _new_org(client)
+    r = client.delete(f"/v1/orgs/{oid}", headers=acting(person))
+    assert r.status_code == 204 and r.content == b""
+    assert client.get(f"/v1/orgs/{oid}", headers=acting(person)).status_code == 403
+
+
+def test_an_owner_cannot_delete_an_org_that_still_has_projects(client, engine):
+    person, oid = _new_org(client)
+    client.post(f"/v1/orgs/{oid}/projects", json={"name": "Web"}, headers=acting(person))
+    r = client.delete(f"/v1/orgs/{oid}", headers=acting(person))
+    assert r.status_code == 409 and r.json() == {"error": "org_not_empty"}
+    assert client.get(f"/v1/orgs/{oid}", headers=acting(person)).status_code == 200
+
+
+def test_an_org_whose_projects_are_all_deleted_can_be_deleted(client, engine):
+    person, oid = _new_org(client)
+    pid = client.post(f"/v1/orgs/{oid}/projects", json={"name": "Web"}, headers=acting(person)).json()["id"]
+    engine.state.projects[pid].deleted_at = FUTURE  # stand-in for DELETE /v1/projects/{id}, not built yet
+    assert client.delete(f"/v1/orgs/{oid}", headers=acting(person)).status_code == 204
+
+
+@pytest.mark.parametrize("role", ["admin", "viewer"])
+def test_an_admin_or_viewer_cannot_delete_the_org(client, engine, role):
+    person, oid = _new_org(client)
+    engine.state.orgs[oid].invite("m@example.com", role, FUTURE)
+    member = login(client, sub="sub-m", email="m@example.com")
+    r = client.delete(f"/v1/orgs/{oid}", headers=acting(member))
+    assert r.status_code == 403 and r.json() == {"error": "forbidden"}
+    assert client.get(f"/v1/orgs/{oid}", headers=acting(person)).status_code == 200
+
+
+def test_a_non_member_cannot_delete_an_org(client, engine):
+    _, oid = _new_org(client)
+    stranger = login(client, sub="s-x", email="x@example.com")
+    assert client.delete(f"/v1/orgs/{oid}", headers=acting(stranger)).status_code == 403
+    assert client.delete("/v1/orgs/org_nope", headers=acting(stranger)).status_code == 403
+
+
+def test_a_deleted_org_disappears_from_me_orgs_and_login(client):
+    person, oid = _new_org(client)
+    assert client.delete(f"/v1/orgs/{oid}", headers=acting(person)).status_code == 204
+    assert oid not in [o["id"] for o in client.get("/v1/me/orgs", headers=acting(person)).json()["orgs"]]
+    assert oid not in [o["id"] for o in login(client, sub="s-c", email=CREATOR)["orgs"]]
+    assert client.patch(f"/v1/orgs/{oid}", json={"name": "x"}, headers=acting(person)).status_code == 403
+    assert client.post(f"/v1/orgs/{oid}/projects", json={"name": "x"}, headers=acting(person)).status_code == 403
