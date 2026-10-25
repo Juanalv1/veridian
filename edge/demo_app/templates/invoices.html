@@ -14,19 +14,19 @@
 <div class="card flush">
   <div class="scroll">
   <table class="list">
-    <thead><tr><th scope="col">Número</th><th scope="col">Cliente</th><th scope="col">Fecha</th><th scope="col">Estado</th><th scope="col" class="num">Monto</th></tr></thead>
+    <thead><tr><th scope="col">Número</th><th scope="col">Cliente</th><th scope="col" class="opt">Fecha</th><th scope="col">Estado</th><th scope="col" class="num">Monto</th></tr></thead>
     <tbody>
     {% for i in invoices %}
       <tr>
         <td><a class="id" href="/invoices/{{ i.id }}">{{ i.number }}</a></td>
         <td>{{ i.client }}</td>
-        <td class="nowrap">{{ i.date|date_label }}</td>
+        <td class="nowrap opt">{{ i.date|date_label }}</td>
         <td><span class="badge {{ i.status }}">{{ i.status }}</span></td>
         <td class="num">{{ i.amount|money }}</td>
       </tr>
     {% endfor %}
     </tbody>
-    <tfoot><tr><th scope="row" colspan="4">Total</th><td class="num">{{ total|money }}</td></tr></tfoot>
+    <tfoot><tr><th scope="row" colspan="2">Total</th><td class="opt"></td><td></td><td class="num">{{ total|money }}</td></tr></tfoot>
   </table>
   </div>
 </div>

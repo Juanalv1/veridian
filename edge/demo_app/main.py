@@ -46,7 +46,7 @@ def date_label(iso: str) -> str:
 templates.env.filters["money"] = money
 templates.env.filters["date_label"] = date_label
 # Cache-busting query for /static assets: bump when app.css or busy.js change.
-ASSET_VERSION = "3"
+ASSET_VERSION = "4"
 
 USERS = {
     "ana@facturas.demo": {"id": "u_42", "name": "Ana Torres", "company": "Taller Torres C.A."},
