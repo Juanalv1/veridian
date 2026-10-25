@@ -29,8 +29,24 @@ COOKIE = "sid"
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
+
+MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def money(amount: float) -> str:
+    return f"${amount:,.2f}"
+
+
+def date_label(iso: str) -> str:
+    """'2026-10-03' -> '3 oct 2026'."""
+    y, m, d = iso.split("-")
+    return f"{int(d)} {MONTHS[int(m) - 1]} {y}"
+
+
+templates.env.filters["money"] = money
+templates.env.filters["date_label"] = date_label
 # Cache-busting query for /static assets: bump when app.css or busy.js change.
-ASSET_VERSION = "2"
+ASSET_VERSION = "3"
 
 USERS = {
     "ana@facturas.demo": {"id": "u_42", "name": "Ana Torres", "company": "Taller Torres C.A."},
@@ -46,7 +62,7 @@ def _make_invoices(seed: int) -> list[dict]:
     for n in range(1, 9):
         items.append({
             "id": n,
-            "number": f"F-{2026}{seed:02d}{n:03d}",
+            "number": f"F-{n:04d}",
             "client": CLIENTS[(n + seed) % len(CLIENTS)],
             "date": f"2026-10-{n + 2:02d}",
             "amount": 120.0 * n + seed,
@@ -128,7 +144,9 @@ def create_app(
         if (r := guard(request)) is not None:
             return r
         mine = invoices[current_user(request)["id"]]
-        return render(request, "invoices.html", invoices=mine, total=sum(i["amount"] for i in mine))
+        pending = sum(i["amount"] for i in mine if i["status"] == "Pendiente")
+        return render(request, "invoices.html", invoices=mine, active="invoices",
+                      total=sum(i["amount"] for i in mine), pending=pending)
 
     # Declared before /invoices/{id} so "export" is not read as an id.
     @app.get("/invoices/export")
@@ -149,18 +167,20 @@ def create_app(
             return r
         found = next((i for i in invoices[current_user(request)["id"]] if i["id"] == id), None)
         if found is None:
-            return render(request, "message.html", status_code=404, message="Factura no encontrada.")
-        return render(request, "invoice.html", invoice=found)
+            return render(request, "message.html", status_code=404, title="Factura no encontrada",
+                          message="Esta factura no existe o no pertenece a tu empresa.")
+        return render(request, "invoice.html", invoice=found, active="invoices")
 
     def masked(number: str) -> str:
-        return "•" * max(len(number) - 4, 0) + number[-4:]
+        return "•••• " + number[-4:]
 
     @app.get("/payouts/bank-account", response_class=HTMLResponse)
     async def bank_view(request: Request):
         if (r := guard(request)) is not None:
             return r
         acct = bank[current_user(request)["id"]]
-        return render(request, "bank_account.html", bank=acct["bank"], masked=masked(acct["account_number"]))
+        return render(request, "bank_account.html", bank=acct["bank"], masked=masked(acct["account_number"]),
+                      active="bank")
 
     @app.post("/payouts/bank-account", response_class=HTMLResponse)
     async def bank_change(request: Request, bank_name: str = Form("", alias="bank"),
@@ -171,7 +191,7 @@ def create_app(
         acct["bank"] = bank_name.strip()[:60] or acct["bank"]
         acct["account_number"] = account_number.strip()[:34] or acct["account_number"]
         return render(request, "bank_account.html", bank=acct["bank"],
-                      masked=masked(acct["account_number"]), saved=True)
+                      masked=masked(acct["account_number"]), saved=True, active="bank")
 
     def user_id_of(request: Request):
         uid = getattr(request.state, "user_id", None)
