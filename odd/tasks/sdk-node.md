@@ -22,11 +22,11 @@ Only the Python SDK exists. Source: `HANDOFF.md`, "José Gómez: SDK de npm y re
 
 ## TDD
 
-Mode: on (project convention, `INIT.md`). Runner: to be fixed by T1 (`node --test`, Node 24, no extra test deps unless needed).
+Mode: on (project convention, `INIT.md`). Runner: `node --test` in `sdk/node` (Node 24, no test dependencies; `express` only as a dev dependency for adapter tests). Package: plain JavaScript ESM with JSDoc, no build step, no runtime dependencies (global `fetch`, Node >= 18).
 
 ## Tasks
 
-- [ ] T1 Package scaffold, config/env defaults and startup errors, client IP and device cookie. Route: delegated.
+- [x] T1 Package scaffold, config/env defaults and startup errors, client IP and device cookie. Route: delegated (single writer). Evidence: 264e741, 29 tests pass (RED first: modules missing).
 - [ ] T2 Event batching, blocklist polling and enforcement, 401/429 pass-through. Route: delegated.
 - [ ] T3 Critical routes + `POST /v1/check` pre-check, route report at startup, Express and Next.js adapters. Route: delegated.
 - [ ] T4 README quickstart run as-is against the fake engine; docs. Route: delegated.

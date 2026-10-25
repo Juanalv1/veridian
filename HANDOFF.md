@@ -28,6 +28,7 @@ Lo que Maikol cerró en el motor queda en `main`, con tests y documentado en `RE
 - U13 parte 1: los endpoints del contrato 14 y el hilo de retención (`8ad03cb`).
 
 Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Suite: 665 passed.
+3. **SDK de npm (`sdk/node/`, plan `odd/tasks/sdk-node.md`):** T1 hecho (`264e741`): paquete `veridian-sdk` (JavaScript ESM sin dependencias), configuración, errores al arrancar, IP del cliente, cookie `vrd_did` y sesión detectada.
 
 ### Carlos Navas: motor (acceso, rutas y datos)
 
