@@ -23,9 +23,9 @@ def text(html):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
 
 
-def new_engine(creators=(), owners=(EMAIL,), seed=None):
+def new_engine(owners=(EMAIL,), seed=None):
     return create_engine(tokens={TOKEN_A, TOKEN_B}, panel_tokens={PANEL_TOKEN}, bootstrap_owners=set(owners),
-                         org_creators=set(creators), learn_delay=0, seed=seed if seed is not None else [])
+                         learn_delay=0, seed=seed if seed is not None else [])
 
 
 def link(engine):
@@ -318,7 +318,7 @@ def test_the_create_organization_form_follows_the_mockup():
 
 
 def test_creating_an_organization_makes_the_person_owner_and_goes_to_create_its_first_project():
-    engine = new_engine(creators={EMAIL})
+    engine = new_engine()
     panel = panel_of(engine)
     r = panel.post("/organizaciones/nueva", data={"name": "  Acme  "})
     assert r.status_code == 303
@@ -332,20 +332,23 @@ def test_creating_an_organization_makes_the_person_owner_and_goes_to_create_its_
 
 
 def test_when_the_engine_says_forbidden_the_pilot_note_is_shown_and_nothing_is_created():
-    engine = new_engine(creators=())
-    panel = panel_of(engine)
-    before = len(engine.state.orgs)
+    seen = []
+
+    def handler(request):
+        seen.append(request.method)
+        return httpx.Response(403, json={"error": "forbidden"})
+
+    panel = make_panel(stub_client(handler))
     r = panel.post("/organizaciones/nueva", data={"name": "Acme"})
-    assert r.status_code == 403
+    assert r.status_code == 403 and seen == ["POST"]
     assert "limitado durante el piloto" in text(r.text) and 'role="alert"' in r.text
     assert "[correo de soporte]" in r.text
     assert 'value="Acme"' in r.text
-    assert len(engine.state.orgs) == before
 
 
 @pytest.mark.parametrize("name", ["", "   ", "x" * 81])
 def test_an_invalid_organization_name_is_an_inline_error_and_never_reaches_the_engine(name):
-    engine = new_engine(creators={EMAIL})
+    engine = new_engine()
     panel = panel_of(engine)
     before = len(engine.state.orgs)
     r = panel.post("/organizaciones/nueva", data={"name": name})
@@ -354,7 +357,7 @@ def test_an_invalid_organization_name_is_an_inline_error_and_never_reaches_the_e
 
 
 def test_creating_an_organization_needs_the_csrf_token():
-    engine = new_engine(creators={EMAIL})
+    engine = new_engine()
     panel = panel_of(engine)
     r = panel.post("/organizaciones/nueva", data={"name": "Acme"}, csrf=False, headers={"Origin": "http://testserver"})
     assert r.status_code == 403 and not [o for o in engine.state.orgs.values() if o.name == "Acme"]
@@ -510,7 +513,7 @@ def test_when_saving_the_mode_fails_the_project_is_still_opened_and_the_person_i
 
 
 def test_the_first_project_of_a_new_org_can_be_created_without_any_current_project():
-    engine = new_engine(creators={EMAIL})
+    engine = new_engine()
     panel = panel_of(engine)
     panel.post("/organizaciones/nueva", data={"name": "Acme"})
     org_id = session_of(panel)["org"]

@@ -102,7 +102,7 @@ erDiagram
 
 `EVENT` y `DECISION` son las tablas actuales con `client_id` renombrado a `project_id`.
 
-- **Person:** una cuenta de Google verificada. La identidad es `google_sub` (estable); el `email` puede cambiar. Una persona existe una vez, sin importar a cuántas organizaciones pertenezca.
+- **Person:** una persona con correo verificado, entre por Google o por GitHub. Cada proveedor aporta su id (`google_sub`: el `sub` de Google o `github:<id>`), estable; el mismo correo verificado por dos proveedores es la misma persona. El `email` puede cambiar. Una persona existe una vez, sin importar a cuántas organizaciones pertenezca.
 - **Organization:** la empresa o cuenta que agrupa proyectos y personas. Es el nivel donde viven los miembros y los roles. Una persona puede pertenecer a varias. Se elimina con borrado lógico (`deleted_at`), solo por un `owner` y solo cuando no le quedan proyectos sin eliminar (contrato 10).
 - **Project:** la unidad de datos y de claves. Reemplaza a `client_id` y pertenece a **una** organización (`org_id`). Todo dato de la plataforma de datos cuelga de un proyecto. No tiene miembros ni roles propios: hereda los de su organización.
 - **Membership:** la relación persona–organización con un rol. Es la única fuente de permisos y vale para todos los proyectos de la organización. Una persona tiene un solo rol por organización.

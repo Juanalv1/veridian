@@ -561,7 +561,6 @@ def create_app(
     clock=time.monotonic,
     panel_tokens: set[str] | None = None,
     bootstrap_owners: set[str] | None = None,
-    org_creators: set[str] | None = None,
     invitation_days: int | None = None,
 ) -> FastAPI:
     """Build the fake engine. With no arguments it reads the environment:
@@ -572,9 +571,7 @@ def create_app(
     VERIDIAN_SEED           "demo" or a JSON list of {user_id, ips, routes, devices}
     VERIDIAN_PANEL_TOKEN    service credential of the panel (VERIDIAN_PANEL_TOKENS: comma list, to rotate)
     VERIDIAN_BOOTSTRAP_OWNERS    emails that become owner of the organizations that have no owner, on login
-    VERIDIAN_ORG_CREATORS   emails allowed to create organizations (empty: nobody). Provisional:
-                            open decision 2 of docs/DISENO-PRODUCTO.md. Owners and admins of an
-                            organization create its projects without being on this list.
+    Any signed-in person creates an organization (open signup, decision 2 of docs/DISENO-PRODUCTO.md).
     VERIDIAN_INVITATION_DAYS     days an invitation stays valid (default 14; a setting, not a measured value)
 
     Two callers, as in the design: `sdk` (a project's key: events, check, blocklist, routes) and
@@ -587,7 +584,6 @@ def create_app(
     delay = learn_delay if learn_delay is not None else float(os.environ.get("VERIDIAN_LEARN_DELAY", "300"))
     panel_accepted = set(panel_tokens) if panel_tokens is not None else _panel_tokens_from_env()
     owners = {e.lower() for e in bootstrap_owners} if bootstrap_owners is not None else _emails_from_env("VERIDIAN_BOOTSTRAP_OWNERS")
-    creators = {e.lower() for e in org_creators} if org_creators is not None else _emails_from_env("VERIDIAN_ORG_CREATORS")
     invite_days = invitation_days if invitation_days is not None else int(os.environ.get("VERIDIAN_INVITATION_DAYS", "14"))
 
     orgs: dict[str, Organization] = {}
@@ -879,14 +875,18 @@ def create_app(
 
     @app.post("/v1/people/login", dependencies=[Depends(panel_only)])
     def post_login(body: LoginIn):
-        """Upsert by google_sub, take the bootstrap and the pending invitations, answer with the orgs."""
+        """Upsert the person, take the bootstrap and the pending invitations, answer with the orgs. A person is
+        the verified email: a provider id (`google_sub`: the Google sub, or `github:<id>`) already seen keeps its
+        person, and a new one with a known email joins that person."""
         email = body.email.strip().lower()
         stamp = now_iso()
         pid = by_sub.get(body.google_sub)
         if pid is None:
-            pid = "per_" + secrets.token_hex(8)
+            pid = next((p.id for p in people.values() if p.email == email), None)
+            if pid is None:
+                pid = "per_" + secrets.token_hex(8)
+                people[pid] = Person(pid, body.google_sub, email, body.name or email, stamp, stamp)
             by_sub[body.google_sub] = pid
-            people[pid] = Person(pid, body.google_sub, email, body.name or email, stamp, stamp)
         person = people[pid]
         person.email, person.last_login_at = email, stamp
         if body.name:
@@ -910,8 +910,6 @@ def create_app(
 
     @app.post("/v1/orgs", status_code=201)
     def post_org(body: OrgIn, person: Actor):
-        if person.email not in creators:
-            raise Forbidden()
         oid = "org_" + secrets.token_hex(4)
         org = Organization(id=oid, name=body.name.strip(), created_at=now_iso())
         org.add_member(person.id, "owner", org.created_at)

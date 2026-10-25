@@ -21,7 +21,7 @@ ROUTES = {"POST /payouts/bank-account": "critical"}
 @pytest.fixture
 def engine():
     return create_app(tokens={SDK, SDK_B}, seed=SEED, routes=ROUTES, learn_delay=0, panel_tokens={PANEL},
-                      bootstrap_owners={OWNER}, org_creators=set())
+                      bootstrap_owners={OWNER})
 
 
 @pytest.fixture

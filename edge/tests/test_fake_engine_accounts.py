@@ -9,7 +9,7 @@ SDK = "tok-a"
 SDK_B = "tok-b"
 PANEL = "panel-secret"
 OWNER = "owner@example.com"
-CREATOR = "creator@example.com"  # allowed to create organizations
+CREATOR = "creator@example.com"
 FUTURE = "2999-01-01T00:00:00Z"
 PAST = "2000-01-01T00:00:00Z"
 
@@ -21,7 +21,7 @@ def bearer(token):
 @pytest.fixture
 def engine():
     return create_app(tokens={SDK, SDK_B}, seed=[], learn_delay=0, panel_tokens={PANEL},
-                      bootstrap_owners={OWNER}, org_creators={CREATOR})
+                      bootstrap_owners={OWNER})
 
 
 @pytest.fixture
@@ -283,13 +283,34 @@ def test_the_project_level_endpoints_of_the_previous_design_are_gone(client):
 # --- POST /v1/orgs ----------------------------------------------------------------------------------
 
 
-def test_nobody_creates_orgs_unless_allowlisted(engine, client):
+def test_any_signed_in_person_creates_an_org_without_an_invitation(client):
     person = login(client, email="ana@example.com")
     r = client.post("/v1/orgs", json={"name": "Mine"}, headers=acting(person))
-    assert r.status_code == 403 and r.json() == {"error": "forbidden"}
+    assert r.status_code == 201 and r.json()["role"] == "owner"
     empty = TestClient(create_app(tokens={SDK}, panel_tokens={PANEL}))
-    p = login(empty, email=CREATOR)
-    assert empty.post("/v1/orgs", json={"name": "Mine"}, headers=acting(p)).status_code == 403
+    p = login(empty, email="new@example.com")
+    assert empty.post("/v1/orgs", json={"name": "Mine"}, headers=acting(p)).status_code == 201
+
+
+def test_a_stranger_cannot_create_an_org_without_signing_in(client):
+    r = client.post("/v1/orgs", json={"name": "Mine"}, headers=bearer(PANEL))
+    assert r.status_code == 403
+
+
+def test_the_same_verified_email_through_another_provider_is_the_same_person(client):
+    google = login(client, sub="1234", email="Ana@Example.com")
+    github = login(client, sub="github:99", email="ana@example.com")
+    assert github["person"]["id"] == google["person"]["id"]
+    oid = client.post("/v1/orgs", json={"name": "Acme"}, headers=acting(google)).json()["id"]
+    assert [o["id"] for o in login(client, sub="github:99", email="ana@example.com")["orgs"]] == [oid]
+    # each provider id keeps resolving to that person, whatever email it reports later
+    assert login(client, sub="1234", email="ana@example.com")["person"]["id"] == google["person"]["id"]
+
+
+def test_different_emails_are_different_people(client):
+    a = login(client, sub="github:1", email="a@example.com")
+    b = login(client, sub="github:2", email="b@example.com")
+    assert a["person"]["id"] != b["person"]["id"]
 
 
 def test_an_allowlisted_person_creates_an_org_and_owns_it(client):
@@ -301,13 +322,6 @@ def test_an_allowlisted_person_creates_an_org_and_owns_it(client):
     assert body["projects"] == []
     mine = client.get("/v1/me/orgs", headers=acting(person)).json()["orgs"]
     assert {"id": body["id"], "name": "Acme", "role": "owner", "projects": []} in mine
-
-
-def test_org_creators_come_from_the_environment(monkeypatch):
-    monkeypatch.setenv("VERIDIAN_ORG_CREATORS", "Creator@Example.com, other@example.com")
-    c = TestClient(create_app(tokens={SDK}, panel_tokens={PANEL}))
-    p = login(c, email=CREATOR)
-    assert c.post("/v1/orgs", json={"name": "Acme"}, headers=acting(p)).status_code == 201
 
 
 @pytest.mark.parametrize("body", [{}, {"name": ""}, {"name": "x" * 81}])
