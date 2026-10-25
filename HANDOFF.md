@@ -117,6 +117,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    3. **Crear la clave de API** (la página de claves ya existe, contrato 12) y mostrar el snippet con esa clave ya puesta, listo para copiar. El snippet lo diseña Maikol; usar el mismo componente.
    4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
    - **Tests:** una persona nueva entra con Google o GitHub, crea su organización y su clave sin que nadie la invite; una persona con organización no vuelve a ver el paso 2; la misma persona con los dos proveedores es una sola cuenta.
+   - **Avance de José (2026-10-25):** hecho en el motor falso y el panel el acceso abierto a crear organizaciones y el login con GitHub (misma persona por correo verificado). Plan y evidencia: `odd/tasks/backoffice-self-signup.md`.
 
 ### Carlos Navas: SDK, middleware y app de demo (lo que era del Dev 2)
 

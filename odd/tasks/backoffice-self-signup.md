@@ -27,8 +27,8 @@ Mode: on. Source: `INIT.md` (same as the other edge task docs). Runner: `uv run 
 
 ## Tasks
 
-- [ ] T1 Fake engine: org creation open to any signed-in person; persons identified by verified email across providers. Route: delegated (writer + preparation triggers: fake engine, panel auth, tests).
-- [ ] T2 Panel: GitHub OAuth (`user:email`, primary verified email), same account as Google for the same email. Route: delegated.
+- [x] T1 Fake engine: org creation open to any signed-in person; persons identified by verified email across providers. Route: delegated (writer + preparation triggers: fake engine, panel auth, tests). Evidence: `9a00141`; baseline 697 passed -> 699 passed. `VERIDIAN_ORG_CREATORS` removed from the fake engine (nothing in the demo needed it; `render.yaml` still sets it, harmless and untouched).
+- [x] T2 Panel: GitHub OAuth (`user:email`, primary verified email), same account as Google for the same email. Route: delegated. Evidence: `e1097c4`; 699 -> 716 passed.
 - [ ] T3 Panel: first-run company-name step creating org + first project; people with an org never see it again. Route: delegated.
 - [ ] T4 Panel: after first run, land on key creation with the snippet filled in; "waiting for the first event" → "connected". Route: delegated.
 
@@ -41,4 +41,4 @@ Mode: on. Source: `INIT.md` (same as the other edge task docs). Runner: `uv run 
 
 ## Progress
 
-Created 2026-10-25. Next: T1.
+Created 2026-10-25. T1 and T2 done. Next: T3.
