@@ -413,10 +413,19 @@ def test_the_node_tab_is_published_with_install_and_copy_buttons(source):
     assert "en preparación" not in page
     assert 'data-copy="npm install veridian-sdk"' in page
     assert 'data-copy-from="snippet-node"' in page
-    assert "veridian-sdk/next" in page
 
 
-@pytest.mark.parametrize("source", [PANEL_SNIPPET, LANDING_PAGE])
+def test_the_panel_points_next_js_users_to_the_adapter():
+    assert "veridian-sdk/next" in PANEL_SNIPPET.read_text(encoding="utf-8")
+
+
+def test_the_landing_code_card_has_no_prose_under_the_code():
+    page = LANDING_PAGE.read_text(encoding="utf-8")
+    card = re.search(r'<div class="codecard".*?<div class="codecard-foot">', page, flags=re.S).group(0)
+    assert "hash" not in visible_text(card) and "Actividad" not in visible_text(card)
+
+
+@pytest.mark.parametrize("source", [PANEL_SNIPPET])
 def test_the_explanations_live_in_prose_not_in_the_code(source):
     page = source.read_text(encoding="utf-8")
     for code_id in ("snippet-python", "snippet-node"):
