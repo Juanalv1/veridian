@@ -83,6 +83,9 @@ class Settings:
     org_creators: frozenset[str] = frozenset()
     # How long an invitation stays valid. A design default, not a measured value.
     invitation_days: int = 14
+    # U13: the retention worker (purge by retention_days, wipe deleted projects) and its interval.
+    retention: bool = True
+    retention_interval_s: float = 3600.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -115,6 +118,8 @@ class Settings:
             bootstrap_owners=parse_emails(os.environ.get("VERIDIAN_BOOTSTRAP_OWNERS", "")),
             org_creators=parse_emails(os.environ.get("VERIDIAN_ORG_CREATORS", "")),
             invitation_days=int(os.environ.get("VERIDIAN_INVITATION_DAYS", "14")),
+            retention=os.environ.get("VERIDIAN_RETENTION", "on").strip().lower() not in ("off", "0", "false", "no"),
+            retention_interval_s=float(os.environ.get("VERIDIAN_RETENTION_INTERVAL_S", "3600")),
         )
 
 

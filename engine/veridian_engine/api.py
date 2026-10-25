@@ -1,5 +1,6 @@
 import hmac
 import threading
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 from dotenv import find_dotenv, load_dotenv
@@ -20,10 +21,25 @@ from .notifications.sender import build_webhook_sender, webhook_lifespan
 from .principal import Forbidden, PanelProject, panel_project, sdk_project, shared_project
 from .project_settings import get_project_flags
 from .profile import build_profile, is_blocked
+from .retention_worker import build_retention_worker
 from .route_classes import RouteClasses, seed_unseeded
 from .rules import evaluate_event
 from .settings import Settings
 from .summary import as_utc, build_summary, list_users
+
+
+@asynccontextmanager
+async def background_lifespan(app):
+    """The webhook sender and the retention worker run while the app does."""
+    worker = getattr(app.state, "retention_worker", None)
+    if worker is not None:
+        worker.start()
+    try:
+        async with webhook_lifespan(app):
+            yield
+    finally:
+        if worker is not None:
+            worker.stop()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -38,13 +54,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         seed_legacy(conn, settings.tokens, settings.clock())
         seed_unseeded(conn, route_template)
 
-    app = FastAPI(title="Veridian engine", lifespan=webhook_lifespan)
+    app = FastAPI(title="Veridian engine", lifespan=background_lifespan)
     app.state.settings = settings
     app.state.route_template = route_template
     app.state.auth = ApiKeyAuth(settings)
     write_lock = threading.Lock()  # single process: serialize writes that read-then-write
     # Signed block webhooks (U12): started and stopped with the app; None when off.
     app.state.webhook_sender = build_webhook_sender(settings, write_lock)
+    # Retention (U13): purges by retention_days and wipes deleted projects; None when off.
+    app.state.retention_worker = build_retention_worker(settings, write_lock)
 
     @app.exception_handler(Unauthorized)
     async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONResponse:

@@ -35,6 +35,7 @@ from .notifications.webhook import (
 )
 from .principal import Forbidden, PanelProject, ProjectRequired, panel_actor, path_project
 from .project_settings import set_project_flags
+from .retention import delete_project_data, delete_user_data
 from .route_classes import RouteClasses, replace_rules, route_key
 from .settings import Settings
 
@@ -175,6 +176,18 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
                                                    enforcement="observe", now=settings.clock())
             replace_rules(conn, project_id, route_template.mapping)
             return project_view(conn, project_id, person_id)
+
+    # --- contract 14: erasure (audited; profiles are computed from events, so they go too) ---
+
+    @router.delete("/v1/projects/{project_id}/users/{user_id}")
+    def delete_user(user_id: str, project: PanelProject = Depends(path_project("erase_user_data"))) -> dict:
+        with write_lock, db.connect(settings.db_path) as conn:
+            return delete_user_data(conn, project.project_id, user_id, settings.clock(), actor=project.person_id)
+
+    @router.delete("/v1/projects/{project_id}/data")
+    def delete_data(project: PanelProject = Depends(path_project("erase_project_data"))) -> dict:
+        with write_lock, db.connect(settings.db_path) as conn:
+            return delete_project_data(conn, project.project_id, settings.clock(), actor=project.person_id)
 
     # --- U7: route classification of a project ---
 
