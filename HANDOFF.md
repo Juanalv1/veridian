@@ -73,6 +73,10 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
        - imprime un resumen de una línea: `listo: 3 redes, 1 dispositivo, 14 días`.
    - **Botón (opcional, con el Dev 2):** "Preparar demo" en el panel, visible solo para un owner y solo si el ensayo está habilitado en el motor. Lo respalda un endpoint del motor que hace lo mismo que el script, por ejemplo `POST /v1/projects/{id}/rehearsal/prepare`. Tiene que ir con auditoría y quedar apagado en producción.
    - **Tests:** que la calibración tome todas las IPs del usuario y no las de otros usuarios; que la preparación deje el perfil sin rastros del atacante; que sin el ensayo habilitado el endpoint responda `404`.
+   - **Problema visto en el ensayo:**
+     - Qué pasó: después del reset, el motor tenía la blocklist vacía (`version 14`), pero la app seguía bloqueando el teléfono del atacante anterior. Hubo que reiniciar `veridian-demo` en Render para que el middleware cargara la lista nueva.
+     - Causa: no investigada. La versión había subido, así que el middleware debería haber recibido la lista nueva en ~2 s. Puede que no estuviera leyendo `/v1/blocklist`, que por contrato conserva la última lista conocida. Revisar con el Dev 2 si U6 afectó la autenticación del middleware.
+     - Lo que hace falta: que la preparación de la demo verifique que la app ya no bloquea, o que reinicie la app.
 
 
 ## Ya está en `main`
