@@ -3,8 +3,11 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from conftest import make_event, make_settings
+from fastapi.testclient import TestClient
 
 from veridian_engine import db
+from veridian_engine.api import create_app
 
 # The schema every deployed database had before numbered migrations existed, verbatim from
 # the old db.SCHEMA. Kept here, not imported, so the fixture does not move with the code.
@@ -250,3 +253,197 @@ def test_duplicate_migration_versions_are_rejected(tmp_path):
 
     with pytest.raises(ValueError):
         db.load_migrations(directory)
+
+
+# --- 0002: client_id -> project_id ------------------------------------------------------------
+
+DEMO_TOKEN = "tok_demo"
+DEMO_AUTH = {"Authorization": f"Bearer {DEMO_TOKEN}"}
+
+# Representative demo rows in the legacy column order (client_id where it was).
+LEGACY_ROWS = {
+    "events": [
+        ("demo", "e1", "2026-10-26T10:00:00.000000Z", "u_42", "s_owner", "190.202.14.7", "Chrome", "d_9f3", "GET", "/invoices", 200, 512),
+        ("demo", "e2", "2026-10-26T11:00:00.000000Z", "u_42", "s_att", "203.0.113.9", "curl", "", "GET", "/export", 200, 9000),
+        ("demo", "e3", "2026-10-26T11:01:00.000000Z", "u_42", "s_att", "203.0.113.9", "curl", "", "GET", "/export", 403, 0),
+        ("other", "e1", "2026-10-26T09:00:00.000000Z", "u_1", "s_x", "198.51.100.1", "Firefox", "d_1", "GET", "/", 200, 10),
+    ],
+    "decisions": [
+        (3, "demo", "d_3", "2026-10-26T11:00:05Z", "u_42", "s_att", "203.0.113.9", "block", '{"new_ip": true}', "New IP and device.", 0),
+        (5, "demo", "d_5", "2026-10-26T10:00:05Z", "u_42", "s_owner", "", "alert", '{"odd_hour": true}', "Odd hour.", 1),
+        (6, "other", "d_6", "2026-10-26T09:00:05Z", "u_1", "s_x", "198.51.100.1", "block", "{}", "Other client.", 0),
+    ],
+    "decision_events": [("demo", "d_3", "e2"), ("demo", "d_5", "e1"), ("other", "d_6", "e1")],
+    "rate_spike_judgments": [("demo", "s_att")],
+    "ai_judgments": [("demo", "e2", "2026-10-26T11:00:00.000000Z")],
+    "blocklist_versions": [("demo", 7), ("other", 2)],
+}
+# Decisions up to d_12 were issued once and later reset: new ids must not reuse them.
+LEGACY_DECISION_SEQUENCE = 12
+
+
+def populated_legacy_db(path: Path) -> Path:
+    legacy_db(path)
+    conn = sqlite3.connect(path)
+    for table, table_rows in LEGACY_ROWS.items():
+        marks = ", ".join("?" for _ in table_rows[0])
+        conn.executemany(f"INSERT INTO {table} VALUES ({marks})", table_rows)
+    conn.execute("UPDATE sqlite_sequence SET seq = ? WHERE name = 'decisions'", (LEGACY_DECISION_SEQUENCE,))
+    conn.commit()
+    conn.close()
+    return path
+
+
+def rows(path: Path, table: str) -> list[tuple]:
+    conn = sqlite3.connect(path)
+    try:
+        return sorted(conn.execute(f"SELECT * FROM {table}").fetchall())
+    finally:
+        conn.close()
+
+
+def columns(path: Path, table: str) -> list[str]:
+    conn = sqlite3.connect(path)
+    try:
+        return [row[1] for row in conn.execute(f"PRAGMA table_info({table})")]
+    finally:
+        conn.close()
+
+
+def test_0002_keeps_every_legacy_row_under_project_id(tmp_path):
+    path = populated_legacy_db(tmp_path / "veridian.db")
+    expected = {table: rows(path, table) for table in DATA_TABLES}
+
+    db.init_db(str(path))
+
+    assert applied_versions(path) == all_versions()
+    assert 2 in all_versions()
+    for table in DATA_TABLES:
+        assert "client_id" not in columns(path, table)
+        assert "project_id" in columns(path, table)
+        assert rows(path, table) == expected[table]
+    backup = tmp_path / "veridian.db.pre-0002"
+    assert rows(backup, "blocklist_versions") == [("demo", 7), ("other", 2)]
+    assert "client_id" in columns(backup, "events")
+
+
+def test_0002_keeps_the_indexes_on_project_id(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path))
+    conn = sqlite3.connect(path)
+    names = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL")]
+    indexes = {name: [info[2] for info in conn.execute(f"PRAGMA index_info({name})")] for name in names}
+    conn.close()
+
+    assert indexes["events_by_user"] == ["project_id", "user_id", "ts"]
+    assert indexes["events_by_session"] == ["project_id", "session_id", "ts"]
+    assert indexes["one_block_per_session"] == ["project_id", "session_id"]
+    assert indexes["ai_judgments_by_ts"] == ["project_id", "ts"]
+
+
+DECISION_INSERT = (
+    "INSERT INTO decisions (project_id, id, ts, user_id, session_id, ip, decision, signals, rationale)"
+    " VALUES (?, ?, 't', 'u', ?, '', ?, '{}', '')"
+)
+
+
+def test_0002_makes_decision_ids_unique_per_project(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path))
+    conn = sqlite3.connect(path)
+    conn.execute(DECISION_INSERT, ("p_a", "d_1", "s_1", "alert"))
+    conn.execute(DECISION_INSERT, ("p_b", "d_1", "s_1", "alert"))
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(DECISION_INSERT, ("p_a", "d_1", "s_2", "alert"))
+    conn.close()
+
+
+def test_0002_keeps_one_block_per_session(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path))
+    conn = sqlite3.connect(path)
+    conn.execute(DECISION_INSERT, ("p_a", "d_1", "s_1", "block"))
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(DECISION_INSERT, ("p_a", "d_2", "s_1", "block"))
+    conn.close()
+
+
+def test_0002_keeps_the_decision_sequence(tmp_path):
+    path = populated_legacy_db(tmp_path / "veridian.db")
+
+    db.init_db(str(path))
+
+    conn = sqlite3.connect(path)
+    cursor = conn.execute(DECISION_INSERT, ("demo", "pending", "s_new", "alert"))
+    conn.close()
+    assert cursor.lastrowid == LEGACY_DECISION_SEQUENCE + 1
+
+
+def test_sqlite_supports_rename_column():
+    # 0002 uses ALTER TABLE ... RENAME COLUMN, available since SQLite 3.25.
+    assert sqlite3.sqlite_version_info >= (3, 25, 0)
+
+
+def fresh_db_with_same_rows(path: Path) -> Path:
+    """The same rows written into a database built from migrations, for comparison."""
+    db.init_db(str(path))
+    conn = sqlite3.connect(path)
+    for table, table_rows in LEGACY_ROWS.items():
+        names = ", ".join(columns(path, table))
+        marks = ", ".join("?" for _ in table_rows[0])
+        conn.executemany(f"INSERT INTO {table} ({names}) VALUES ({marks})", table_rows)
+    conn.commit()
+    conn.close()
+    return path
+
+
+def demo_client(path: Path, tmp_path: Path, clock) -> TestClient:
+    return TestClient(create_app(make_settings(tmp_path, clock, db_path=str(path), tokens={DEMO_TOKEN: "demo"})))
+
+
+def read_all(path: Path, tmp_path: Path, clock) -> dict:
+    endpoints = (
+        "/v1/blocklist",
+        "/v1/decisions",
+        "/v1/activity",
+        "/v1/summary?since=2026-10-26T00:00:00Z&until=2026-10-27T00:00:00Z",
+        "/v1/users",
+        "/v1/profile/u_42",
+    )
+    with demo_client(path, tmp_path, clock) as client:
+        return {endpoint: client.get(endpoint, headers=DEMO_AUTH).json() for endpoint in endpoints}
+
+
+def test_migrated_demo_database_serves_the_same_responses(tmp_path, clock):
+    migrated = populated_legacy_db(tmp_path / "migrated.db")
+    fresh = fresh_db_with_same_rows(tmp_path / "fresh.db")
+
+    responses = read_all(migrated, tmp_path, clock)
+
+    assert responses == read_all(fresh, tmp_path, clock)
+    assert responses["/v1/blocklist"] == {"version": 7, "users": [], "sessions": ["s_att"], "ips": ["203.0.113.9"]}
+    decisions = responses["/v1/decisions"]["decisions"]
+    assert [(d["id"], d["status"], d["event_ids"]) for d in decisions] == [
+        ("d_5", "marked_normal", ["e1"]),
+        ("d_3", "open", ["e2"]),
+    ]
+    activity = responses["/v1/activity"]["activity"]
+    assert [(a["event_id"], a["verdict"]) for a in activity] == [("e3", "block"), ("e2", "block"), ("e1", "normal")]
+
+
+def test_migrated_demo_database_keeps_blocking(tmp_path, clock):
+    path = populated_legacy_db(tmp_path / "veridian.db")
+
+    with demo_client(path, tmp_path, clock) as client:
+        unchanged = client.get("/v1/blocklist?since=7", headers=DEMO_AUTH)
+        verdict = client.post(
+            "/v1/check",
+            json={"event": make_event("e4", clock(), session_id="s_att", ip="203.0.113.9")},
+            headers=DEMO_AUTH,
+        )
+
+    assert unchanged.status_code == 304
+    assert verdict.status_code == 200
+    assert verdict.json() == {"verdict": "block", "decision_id": "d_3"}

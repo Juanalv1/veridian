@@ -24,7 +24,7 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 |---|---|---|
 | `VERIDIAN_TOKENS` | | `client_a=tok1,client_b=tok2`: one token per client |
 | `VERIDIAN_TOKEN` | | Single token, mapped to client `default` (used when `VERIDIAN_TOKENS` is empty) |
-| `VERIDIAN_DB` | `veridian.db` | SQLite file |
+| `VERIDIAN_DB` | `veridian.db` | SQLite file. At startup the engine applies pending migrations from `veridian_engine/migrations/` (recorded in `schema_migrations`), after copying the file to `<file>.pre-NNNN`; there are no down migrations, that copy is the way back. The client name in `VERIDIAN_TOKENS` is stored as `project_id` |
 | `VERIDIAN_ROUTES_FILE` | `engine/routes.yaml` | Route classification (`"METHOD /route": class`) |
 | `VERIDIAN_LEARN_DELAY_MIN` | `10` | Events younger than this (by `ts`) are not learned yet |
 | `VERIDIAN_RATE_FACTOR` | `3` | A session spikes above this many times the user's usual max events per minute. Unmeasured starting point |

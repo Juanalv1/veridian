@@ -14,23 +14,23 @@ def utc_now() -> datetime:
 
 
 def parse_tokens(raw: str) -> dict[str, str]:
-    """Parse "client_a=tok1,client_b=tok2" into {token: client_id}."""
+    """Parse "client_a=tok1,client_b=tok2" into {token: project_id}."""
     tokens: dict[str, str] = {}
     for pair in raw.split(","):
         pair = pair.strip()
         if not pair:
             continue
-        client_id, sep, token = pair.partition("=")
-        if not sep or not client_id.strip() or not token.strip():
+        project_id, sep, token = pair.partition("=")
+        if not sep or not project_id.strip() or not token.strip():
             raise ValueError(f"Invalid VERIDIAN_TOKENS entry: {pair!r}")
-        tokens[token.strip()] = client_id.strip()
+        tokens[token.strip()] = project_id.strip()
     return tokens
 
 
 @dataclass
 class Settings:
     db_path: str
-    tokens: dict[str, str]  # token -> client_id
+    tokens: dict[str, str]  # token -> project_id
     routes_file: str = str(DEFAULT_ROUTES_FILE)
     learn_delay_min: int = 10
     # A session spikes above max(rate_factor x the user's usual max per minute, rate_floor).

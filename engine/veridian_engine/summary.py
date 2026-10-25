@@ -17,43 +17,43 @@ def as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def build_summary(conn: sqlite3.Connection, client_id: str, since: datetime, until: datetime) -> dict:
+def build_summary(conn: sqlite3.Connection, project_id: str, since: datetime, until: datetime) -> dict:
     """Counts for [since, until). Events are stored with microseconds, decisions to the second."""
-    events_range = {"client_id": client_id, "since": format_ts(since), "until": format_ts(until)}
+    events_range = {"project_id": project_id, "since": format_ts(since), "until": format_ts(until)}
     decisions_range = {
-        "client_id": client_id,
+        "project_id": project_id,
         "since": format_decision_ts(since),
         "until": format_decision_ts(until),
     }
 
     totals = conn.execute(
         "SELECT COUNT(*) AS accesses, COUNT(DISTINCT user_id) AS users FROM events"
-        " WHERE client_id = :client_id AND ts >= :since AND ts < :until",
+        " WHERE project_id = :project_id AND ts >= :since AND ts < :until",
         events_range,
     ).fetchone()
     reviewed = conn.execute(
-        "SELECT COUNT(*) FROM ai_judgments WHERE client_id = :client_id AND ts >= :since AND ts < :until",
+        "SELECT COUNT(*) FROM ai_judgments WHERE project_id = :project_id AND ts >= :since AND ts < :until",
         events_range,
     ).fetchone()[0]
 
     counts = dict.fromkeys(DECISION_TYPES, 0)
     for row in conn.execute(
         "SELECT decision, COUNT(*) AS n FROM decisions"
-        " WHERE client_id = :client_id AND ts >= :since AND ts < :until GROUP BY decision",
+        " WHERE project_id = :project_id AND ts >= :since AND ts < :until GROUP BY decision",
         decisions_range,
     ):
         counts[row["decision"]] = row["n"]
 
     open_blocks = conn.execute(
-        "SELECT COUNT(*) FROM decisions WHERE client_id = ? AND decision = 'block' AND normal = 0", (client_id,)
+        "SELECT COUNT(*) FROM decisions WHERE project_id = ? AND decision = 'block' AND normal = 0", (project_id,)
     ).fetchone()[0]
-    listed = blocklist(conn, client_id)
+    listed = blocklist(conn, project_id)
 
     blocks_by_hour = {
         row["hour"]: row["n"]
         for row in conn.execute(
             "SELECT substr(ts, 1, 13) AS hour, COUNT(*) AS n FROM decisions"
-            " WHERE client_id = :client_id AND decision = 'block' AND ts >= :since AND ts < :until"
+            " WHERE project_id = :project_id AND decision = 'block' AND ts >= :since AND ts < :until"
             " GROUP BY hour",
             decisions_range,
         )
@@ -62,7 +62,7 @@ def build_summary(conn: sqlite3.Connection, client_id: str, since: datetime, unt
         {"hour": f"{row['hour']}:00:00Z", "accesses": row["n"], "blocks": blocks_by_hour.get(row["hour"], 0)}
         for row in conn.execute(
             "SELECT substr(ts, 1, 13) AS hour, COUNT(*) AS n FROM events"
-            " WHERE client_id = :client_id AND ts >= :since AND ts < :until GROUP BY hour ORDER BY hour",
+            " WHERE project_id = :project_id AND ts >= :since AND ts < :until GROUP BY hour ORDER BY hour",
             events_range,
         )
     ]
@@ -86,21 +86,21 @@ def build_summary(conn: sqlite3.Connection, client_id: str, since: datetime, unt
 USERS_SQL = """
 SELECT e.user_id, MAX(e.ts) AS last_seen,
        (SELECT COUNT(*) FROM decisions d
-        WHERE d.client_id = e.client_id AND d.user_id = e.user_id
+        WHERE d.project_id = e.project_id AND d.user_id = e.user_id
           AND d.decision = 'block' AND d.normal = 0) AS open_blocks
-FROM events e WHERE e.client_id = ?
+FROM events e WHERE e.project_id = ?
 GROUP BY e.user_id
 """
 
 
-def list_users(conn: sqlite3.Connection, client_id: str, now: datetime, learn_delay_min: int) -> list[dict]:
+def list_users(conn: sqlite3.Connection, project_id: str, now: datetime, learn_delay_min: int) -> list[dict]:
     """Every user with events: open blocks first, then the most recently seen."""
-    rows = conn.execute(USERS_SQL, (client_id,)).fetchall()
+    rows = conn.execute(USERS_SQL, (project_id,)).fetchall()
     rows = sorted(rows, key=lambda row: row["last_seen"], reverse=True)
     rows.sort(key=lambda row: row["open_blocks"] == 0)
     result = []
     for row in rows:
-        profile = build_profile(conn, client_id, row["user_id"], now, learn_delay_min)
+        profile = build_profile(conn, project_id, row["user_id"], now, learn_delay_min)
         result.append(
             {
                 "user_id": row["user_id"],

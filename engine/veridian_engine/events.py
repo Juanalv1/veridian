@@ -30,15 +30,15 @@ def format_ts(value) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def insert_events(conn: sqlite3.Connection, client_id: str, events: list[Event]) -> list[Event]:
+def insert_events(conn: sqlite3.Connection, project_id: str, events: list[Event]) -> list[Event]:
     """Store events, ignoring ids already seen for this client. Return the new ones."""
     inserted = []
     for event in events:
         cursor = conn.execute(
-            "INSERT OR IGNORE INTO events (client_id, id, ts, user_id, session_id, ip, user_agent,"
+            "INSERT OR IGNORE INTO events (project_id, id, ts, user_id, session_id, ip, user_agent,"
             " device_id, method, route, status, bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                client_id,
+                project_id,
                 event.id,
                 format_ts(event.ts),
                 event.user_id,

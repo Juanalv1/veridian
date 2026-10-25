@@ -40,16 +40,16 @@ ALLOW = CheckResult("allow")
 
 
 def check_event(
-    settings: Settings, route_classes: RouteClasses, write_lock: threading.Lock, client_id: str, event: Event
+    settings: Settings, route_classes: RouteClasses, write_lock: threading.Lock, project_id: str, event: Event
 ) -> CheckResult:
     """Decide one critical request now. Never raises: any internal error allows it (fail-open)."""
     try:
-        result = _check(settings, route_classes, write_lock, client_id, event)
+        result = _check(settings, route_classes, write_lock, project_id, event)
         if result.verdict == "block":
             # The middleware reported the request before running it; a block means the app never
             # did, so the stored event says 403, as the panel and the activity feed should show.
             with write_lock, db.connect(settings.db_path) as conn:
-                conn.execute("UPDATE events SET status = 403 WHERE client_id = ? AND id = ?", (client_id, event.id))
+                conn.execute("UPDATE events SET status = 403 WHERE project_id = ? AND id = ?", (project_id, event.id))
         return result
     except Exception:  # noqa: BLE001 - a Veridian failure must never take the customer's app down
         logger.exception("Synchronous check failed for session %s; allowing", event.session_id)
@@ -57,19 +57,19 @@ def check_event(
 
 
 def _check(
-    settings: Settings, route_classes: RouteClasses, write_lock: threading.Lock, client_id: str, event: Event
+    settings: Settings, route_classes: RouteClasses, write_lock: threading.Lock, project_id: str, event: Event
 ) -> CheckResult:
     with write_lock, db.connect(settings.db_path) as conn:
-        if not insert_events(conn, client_id, [event]):
-            return current_verdict(conn, client_id, event)  # already seen: never evaluated twice
-        deviation = evaluate_event(conn, settings, route_classes, client_id, event)
+        if not insert_events(conn, project_id, [event]):
+            return current_verdict(conn, project_id, event)  # already seen: never evaluated twice
+        deviation = evaluate_event(conn, settings, route_classes, project_id, event)
         if deviation is None:
-            return current_verdict(conn, client_id, event)
+            return current_verdict(conn, project_id, event)
         if deviation.block_id is not None:
             explain = deviation if settings.judge is not None else None
             return CheckResult("block", deviation.block_id, explain_later=explain)
         if settings.judge is None or not needs_judgment(conn, deviation):
-            return current_verdict(conn, client_id, event)
+            return current_verdict(conn, project_id, event)
         reserve_judgment(conn, deviation)
 
     # Outside the lock: ingestion and other checks keep running while the judge thinks.
@@ -80,7 +80,7 @@ def _check(
         if decision == "block" and decision_id is not None:
             return CheckResult("block", decision_id)
         # An existing block on the session or IP still wins over the judge's allow.
-        listed = current_verdict(conn, client_id, event)
+        listed = current_verdict(conn, project_id, event)
     return listed if listed.verdict == "block" else CheckResult("allow", decision_id)
 
 
@@ -106,11 +106,11 @@ def judge_within_budget(settings: Settings, deviation: Deviation):
     return _fallback(_critical_rule_applies(deviation.signals))
 
 
-def current_verdict(conn: sqlite3.Connection, client_id: str, event: Event) -> CheckResult:
+def current_verdict(conn: sqlite3.Connection, project_id: str, event: Event) -> CheckResult:
     """Block when the session or IP is in the current blocklist (contract 2), else allow."""
     row = conn.execute(
-        "SELECT id FROM decisions WHERE client_id = ? AND decision = 'block' AND normal = 0"
+        "SELECT id FROM decisions WHERE project_id = ? AND decision = 'block' AND normal = 0"
         " AND (session_id = ? OR (ip != '' AND ip = ?)) ORDER BY seq DESC LIMIT 1",
-        (client_id, event.session_id, str(event.ip)),
+        (project_id, event.session_id, str(event.ip)),
     ).fetchone()
     return CheckResult("block", row["id"]) if row is not None else ALLOW

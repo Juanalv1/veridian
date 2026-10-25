@@ -10,15 +10,15 @@ SEVERITY_VERDICT = {0: "normal", 1: "review", 2: "block"}
 ACTIVITY_SQL = """
 WITH recent AS (
     SELECT id, ts, user_id, session_id, ip, device_id, method, route, status
-    FROM events WHERE client_id = :client_id
+    FROM events WHERE project_id = :project_id
     ORDER BY ts DESC, id DESC LIMIT :limit
 ),
 open_blocks AS (
     SELECT d.id, d.seq, d.session_id, d.ip, MAX(e.ts) AS from_ts
     FROM decisions d
-    JOIN decision_events de ON de.client_id = d.client_id AND de.decision_id = d.id
-    JOIN events e ON e.client_id = de.client_id AND e.id = de.event_id
-    WHERE d.client_id = :client_id AND d.decision = 'block' AND d.normal = 0
+    JOIN decision_events de ON de.project_id = d.project_id AND de.decision_id = d.id
+    JOIN events e ON e.project_id = de.project_id AND e.id = de.event_id
+    WHERE d.project_id = :project_id AND d.decision = 'block' AND d.normal = 0
     GROUP BY d.seq
 ),
 candidates AS (
@@ -28,8 +28,8 @@ candidates AS (
                 WHEN d.decision IN ('alert', 'step_up') THEN 1
                 ELSE 0 END AS severity
     FROM recent r
-    JOIN decision_events de ON de.client_id = :client_id AND de.event_id = r.id
-    JOIN decisions d ON d.client_id = de.client_id AND d.id = de.decision_id
+    JOIN decision_events de ON de.project_id = :project_id AND de.event_id = r.id
+    JOIN decisions d ON d.project_id = de.project_id AND d.id = de.decision_id
     UNION ALL
     SELECT r.id, b.id, b.seq, 2
     FROM recent r JOIN open_blocks b
@@ -46,9 +46,9 @@ ORDER BY r.ts DESC, r.id DESC
 """
 
 
-def list_activity(conn: sqlite3.Connection, client_id: str, limit: int) -> list[dict]:
+def list_activity(conn: sqlite3.Connection, project_id: str, limit: int) -> list[dict]:
     """Latest accesses of the client, newest first, with the panel verdict (contract 5)."""
-    rows = conn.execute(ACTIVITY_SQL, {"client_id": client_id, "limit": limit}).fetchall()
+    rows = conn.execute(ACTIVITY_SQL, {"project_id": project_id, "limit": limit}).fetchall()
     return [
         {
             "event_id": row["id"],

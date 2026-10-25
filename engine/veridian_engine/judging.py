@@ -17,7 +17,7 @@ def latest_per_session(deviations: list[Deviation]) -> list[Deviation]:
     """One deviation per session: the latest, which carries the longest path (and any block)."""
     latest: dict[tuple[str, str], Deviation] = {}
     for deviation in deviations:
-        latest[(deviation.client_id, deviation.event.session_id)] = deviation
+        latest[(deviation.project_id, deviation.event.session_id)] = deviation
     return list(latest.values())
 
 
@@ -41,13 +41,13 @@ def reserve_judgment(conn: sqlite3.Connection, deviation: Deviation) -> None:
     if deviation.signals.get("rate_spike"):
         # Marked before the call, so a concurrent batch does not judge the same spike.
         conn.execute(
-            "INSERT OR IGNORE INTO rate_spike_judgments (client_id, session_id) VALUES (?, ?)",
-            (deviation.client_id, deviation.event.session_id),
+            "INSERT OR IGNORE INTO rate_spike_judgments (project_id, session_id) VALUES (?, ?)",
+            (deviation.project_id, deviation.event.session_id),
         )
     # One row per real model call, for the panel's reviewed_by_ai count.
     conn.execute(
-        "INSERT INTO ai_judgments (client_id, event_id, ts) VALUES (?, ?, ?)",
-        (deviation.client_id, deviation.event.id, format_ts(deviation.event.ts)),
+        "INSERT INTO ai_judgments (project_id, event_id, ts) VALUES (?, ?, ?)",
+        (deviation.project_id, deviation.event.id, format_ts(deviation.event.ts)),
     )
 
 
@@ -65,14 +65,14 @@ def needs_judgment(conn: sqlite3.Connection, deviation: Deviation) -> bool:
         return True
     if signals.get("rate_spike"):
         spike_judged = conn.execute(
-            "SELECT 1 FROM rate_spike_judgments WHERE client_id = ? AND session_id = ?",
-            (deviation.client_id, deviation.event.session_id),
+            "SELECT 1 FROM rate_spike_judgments WHERE project_id = ? AND session_id = ?",
+            (deviation.project_id, deviation.event.session_id),
         ).fetchone()
         if spike_judged is None:
             return True
     judged = conn.execute(
-        "SELECT 1 FROM decisions WHERE client_id = ? AND session_id = ?",
-        (deviation.client_id, deviation.event.session_id),
+        "SELECT 1 FROM decisions WHERE project_id = ? AND session_id = ?",
+        (deviation.project_id, deviation.event.session_id),
     ).fetchone()
     return judged is None
 
@@ -87,16 +87,16 @@ def apply_judgment(
         if decision != "block":
             return None
         conn.execute(
-            "UPDATE decisions SET rationale = ? WHERE client_id = ? AND id = ?",
-            (rationale, deviation.client_id, deviation.block_id),
+            "UPDATE decisions SET rationale = ? WHERE project_id = ? AND id = ?",
+            (rationale, deviation.project_id, deviation.block_id),
         )
         return deviation.block_id
 
-    if session_has_block(conn, deviation.client_id, event.session_id):
+    if session_has_block(conn, deviation.project_id, event.session_id):
         return None
     already = conn.execute(
-        "SELECT 1 FROM decisions WHERE client_id = ? AND session_id = ? AND decision = ?",
-        (deviation.client_id, event.session_id, decision),
+        "SELECT 1 FROM decisions WHERE project_id = ? AND session_id = ? AND decision = ?",
+        (deviation.project_id, event.session_id, decision),
     ).fetchone()
     if already is not None:
         return None
@@ -106,7 +106,7 @@ def apply_judgment(
     ip = str(event.ip) if deviation.signals.get("new_network") else ""
     decision_id = create_decision(
         conn,
-        deviation.client_id,
+        deviation.project_id,
         ts=settings.clock(),
         user_id=event.user_id,
         session_id=event.session_id,
@@ -117,5 +117,5 @@ def apply_judgment(
         event_ids=[event.id],
     )
     if decision == "block":
-        bump_version(conn, deviation.client_id)
+        bump_version(conn, deviation.project_id)
     return decision_id
