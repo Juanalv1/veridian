@@ -1,8 +1,8 @@
 """Veridian ASGI middleware.
 
 Reports one event per request to the engine (in the background, batched) and
-refuses requests whose session, IP or user is on the engine's blocklist.
-It is fail-open: the engine being slow or down never delays or breaks the app.
+refuses requests whose session, IP or user is on the engine's blocklist
+(each refusal is reported as a 403 event too). It is fail-open: the engine being slow or down never delays or breaks the app.
 Request and response bodies are never read into events.
 """
 
@@ -16,6 +16,7 @@ from http.cookies import SimpleCookie
 import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.routing import Match
 
 log = logging.getLogger("veridian")
 
@@ -71,6 +72,36 @@ def _route_template(scope: dict) -> str:
     if route is not None:
         template = getattr(route, "path_format", None) or getattr(route, "path", None)
         if template:
+            return template
+    return scope.get("path", "")
+
+
+def _routes_of(app) -> list:
+    """The router's routes, found by walking the `.app` chain of wrapped apps."""
+    for _ in range(16):
+        routes = getattr(app, "routes", None)
+        if routes is not None:
+            return list(routes)
+        app = getattr(app, "app", None)
+        if app is None:
+            break
+    return []
+
+
+def _template_without_calling(scope: dict, routes: list) -> str:
+    """Route template for a request the app never saw (it was blocked).
+
+    Matches the path against the router's routes without running any endpoint.
+    Mounted sub-apps and anything unmatched fall back to the raw path: it may
+    carry IDs (e.g. /invoices/42), so the engine groups that access less well.
+    """
+    for route in routes:
+        try:
+            match, _ = route.matches(scope)
+        except Exception:
+            continue
+        template = getattr(route, "path_format", None)
+        if match == Match.FULL and template and not hasattr(route, "routes"):
             return template
     return scope.get("path", "")
 
@@ -135,7 +166,14 @@ class VeridianMiddleware:
         ip = resolve_client_ip(scope, self.trusted_proxies)
 
         if self._is_blocked(request, ip):
-            await JSONResponse({"error": "blocked"}, status_code=403)(scope, receive, send)
+            response = JSONResponse({"error": "blocked"}, status_code=403)
+            await response(scope, receive, send)
+            # The app is not called, so the route template is matched by hand.
+            # The device cookie is only read here, never issued to a blocked client.
+            self._record(
+                scope, request, ip, _cookie(scope, DEVICE_COOKIE), 403, len(response.body),
+                route=_template_without_calling(scope, _routes_of(scope.get("app") or self.app)),
+            )
             return
 
         device_id = _cookie(scope, DEVICE_COOKIE)
@@ -222,7 +260,7 @@ class VeridianMiddleware:
 
     # --- events ------------------------------------------------------------
 
-    def _record(self, scope, request, ip, device_id, status, size) -> None:
+    def _record(self, scope, request, ip, device_id, status, size, route=None) -> None:
         try:
             user = self._safe(self.user_id, request)
             if not user:
@@ -237,7 +275,7 @@ class VeridianMiddleware:
                     "user_agent": (_header(scope, b"user-agent") or "")[:200],
                     "device_id": device_id,
                     "method": scope["method"],
-                    "route": _route_template(scope),
+                    "route": route if route is not None else _route_template(scope),
                     "status": status,
                     "bytes": size,
                 }

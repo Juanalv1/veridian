@@ -294,7 +294,8 @@ async def test_engine_down_requests_still_work_and_last_list_kept(rec):
     await mw.flush()  # must not raise; batch kept
     rec.fail = False
     await mw.flush()
-    assert len(rec.events) == 2  # only the two non-blocked requests were reported
+    # two passed requests plus the one it rejected (reported as 403)
+    assert [e["status"] for e in rec.events] == [200, 403, 200]
 
 
 async def test_failed_flush_is_retried_with_same_ids(rec):
@@ -429,3 +430,81 @@ async def test_exclude_paths_is_configurable(rec):
         await c.get("/static/app.css", cookies={"uid": "u_42"})
     await mw.flush()
     assert [e["route"] for e in rec.events] == ["/static/app.css"]
+
+
+# --- blocked requests are reported -----------------------------------------
+
+
+async def test_blocked_request_is_reported_as_403_event(rec):
+    rec.version = 3
+    rec.blocklist["sessions"] = ["s_bad"]
+    calls = []
+    mw = make_mw(build_app(calls), rec.client(), trusted_proxies=1)
+    await mw.refresh_blocklist()
+    async with client_for(mw) as c:
+        r = await c.get(
+            "/items/99",
+            cookies={"uid": "u_42", "sid": "s_bad", "vrd_did": "d_77"},
+            headers={"X-Forwarded-For": "203.0.113.9", "User-Agent": "UA-test"},
+        )
+    assert r.status_code == 403 and calls == []
+    await mw.flush()
+    (e,) = rec.events
+    assert e["status"] == 403
+    assert e["bytes"] == len(r.content)
+    assert e["user_id"] == "u_42" and e["session_id"] == "s_bad"
+    assert e["ip"] == "203.0.113.9" and e["device_id"] == "d_77"
+    assert e["method"] == "GET"
+    assert e["ts"].endswith("Z") and e["id"]
+    assert "body" not in e
+
+
+async def test_blocked_request_reports_route_template_without_calling_app(rec):
+    rec.version = 3
+    rec.blocklist["sessions"] = ["s_bad"]
+    calls = []
+    mw = make_mw(build_app(calls), rec.client())
+    await mw.refresh_blocklist()
+    async with client_for(mw) as c:
+        await c.get("/items/12345", cookies={"uid": "u_42", "sid": "s_bad"})
+        await c.post("/payouts/bank-account", cookies={"uid": "u_42", "sid": "s_bad"})
+    assert calls == []
+    await mw.flush()
+    assert [(e["method"], e["route"]) for e in rec.events] == [
+        ("GET", "/items/{item_id}"),
+        ("POST", "/payouts/bank-account"),
+    ]
+
+
+async def test_blocked_request_to_unknown_path_reports_raw_path(rec):
+    rec.version = 3
+    rec.blocklist["sessions"] = ["s_bad"]
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_blocklist()
+    async with client_for(mw) as c:
+        await c.get("/nope/1", cookies={"uid": "u_42", "sid": "s_bad"})
+    await mw.flush()
+    assert rec.events[0]["route"] == "/nope/1" and rec.events[0]["status"] == 403
+
+
+async def test_blocked_request_without_identity_is_not_reported(rec):
+    rec.version = 3
+    rec.blocklist["ips"] = ["198.51.100.1"]
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_blocklist()
+    async with client_for(mw) as c:
+        r = await c.get("/items/1")
+    assert r.status_code == 403
+    await mw.flush()
+    assert rec.events == []
+
+
+async def test_excluded_paths_blocked_or_not_are_never_reported(rec):
+    rec.version = 3
+    rec.blocklist["sessions"] = ["s_bad"]
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_blocklist()
+    async with client_for(mw) as c:
+        await c.get("/static/app.css", cookies={"uid": "u_42", "sid": "s_bad"})
+    await mw.flush()
+    assert rec.events == []
