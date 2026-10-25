@@ -9,6 +9,8 @@ No AI, no persistence.
 import ipaddress
 import json
 import os
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Annotated
@@ -115,6 +117,22 @@ class ClientState:
     pending_events: dict[str, EventIn] = field(default_factory=dict)
     normal: set[str] = field(default_factory=set)
     blocked_users: set[str] = field(default_factory=set)
+    # Events are learned only after `learn_delay` seconds, like the real engine
+    # ("events older than N minutes that were not flagged"). Otherwise an
+    # attacker's own login would whitelist their network before they act.
+    learn_delay: float = 0.0
+    clock: object = time.monotonic
+    pending_learn: deque = field(default_factory=deque)
+
+    def _learn_later(self, event: EventIn) -> None:
+        self.pending_learn.append((self.clock(), event))
+        self.apply_pending()
+
+    def apply_pending(self) -> None:
+        now = self.clock()
+        while self.pending_learn and now - self.pending_learn[0][0] >= self.learn_delay:
+            _, event = self.pending_learn.popleft()
+            self.profile(event.user_id).learn(event)
 
     def profile(self, user_id: str) -> Profile:
         return self.profiles.setdefault(user_id, Profile())
@@ -126,6 +144,7 @@ class ClientState:
         p.devices.update(devices)
 
     def ingest(self, event: EventIn) -> None:
+        self.apply_pending()
         profile = self.profile(event.user_id)
         key = f"{event.method} {event.route}"
         route_class = self.routes.get(key, "normal")
@@ -137,7 +156,7 @@ class ClientState:
         if route_class == "critical" and never_used and new_network and has_history:
             self._block(event, route_class)
         else:
-            profile.learn(event)
+            self._learn_later(event)
 
     def _block(self, event: EventIn, route_class: str) -> None:
         if event.session_id and event.session_id not in self.sessions:
@@ -212,16 +231,24 @@ def _seed_from_env() -> list[dict]:
     return json.loads(raw)
 
 
-def create_app(tokens: set[str] | None = None, seed: list[dict] | None = None, routes: dict[str, str] | None = None) -> FastAPI:
+def create_app(
+    tokens: set[str] | None = None,
+    seed: list[dict] | None = None,
+    routes: dict[str, str] | None = None,
+    learn_delay: float | None = None,
+    clock=time.monotonic,
+) -> FastAPI:
     """Build the fake engine. With no arguments it reads the environment:
 
     VERIDIAN_TOKENS         comma-separated accepted tokens (none -> all 401)
     VERIDIAN_ALLOW_DEV_TOKEN=1   additionally accept the local "dev-token"
+    VERIDIAN_LEARN_DELAY    seconds before an unflagged event enters the profile (default 300)
     VERIDIAN_SEED           "demo" or a JSON list of {user_id, ips, routes, devices}
     """
     accepted = set(tokens) if tokens is not None else _tokens_from_env()
     seed_data = seed if seed is not None else _seed_from_env()
     route_map = dict(routes) if routes is not None else dict(DEFAULT_ROUTES)
+    delay = learn_delay if learn_delay is not None else float(os.environ.get("VERIDIAN_LEARN_DELAY", "300"))
     states: dict[str, ClientState] = {}
 
     app = FastAPI(title="Veridian fake engine")
@@ -235,7 +262,7 @@ def create_app(tokens: set[str] | None = None, seed: list[dict] | None = None, r
         if scheme != "Bearer" or token not in accepted:
             raise Unauthorized()
         if token not in states:
-            st = ClientState(routes=route_map)
+            st = ClientState(routes=route_map, learn_delay=delay, clock=clock)
             for item in seed_data:
                 st.seed(item["user_id"], item.get("ips", ()), item.get("routes", ()), item.get("devices", ()))
             states[token] = st
@@ -273,6 +300,7 @@ def create_app(tokens: set[str] | None = None, seed: list[dict] | None = None, r
 
     @app.get("/v1/users/{user_id}/profile")
     def get_profile(user_id: str, st: State):
+        st.apply_pending()
         p = st.profile(user_id)
         hours = [min(p.hours), max(p.hours)] if p.hours else []
         return {

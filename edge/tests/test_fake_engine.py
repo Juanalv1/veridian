@@ -49,7 +49,7 @@ def attack(**over):
 
 @pytest.fixture
 def client():
-    app = create_app(tokens={TOKEN, "tok-b"}, seed=SEED)
+    app = create_app(tokens={TOKEN, "tok-b"}, seed=SEED, learn_delay=0)
     return TestClient(app)
 
 
@@ -252,3 +252,19 @@ def test_clients_are_isolated(client):
     post_events(client, [attack()])
     other = client.get("/v1/blocklist", headers={"Authorization": "Bearer tok-b"}).json()
     assert other["version"] == 0
+
+
+# --- delayed learning ------------------------------------------------------
+
+
+def test_attackers_own_events_do_not_whitelist_their_network_before_the_delay():
+    now = [0.0]
+    c = TestClient(create_app(tokens={TOKEN}, seed=SEED, learn_delay=300, clock=lambda: now[0]))
+    # the attacker logs in first (normal route, new network): not learned yet
+    post_events(c, [make_event(id="e_login", session_id="s_atk", ip="203.0.113.9", method="POST", route="/login")])
+    post_events(c, [attack()])
+    assert c.get("/v1/blocklist", headers=AUTH).json()["sessions"] == ["s_atk"]
+    # after the delay the unflagged login would be learned
+    now[0] = 301.0
+    prof = c.get("/v1/users/u_42/profile", headers=AUTH).json()
+    assert "203.0.113.0/24" in prof["networks"]
