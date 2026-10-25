@@ -243,13 +243,21 @@ class Engine:
         status, body = request(self.base_url, self.sdk, "POST", "/v1/check", {"event": event})
         return (body or {}).get("verdict", f"http {status}"), time.monotonic() - t0
 
+    def read(self, fetch, retries=4):
+        """A read that survives a transient error (engine restart, 429): retry, then report it."""
+        for attempt in range(retries):
+            status, body = fetch()
+            if status == 200 and isinstance(body, dict):
+                return body
+            time.sleep(2 * (attempt + 1))
+        raise RuntimeError(f"read failed: {status} {str(body)[:120]}")
+
     def decisions(self, user):
-        status, body = self.panel("GET", "/v1/decisions?limit=200", project=True)
-        return [d for d in (body or {}).get("decisions", []) if d.get("user_id") == user]
+        body = self.read(lambda: self.panel("GET", "/v1/decisions?limit=200", project=True))
+        return [d for d in body.get("decisions", []) if d.get("user_id") == user]
 
     def blocklist(self):
-        status, body = request(self.base_url, self.sdk, "GET", "/v1/blocklist")
-        return body or {}
+        return self.read(lambda: request(self.base_url, self.sdk, "GET", "/v1/blocklist"))
 
 
 def play(engine: Engine, case: str, index: int, wait_s: float) -> dict:
@@ -287,11 +295,20 @@ def play(engine: Engine, case: str, index: int, wait_s: float) -> dict:
                           if decisions else "")}
 
 
+def safe_play(engine: Engine, case: str, index: int, wait_s: float) -> dict:
+    """One run; an error is recorded on that run instead of losing the whole evaluation."""
+    try:
+        return play(engine, case, index, wait_s)
+    except Exception as error:  # noqa: BLE001
+        return {"case": case, "run": index, "error": f"{type(error).__name__}: {error}"[:200]}
+
+
 def table(results: list[dict], runs: int) -> str:
     lines = ["| Caso | Esperado | Bloqueado (corridas) | Decisión más fuerte | Consulta síncrona | Primera decisión |",
              "|---|---|---|---|---|---|"]
     for case, (title, expect, _, _) in CASES.items():
-        rows = [r for r in results if r["case"] == case]
+        errors = sum("error" in r for r in results if r["case"] == case)
+        rows = [r for r in results if r["case"] == case and "error" not in r]
         if not rows:
             continue
         blocked = sum(r["blocked"] for r in rows)
@@ -302,7 +319,8 @@ def table(results: list[dict], runs: int) -> str:
         lines.append(f"| {'✅' if ok else '❌'} {case} {title} | {'no bloquear' if expect == 'pass' else 'bloquear'} "
                      f"| {blocked}/{len(rows)} | {strongest} "
                      f"| {f'{min(checks):.1f}–{max(checks):.1f} s' if checks else '—'} "
-                     f"| {f'{min(firsts):.0f}–{max(firsts):.0f} s' if firsts else '—'} |")
+                     f"| {f'{min(firsts):.0f}–{max(firsts):.0f} s' if firsts else '—'} |"
+                     + (f" ({errors} corrida(s) con error)" if errors else ""))
     return "\n".join(lines)
 
 
@@ -324,7 +342,7 @@ def main(argv=None) -> int:
     try:
         jobs = [(case, i) for case in cases for i in range(args.runs)]
         with ThreadPoolExecutor(max_workers=6) as pool:
-            results = list(pool.map(lambda job: play(engine, job[0], job[1], args.wait), jobs))
+            results = list(pool.map(lambda job: safe_play(engine, job[0], job[1], args.wait), jobs))
     finally:
         engine.teardown()
     print(table(results, args.runs))
