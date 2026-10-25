@@ -12,10 +12,11 @@
     {% if d.marked_normal %}
       <span class="consequence">Marcado como normal. Veridian lo suma al perfil de {{ d.user_id }}.</span>
     {% else %}
-      <form method="post" action="/decisions/{{ d.id | urlencode }}/normal"
-            hx-post="/decisions/{{ d.id | urlencode }}/normal" hx-target="#live" hx-sync="#live:replace">
+      <form method="post" action="/decisions/{{ d.id | urlencode }}/normal">
         <input type="hidden" name="user" value="{{ d.user_id }}">
-        <button class="btn" type="submit">Esto era normal</button>
+        <button class="btn btn-primary" type="submit"
+                hx-post="/decisions/{{ d.id | urlencode }}/normal" hx-target="#live" hx-sync="#live:replace"
+                hx-disabled-elt="this">Esto era normal</button>
       </form>
       <span class="consequence">{% if d.decision == 'block' %}La sesión{% if d.blocks_ip %} y la IP {{ d.blocks_ip }} no pueden{% else %} no puede{% endif %} entrar. El dueño sigue trabajando.{% else %}Veridian lo sumará al perfil de {{ d.user_id }}.{% endif %}</span>
     {% endif %}

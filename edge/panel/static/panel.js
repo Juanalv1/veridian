@@ -1,6 +1,7 @@
 // Live refresh, the mark-normal swap and navigation are done by htmx (see the
 // hx-* attributes in the templates). This file only guards the polling and shows
-// times in the viewer's local time zone (the engine sends UTC).
+// times in the viewer's local time zone (the engine sends UTC), gives the mark-normal
+// button its in-flight state, and shows how long the engine has been unreachable.
 (function () {
   function pad(n) { return String(n).padStart(2, "0"); }
   function localize(root) {
@@ -31,6 +32,36 @@
     var active = document.activeElement;
     return !(pointerDown || document.hidden || (active && active.closest && active.closest("form")));
   };
-  document.addEventListener("htmx:afterSwap", function () { localize(document); });
+  document.addEventListener("htmx:afterSwap", function () { localize(document); renderConn(); });
   localize(document);
+
+  // In-flight state of the mark-normal button (htmx disables it via hx-disabled-elt).
+  function isMark(el) { return el && el.matches && el.matches("button.btn[hx-post]"); }
+  document.addEventListener("htmx:beforeRequest", function (e) {
+    var btn = e.detail.elt;
+    if (!isMark(btn)) return;
+    btn.dataset.label = btn.textContent;
+    btn.textContent = "Marcando…";
+    btn.setAttribute("aria-busy", "true");
+  });
+  document.addEventListener("htmx:afterRequest", function (e) {
+    var btn = e.detail.elt;
+    if (!isMark(btn) || !btn.isConnected) return;
+    btn.textContent = btn.dataset.label || "Esto era normal";
+    btn.removeAttribute("aria-busy");
+  });
+
+  // Engine connection: when it is down, say how long since the last good update.
+  var lastOk = null;
+  function ago(s) { return s < 60 ? s + " s" : s < 3600 ? Math.floor(s / 60) + " min" : Math.floor(s / 3600) + " h"; }
+  function renderConn() {
+    var conn = document.getElementById("conn");
+    if (!conn) return;
+    if (!conn.classList.contains("down")) { lastOk = Date.now(); return; }
+    var label = conn.querySelector("span:last-child");
+    if (!label || lastOk === null) return;
+    label.textContent = "Motor sin conexión · último dato hace " + ago(Math.max(0, Math.round((Date.now() - lastOk) / 1000)));
+  }
+  renderConn();
+  setInterval(renderConn, 1000);
 })();

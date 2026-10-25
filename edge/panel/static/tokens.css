@@ -1,0 +1,100 @@
+/*
+ * Veridian design tokens (dark theme), from the Veridian design system
+ * (tokens.json v1). Interaction tokens and button rules at the end are a
+ * proposed addition to that system.
+ *
+ * This file is the source of truth. Copies live in edge/panel/static/ and
+ * landing/ because each one deploys from its own folder; a test checks they
+ * stay identical.
+ */
+:root {
+  /* Color */
+  --ground: #0f1513;
+  --surface: #18201d;
+  --line: #2a3531;
+  --ink: #e8eeea;
+  --muted: #9aa8a2;
+  --viridian: #4cc29a;
+  --viridian-tint: #173a30;
+  --on-viridian: #0f1513;
+  --state-normal: #4cc29a;
+  --state-review: #e9b949;
+  --state-block: #ff6b57;
+
+  /* Type */
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-pill: 999px;
+
+  /* Interaction (proposed addition) */
+  --viridian-hover: #66cfac;
+  --surface-hover: #202a26;
+  --line-hover: #3d4b46;
+  --focus-ring: 2px solid var(--viridian);
+  --focus-offset: 3px;
+  --duration-fast: 120ms;
+  --duration-press: 80ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --press-scale: 0.97;
+  --disabled-opacity: 0.55;
+
+  color-scheme: dark;
+}
+
+/* Buttons (proposed addition) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 12px 20px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-press) var(--ease-out);
+}
+.btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.btn:active { transform: scale(var(--press-scale)); }
+.btn:disabled,
+.btn[aria-disabled="true"],
+.btn[aria-busy="true"] { opacity: var(--disabled-opacity); cursor: not-allowed; transform: none; }
+.btn[aria-busy="true"] { cursor: progress; }
+
+/* Primary: the one accent on the screen. */
+.btn-primary { background: var(--viridian); color: var(--on-viridian); }
+.btn-primary:hover { background: var(--viridian-hover); }
+
+/* Secondary: everything else that is a button. */
+.btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line); }
+.btn-secondary:hover { background: var(--surface-hover); border-color: var(--line-hover); }
+
+/* Ghost: low-emphasis actions next to a primary one. */
+.btn-ghost { background: transparent; color: var(--muted); }
+.btn-ghost:hover { color: var(--ink); background: var(--surface); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: none; }
+  .btn:active { transform: none; }
+}
