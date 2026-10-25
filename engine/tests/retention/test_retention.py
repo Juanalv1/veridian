@@ -123,7 +123,7 @@ def test_purge_deletes_rows_strictly_older_than_cutoff(conn):
     }
     assert conn.execute("SELECT COUNT(*) FROM decision_events WHERE decision_id = ?", (old,)).fetchone()[0] == 0
     assert counts == {"events": 1, "decisions": 1, "decision_events": 1, "ai_judgments": 1, "rate_spike_judgments": 0,
-                      "user_contacts": 0}
+                      "user_contacts": 0, "self_unlock_tokens": 0}
 
 
 def test_purge_keeps_open_block_and_its_evidence(conn):

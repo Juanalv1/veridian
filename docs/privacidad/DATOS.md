@@ -15,8 +15,9 @@ Estado a 2026-10-25. "Hoy" es lo que hace el código; "planeado" es el diseño (
 | `decision_events` | `decision_id`, `event_id` (enlaza a `events`) | Evidencia de cada decisión |
 | `rate_spike_judgments` | `session_id` | Juzgar una vez el primer pico de ritmo |
 | `ai_judgments` | `event_id`, `ts` | Contar llamadas a la IA |
+| `self_unlock_token` | `user_id`, `decision_id`; solo el SHA-256 del token | Enlace de un solo uso del correo de desbloqueo (vence a las 24 h; se borra con el usuario y por retención) |
 | `blocklist_versions` | Ninguno | Versión de la lista de bloqueo |
-| `user_contact` | `user_id`, `email` del usuario final (opcional, solo el último por usuario y proyecto), `updated_at` | Enviarle el correo de desbloqueo ([DESBLOQUEO-POR-CORREO.md](../DESBLOQUEO-POR-CORREO.md)) |
+| `user_contact` | `user_id`, `email` del usuario final (opcional, solo el último por usuario y proyecto), `updated_at`, `last_mail_at` (límite de un correo cada 15 min) | Enviarle el correo de desbloqueo ([DESBLOQUEO-POR-CORREO.md](../DESBLOQUEO-POR-CORREO.md)) |
 
 Notas:
 

@@ -325,6 +325,20 @@ def test_erasing_the_user_deletes_their_tokens(app_factory):
     assert tokens(client) == []
 
 
+def test_retention_purges_expired_tokens_only(app_factory):
+    from veridian_engine.retention import purge_expired
+
+    client = app_factory()
+    configure(client)
+    blocked(client)
+    run_sender(client)
+    with db.connect(client.app.state.settings.db_path) as conn:
+        purge_expired(conn, "client_a", 30, NOW)  # the token is live: kept
+        assert conn.execute("SELECT COUNT(*) FROM self_unlock_token").fetchone()[0] == 1
+        purge_expired(conn, "client_a", 30, NOW + timedelta(days=60))
+        assert conn.execute("SELECT COUNT(*) FROM self_unlock_token").fetchone()[0] == 0
+
+
 # --- what the middleware learns ---
 
 

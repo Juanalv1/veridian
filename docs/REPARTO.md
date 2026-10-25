@@ -115,6 +115,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 }
 ```
 
+- **`self_unlock_sessions` (opcional):** solo aparece cuando el proyecto tiene `self_unlock_enabled` y enforce. Lista las `sessions` bloqueadas cuyo usuario tiene `user_email` (el motor le envía el correo de desbloqueo), para que el middleware muestre "Te enviamos un correo para confirmar que fuiste tú". Sin esa clave, o con la sesión fuera de la lista, el mensaje de bloqueo es el genérico. Un bloqueo solo por IP no la usa.
 - **Siempre es la lista completa,** nunca solo los cambios. Sin `since`, devuelve la versión actual.
 - **Si `since` es la versión actual:** `304` sin cuerpo.
 - **Un bloqueo frena al atacante, no al dueño:** el motor bloquea la `session_id` y la `ip` del acceso sospechoso. Si el acceso viene de una red conocida del dueño (`new_network` en `false`), solo bloquea la `session_id`: esa IP la comparte el dueño. `users` queda en el contrato para bloqueos de cuenta completa, pero el primer hito lo deja vacío, porque bloquear el `user_id` también deja afuera a la víctima.
@@ -339,8 +340,10 @@ La clasificación de rutas que el motor está usando, para que el panel la muest
 Respuesta `200`:
 
 ```json
-{"verdict": "block", "decision_id": "d_311"}
+{"verdict": "block", "decision_id": "d_311", "self_unlock": true}
 ```
+
+`self_unlock` solo aparece (siempre `true`) cuando el `block` es de un usuario al que el motor le envía el correo de desbloqueo; es la señal para el mensaje de bloqueo del middleware.
 
 - **`verdict`:** `allow` (la app atiende la petición) o `block` (el middleware responde `403 {"error": "blocked"}` y la petición **nunca llega a la app**).
 - **Cómo decide el motor:**
@@ -459,6 +462,10 @@ Cada `block` encola un correo para cada `owner` y `admin` de la organización de
 |---|---|---|
 | `GET /v1/orgs/{id}/me` | cualquier miembro | `{"org_id", "role", "notify_email"}` |
 | `PATCH /v1/orgs/{id}/me` `{"notify_email"}` | cualquier miembro, solo su propia fila | igual que `GET`. Queda en `audit_log` (`member.notify_email`) |
+
+### Correo de desbloqueo al usuario final (T3)
+
+Cada `block` encola, en la misma transacción y en la misma bandeja (`notifications`, `kind = 'email'`, `purpose = 'self_unlock'`), un correo al **usuario bloqueado** si el proyecto está en `enforce`, tiene `self_unlock_enabled` y existe un `user_email` de ese usuario. Como máximo uno por usuario cada 15 min (sin medir). La fila no copia el correo: el motor lo lee de `user_contact` al enviar, y vuelve a revisar entonces que la función siga activa, que la decisión siga `open` y que el correo exista (si no, queda `failed` con el motivo). El token se crea al enviar: aleatorio, atado a `decision_id` + `project_id` + `user_id`, de un solo uso, vence a las 24 h; solo se guarda su SHA-256 (`self_unlock_token`). Un reintento reemplaza el token sin usar. El correo lleva la marca del proyecto, fecha y hora (UTC) y un dispositivo aproximado ("Chrome en Windows"); nunca la IP ni la ruta. El enlace es `<VERIDIAN_PANEL_URL o https://veridian-panel.onrender.com>/desbloquear/<token>`. Remitente: `VERIDIAN_MAIL_FROM`, con `brand_name` como nombre visible.
 
 ### Marcar normal (contrato 3)
 
