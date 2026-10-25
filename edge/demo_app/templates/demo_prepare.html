@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Preparar demo{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h1>Preparar demo</h1>
+  <p class="lead">Borra los datos del proyecto, siembra 14 días de historial desde este teléfono (su red y su dispositivo) y vacía la lista de bloqueos.</p>
+  {% if done %}<div class="msg okmsg" role="status">{{ done }}</div>{% endif %}
+  {% if error %}<div class="msg error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post">
+    <button type="submit" data-busy="Preparando…">Preparar demo</button>
+  </form>
+</div>
+{% endblock %}
