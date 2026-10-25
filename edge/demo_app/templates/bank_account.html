@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Cuenta de cobros{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Cuenta de cobros</h1>
+  {% if saved %}<div class="msg okmsg">Cuenta actualizada.</div>{% endif %}
+  <p class="muted">Aquí se depositan tus cobros.</p>
+  <table>
+    <tr><th>Banco</th><td>{{ bank }}</td></tr>
+    <tr><th>Número de cuenta</th><td>{{ masked }}</td></tr>
+  </table>
+  <h2>Cambiar cuenta</h2>
+  <form method="post" action="/payouts/bank-account">
+    <label for="bank">Banco</label>
+    <input id="bank" name="bank" required>
+    <label for="account_number">Número de cuenta</label>
+    <input id="account_number" name="account_number" inputmode="numeric" required>
+    <button type="submit">Guardar cuenta</button>
+  </form>
+</div>
+{% endblock %}

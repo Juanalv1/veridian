@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ invoice.number }}{% endblock %}
+{% block content %}
+<div class="card">
+  <p><a href="/invoices">← Facturas</a></p>
+  <h1>Factura {{ invoice.number }}</h1>
+  <p><span class="badge {{ invoice.status }}">{{ invoice.status }}</span></p>
+  <table>
+    <tr><th>Cliente</th><td>{{ invoice.client }}</td></tr>
+    <tr><th>Fecha</th><td>{{ invoice.date }}</td></tr>
+    <tr><th>Monto</th><td>{{ "%.2f"|format(invoice.amount) }} USD</td></tr>
+  </table>
+</div>
+{% endblock %}

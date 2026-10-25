@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Facturas{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="row"><h1>Facturas</h1><a class="btn" href="/invoices/export" style="margin:0">Exportar CSV</a></div>
+  <p class="muted">{{ user.company }}</p>
+  <table>
+    <thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th>Estado</th><th class="num">Monto (USD)</th></tr></thead>
+    <tbody>
+    {% for i in invoices %}
+      <tr>
+        <td><a href="/invoices/{{ i.id }}">{{ i.number }}</a></td>
+        <td>{{ i.client }}</td><td>{{ i.date }}</td>
+        <td><span class="badge {{ i.status }}">{{ i.status }}</span></td>
+        <td class="num">{{ "%.2f"|format(i.amount) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="row"><span class="muted">Total</span><strong>{{ "%.2f"|format(total) }} USD</strong></p>
+</div>
+{% endblock %}
