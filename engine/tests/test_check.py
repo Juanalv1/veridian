@@ -279,3 +279,23 @@ def test_sync_judge_from_env_uses_the_sync_model(monkeypatch):
     assert Settings.from_env().sync_judge.keywords["model"] == "claude-sonnet-5-5"
     monkeypatch.delenv("ANTHROPIC_API_KEY")
     assert Settings.from_env().sync_judge is None
+
+
+def activity_status(client, event_id):
+    items = client.get("/v1/activity", headers=AUTH_A).json()["activity"]
+    return {item["event_id"]: item["status"] for item in items}[event_id]
+
+
+def test_blocked_check_stores_the_event_as_rejected(check_client):
+    client = check_client(FakeJudge(decision="block"))
+    seed_owner_history(client)
+    check(client, make_event("c1", NOW, **ATTACKER, **CRITICAL))
+    post_events(client, [make_event("c1", NOW, **ATTACKER, **CRITICAL)])  # the batch resend changes nothing
+    assert activity_status(client, "c1") == 403
+
+
+def test_allowed_check_keeps_the_reported_status(check_client):
+    client = check_client(FakeJudge())
+    seed_owner_history(client, method="POST", route="/payouts/bank-account")
+    check(client, make_event("c1", NOW, **CRITICAL))
+    assert activity_status(client, "c1") == 200

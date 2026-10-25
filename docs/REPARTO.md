@@ -327,7 +327,7 @@ Respuesta `200`:
   1. Sin desvío (el dueño desde su red y su dispositivo): `allow` de inmediato, sin IA.
   2. Desvío obvio (ruta crítica nunca usada + red nueva): `block` de inmediato por regla. La IA escribe la explicación después.
   3. Desvío gris (por ejemplo red conocida con dispositivo nuevo): **la IA decide en ese momento**, con un tope de ~10 s. `block` o `step_up` → `block` (el middleware no pide segundo factor); `allow` o `alert` → `allow`. Si la IA falla o pasa el tope, decide la regla de respaldo del juez.
-- **El evento queda registrado:** el motor lo guarda como si hubiera llegado por el contrato 1. El middleware lo vuelve a enviar en su lote normal sin problema: es idempotente por `id`.
+- **El evento queda registrado:** el motor lo guarda como si hubiera llegado por el contrato 1. El middleware lo vuelve a enviar en su lote normal sin problema: es idempotente por `id`. Si la respuesta es `block`, el motor lo guarda con `status: 403`, porque la app nunca lo ejecutó.
 - **Un `block` también entra en la lista** (contrato 2): sesión e IP, o solo sesión si la red es conocida.
 - **Timeout del middleware:** 12 s. Si el motor no responde, falla o da timeout, la petición **pasa** (*fail-open*): si Veridian se cae, la app sigue funcionando; esas rutas quedan sin protección mientras tanto.
 - **Latencia:** el dueño legítimo casi nunca espera (sin desvío no hay IA). Solo espera lo sospechoso y crítico.

@@ -44,7 +44,13 @@ def check_event(
 ) -> CheckResult:
     """Decide one critical request now. Never raises: any internal error allows it (fail-open)."""
     try:
-        return _check(settings, route_classes, write_lock, client_id, event)
+        result = _check(settings, route_classes, write_lock, client_id, event)
+        if result.verdict == "block":
+            # The middleware reported the request before running it; a block means the app never
+            # did, so the stored event says 403, as the panel and the activity feed should show.
+            with write_lock, db.connect(settings.db_path) as conn:
+                conn.execute("UPDATE events SET status = 403 WHERE client_id = ? AND id = ?", (client_id, event.id))
+        return result
     except Exception:  # noqa: BLE001 - a Veridian failure must never take the customer's app down
         logger.exception("Synchronous check failed for session %s; allowing", event.session_id)
         return ALLOW
