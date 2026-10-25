@@ -238,7 +238,7 @@ Los últimos accesos del cliente, **todos**, no solo los que generaron una decis
   Así el panel muestra cuál pasó y cuál se detuvo.
 - **Lo que no incluye:** `user_agent` ni `bytes`; nunca cuerpos ni datos de clientes, igual que el contrato 1.
 
-### 6. Resumen: motor → panel (propuesto por Dev 2, pendiente de Dev 1)
+### 6. Resumen: motor → panel
 
 `GET /v1/summary?since=<ISO>&until=<ISO>`
 
@@ -261,12 +261,16 @@ Los números de la portada del panel. El panel pide su "hoy" local (por ejemplo 
 ```
 
 - **`accesses`:** todos los eventos del rango, incluidos los rechazados con `403`.
-- **`reviewed_by_ai`:** los accesos que llegaron al juez de IA (los desvíos). Es el argumento del costo: la mayoría nunca llega a la IA.
+- **`reviewed_by_ai`:** los accesos del rango que el juez de IA evaluó, es decir, cada consulta real al modelo.
+  - No es lo mismo que los desvíos: el motor consulta una vez por sesión y no repite lo ya juzgado.
+  - Sin `ANTHROPIC_API_KEY` es `0`.
+  - Es el argumento del costo: la mayoría nunca llega a la IA.
+- **Rango:** `since` y `until` en ISO 8601 UTC. `since` tiene que ser anterior a `until`; si no, `422`.
 - **`blocks_active`:** el estado actual, no el del rango: decisiones `block` con `status: open`, y cuántas sesiones e IPs hay en la lista de bloqueos.
 - **`by_hour`:** una fila por hora UTC del rango que tenga accesos, en orden; `blocks` cuenta las decisiones `block` creadas en esa hora. El panel convierte a hora local.
 - **Tiempo de detección:** no va aquí; el panel lo calcula de cada decisión (`ts` − `access.ts`).
 
-### 7. Usuarios: motor → panel (propuesto por Dev 2, pendiente de Dev 1)
+### 7. Usuarios: motor → panel
 
 `GET /v1/users`
 
