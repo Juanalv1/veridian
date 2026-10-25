@@ -421,15 +421,16 @@ select:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
 .tm-snippet-copy { align-self:flex-end; }
 .sn { display:flex; flex-direction:column; gap:12px; }
 .sn-tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); }
-.sn-tabs [role="tab"] { appearance:none; background:none; border:0; border-bottom:2px solid transparent; margin-bottom:-1px; padding:8px 12px; font:inherit; font-weight:600; color:var(--muted); cursor:pointer; }
-.sn-tabs [role="tab"][aria-selected="true"] { color:var(--ink); border-bottom-color:var(--viridian); }
-.sn-tabs [role="tab"]:focus-visible { outline:2px solid var(--viridian); outline-offset:2px; }
+.sn-tabs [role="tab"] { min-height:44px; transition:color var(--duration-fast) var(--ease-out); appearance:none; background:none; border:0; border-bottom:2px solid transparent; margin-bottom:-1px; padding:8px 12px; font:inherit; font-weight:600; color:var(--muted); cursor:pointer; }
+.sn-tabs [role="tab"][aria-selected="true"] { color:var(--ink); border-bottom-color:var(--ink); }
+.sn-tabs [role="tab"]:hover { color:var(--ink); }
+.sn-tabs [role="tab"]:focus-visible { outline:var(--focus-ring); outline-offset:var(--focus-offset); }
 .sn-panel { display:flex; flex-direction:column; gap:12px; }
 .sn-panel[hidden] { display:none; }
 .sn-step { display:flex; flex-direction:column; gap:6px; }
 .sn-step-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.sn-name { font-size:14px; color:var(--ink); }
-.sn-name b { display:inline-grid; place-items:center; width:20px; height:20px; margin-right:6px; border-radius:50%; background:var(--viridian); color:var(--ground); font-size:12px; }
+.sn-name { font-size:16px; font-weight:600; color:var(--ink); }
+.sn-name b { display:inline-grid; place-items:center; width:20px; height:20px; margin-right:6px; border-radius:var(--radius-pill); border:1px solid var(--line); color:var(--ink); font-family:var(--font-mono); font-size:12px; font-weight:500; }
 .tm-saved { align-self:flex-start; color:var(--ink); border-color:var(--viridian); }
 .tm-muted { color:var(--muted); }
 .tm-revoked th, .tm-revoked td { color:var(--muted); }
