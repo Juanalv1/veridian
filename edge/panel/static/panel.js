@@ -162,8 +162,6 @@
   function navigate(href, opts) {
     var key = keyOf(href), token = ++navToken;
     if (navAbort) { navAbort.abort(); navAbort = null; }
-    // A poll in flight would swap the page we are leaving over the one we are going to.
-    htmx.trigger(live(), "htmx:abort");
     store(currentKey, snapshot());  // so coming back is instant
     if (opts.push && key !== currentKey) history.pushState({ veridian: 1 }, "", href);
     currentKey = key;
@@ -199,8 +197,15 @@
 
   // In-flight state of the mark-normal button (htmx disables it via hx-disabled-elt).
   function isMark(el) { return el && el.matches && el.matches("button.btn[hx-post]"); }
+  // A poll (or mark-normal) answer that was asked before a navigation began would swap the page we
+  // left over the one we are on: drop it. (Aborting it instead makes htmx log an error.)
+  document.addEventListener("htmx:beforeSwap", function (e) {
+    var xhr = e.detail.xhr;
+    if (xhr && xhr.navToken !== undefined && (xhr.navToken !== navToken || navigating)) e.detail.shouldSwap = false;
+  });
   document.addEventListener("htmx:beforeRequest", function (e) {
     var cfg = e.detail.requestConfig;
+    if (e.detail.xhr) e.detail.xhr.navToken = navToken;
     if (cfg && cfg.headers && cfg.headers["HX-Preloaded"] === "true") return tapPreload(e);
     var btn = e.detail.elt;
     if (!isMark(btn)) return;
