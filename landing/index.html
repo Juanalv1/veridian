@@ -139,7 +139,7 @@ app = FastAPI()
 
 app.add_middleware(
     VeridianMiddleware,
-    token=os.environ[<span class="s">"VERIDIAN_TOKEN"</span>],
+    token=os.environ[<span class="s">"VERIDIAN_TOKEN"</span>],  <span class="c"># clave de API creada en el panel de Veridian (una por proyecto)</span>
     base_url=os.environ[<span class="s">"VERIDIAN_URL"</span>],
     user_id=<span class="k">lambda</span> request: <span class="k">getattr</span>(request.state, <span class="s">"user_id"</span>, <span class="k">None</span>),
     session_id=<span class="k">lambda</span> request: request.cookies.get(<span class="s">"sid"</span>),

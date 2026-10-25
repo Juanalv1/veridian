@@ -12,6 +12,8 @@ Requires Python 3.12 or newer.
 
 ## Usage
 
+Create an API key in the Veridian panel (one per project) and pass it as `token`; the key identifies your project. This README reads it from the `VERIDIAN_TOKEN` environment variable, but the name is only your choice: the SDK takes `token` as an argument and reads no environment variable itself. Keep the key secret and out of source control; if it leaks, revoke it in the panel and create another.
+
 Works with any ASGI app (FastAPI, Starlette). Wrap the app and tell the middleware who the user and the session are:
 
 ```python
@@ -61,6 +63,8 @@ Request and response bodies, and passwords, are never read into events.
 ## Fail-open
 
 If the engine is slow or down, your app is not delayed or broken: the middleware keeps using the last blocklist and the last critical routes it knew. A check that fails, returns anything but `200`, returns an unknown verdict or takes longer than `check_timeout` lets the request through. If the routes were never loaded, nothing is checked and critical routes are unprotected until the engine answers.
+
+This includes `401` (key unknown or revoked) and `429` (rate limited): your app keeps serving requests, nothing is retried in a tight loop, the last blocklist and routes stay in use, and queued events are sent again on the next flush. With a revoked key the app is therefore not protected, so replace the key in the panel.
 
 ## License
 

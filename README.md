@@ -28,12 +28,12 @@ Un middleware en tu app le reporta al servidor de Veridian cada acceso: el ident
 Así se instalaría en una app con FastAPI (propuesta):
 
 ```python
-# pip install veridian
-from veridian import VeridianMiddleware
+# pip install veridian-sdk
+from veridian_sdk import VeridianMiddleware
 
 app.add_middleware(
     VeridianMiddleware,
-    token=os.environ["VERIDIAN_TOKEN"],             # tu cuenta en Veridian
+    token=os.environ["VERIDIAN_TOKEN"],             # clave de API creada en el panel de Veridian (una por proyecto)
     user_id=lambda request: request.state.user.id,  # el usuario que tu app ya autenticó
 )
 ```
