@@ -30,7 +30,8 @@ Mode: on. Source: `INIT.md` (same as `edge-first-milestone.md`). Runner: `uv run
 ## Tasks
 
 - [x] T1 Render: demo and panel see the whole repo. Route: inline (API calls). Evidence: above.
-- [ ] T2 Package `sdk/python/`, wire `edge` to it, publish workflow, docs. Route: delegated (writer trigger: pyproject x2, lock, demo, tests, workflow, READMEs).
+- [x] T2 Package `sdk/python/`, wire `edge` to it, publish workflow, docs. Route: delegated (writer trigger: pyproject x2, lock, demo, tests, workflow, READMEs).
+  Evidence: commit `132ef69`. `edge` `uv run pytest -q`: 258 passed before and after. `uv build` in `sdk/python`: wheel + sdist; the wheel holds only `veridian_sdk/__init__.py`, `veridian_sdk/middleware.py` and dist-info. Clean venv with the wheel: `from veridian_sdk import VeridianMiddleware, resolve_client_ip` prints `ok`. `cd edge && uv sync --frozen --no-dev` succeeds. Workflow uses `astral-sh/setup-uv@v6`. Gap: the repo has no LICENSE, so the package declares none (README says so); decide before publishing.
 - [ ] T3 Tag `sdk-py-v0.1.0` after user confirmation; verify the PyPI page and a clean `pip install veridian-sdk`.
 
 ## Acceptance
