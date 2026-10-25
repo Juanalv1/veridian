@@ -18,6 +18,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from middleware import VeridianMiddleware
@@ -25,7 +26,10 @@ from middleware import VeridianMiddleware
 LOCAL_DEFAULT_PASSWORD = "demo1234"  # local demo only, never a real secret
 COOKIE = "sid"
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+HERE = Path(__file__).parent
+templates = Jinja2Templates(directory=str(HERE / "templates"))
+# Cache-busting query for /static assets: bump when app.css changes.
+ASSET_VERSION = "1"
 
 USERS = {
     "ana@facturas.demo": {"id": "u_42", "name": "Ana Torres", "company": "Taller Torres C.A."},
@@ -72,13 +76,16 @@ def create_app(
     users_by_id = {u["id"]: u for u in USERS.values()}
 
     app = FastAPI(title="Facturas Demo", docs_url=None, redoc_url=None, openapi_url=None)
+    # /static is excluded from VeridianMiddleware (see its exclude_paths): assets
+    # are not user actions and need no blocklist check.
+    app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
     def current_user(request: Request) -> dict | None:
         uid = sessions.get(request.cookies.get(COOKIE, ""))
         return users_by_id.get(uid) if uid else None
 
     def render(request: Request, name: str, status_code: int = 200, **ctx):
-        return templates.TemplateResponse(request, name, {"user": current_user(request), **ctx},
+        return templates.TemplateResponse(request, name, {"user": current_user(request), "asset_version": ASSET_VERSION, **ctx},
                                           status_code=status_code)
 
     login_redirect = RedirectResponse  # alias for readability below

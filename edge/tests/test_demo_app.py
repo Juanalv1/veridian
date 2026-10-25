@@ -119,3 +119,13 @@ async def test_end_to_end_attacker_blocked_owner_fine():
         await app.refresh_blocklist()
         assert (await atk.get("/invoices")).status_code == 403
         assert (await owner.get("/invoices")).status_code == 200
+
+
+async def test_stylesheet_is_served_and_never_reported_as_an_event():
+    app = make_demo()
+    async with browser(app) as c:
+        r = await c.get("/static/app.css")
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/css")
+        assert "set-cookie" not in r.headers
+        assert 'href="/static/app.css?v=' in (await c.get("/login")).text
+    assert list(app.queue) == []
