@@ -32,6 +32,10 @@ class Settings:
     tokens: dict[str, str]  # token -> client_id
     routes_file: str = str(DEFAULT_ROUTES_FILE)
     learn_delay_min: int = 10
+    # A session spikes above max(rate_factor x the user's usual max per minute, rate_floor).
+    # Unmeasured starting points: tune them in rehearsals.
+    rate_factor: float = 3.0
+    rate_floor: int = 30
     clock: Callable[[], datetime] = field(default=utc_now)
     # judge(signals, profile) -> Judgment. None means rule-only: no AI decisions.
     judge: Callable[[dict, dict], Any] | None = None
@@ -51,6 +55,8 @@ class Settings:
             tokens=tokens,
             routes_file=os.environ.get("VERIDIAN_ROUTES_FILE", str(DEFAULT_ROUTES_FILE)),
             learn_delay_min=int(os.environ.get("VERIDIAN_LEARN_DELAY_MIN", "10")),
+            rate_factor=float(os.environ.get("VERIDIAN_RATE_FACTOR", "3")),
+            rate_floor=int(os.environ.get("VERIDIAN_RATE_FLOOR", "30")),
             judge=default_judge(),
             allow_reset=os.environ.get("VERIDIAN_ALLOW_RESET", "").strip().lower() == "true",
         )

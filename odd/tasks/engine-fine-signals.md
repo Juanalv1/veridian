@@ -28,7 +28,7 @@ All signals are deterministic code. The AI only judges them.
 
 | ID | Task | Route | Status |
 |---|---|---|---|
-| F1 | Rhythm + path/hour signals, profile field, rate-spike deviation, re-judging, block scope, settings, tests, contract notes, bot scenario, README | delegated (worktree; writer trigger: 2+ non-trivial files) | [ ] |
+| F1 | Rhythm + path/hour signals, profile field, rate-spike deviation, re-judging, block scope, settings, tests, contract notes, bot scenario, README | delegated (worktree; writer trigger: 2+ non-trivial files) | [x] |
 
 ## Acceptance criteria
 
@@ -48,3 +48,4 @@ All signals are deterministic code. The AI only judges them.
 ## Progress
 
 - 2026-10-25: document created.
+- 2026-10-25: F1 done. RED: 9 of 13 new tests in `engine/tests/test_fine_signals.py` failed before the change (the 4 that passed are negative cases). GREEN: full suite 107 passed (93 before). The "first spike once" marker lives in a new table `rate_spike_judgments`; a session-only block stores an empty `ip` in its decision and the blocklist skips it. Live `send_sample_events.py --scenario bot` without `ANTHROPIC_API_KEY`: 84 + 60 accepted, no decision and empty blocklist, as expected rule-only.

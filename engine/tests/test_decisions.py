@@ -54,6 +54,11 @@ def test_acceptance_scenario(client):
         "route_class": "critical",
         "route_never_used": True,
         "path": ["/login", "/payouts/bank-account"],
+        "rate_per_min": 2,
+        "usual_max_rate_per_min": 1,
+        "rate_spike": False,
+        "new_transition": True,
+        "unusual_hour": True,
     }
     assert decision["rationale"]
     assert decision["id"].startswith("d_")

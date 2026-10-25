@@ -27,6 +27,8 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_DB` | `veridian.db` | SQLite file |
 | `VERIDIAN_ROUTES_FILE` | `engine/routes.yaml` | Route classification (`"METHOD /route": class`) |
 | `VERIDIAN_LEARN_DELAY_MIN` | `10` | Events younger than this (by `ts`) are not learned yet |
+| `VERIDIAN_RATE_FACTOR` | `3` | A session spikes above this many times the user's usual max events per minute. Unmeasured starting point |
+| `VERIDIAN_RATE_FLOOR` | `30` | Minimum events per minute for a spike, whatever the history. Unmeasured starting point |
 | `ANTHROPIC_API_KEY` | | Enables the AI judge. Without it the engine is rule-only: the critical block, no AI decisions |
 | `VERIDIAN_MODEL` | `claude-opus-5-5` | Model used by the AI judge |
 | `VERIDIAN_ALLOW_RESET` | `false` | `true` enables `POST /v1/admin/reset` (demo rehearsals only) |
@@ -35,7 +37,7 @@ They can also live in a `.env` file (git-ignored), found by searching upward fro
 
 ## AI judge
 
-A deviation is an event with a new network, a new device (non-empty `device_id` not in the profile), or a never-used `critical`/`sensitive` route. The critical rule still blocks synchronously; after the `202`, the judge runs in the background and either replaces the block's rationale or records an `allow`/`alert`/`step_up`/`block` decision. Each session is judged once; it is judged again only on a rule block or a never-used `critical`/`sensitive` route, and a blocked session gets no more decisions. A judge failure never breaks ingestion.
+A deviation is an event with a new network, a new device (non-empty `device_id` not in the profile), a never-used `critical`/`sensitive` route, or a rate spike: more events of the session in the last 60 s than `max(VERIDIAN_RATE_FACTOR × usual max per minute, VERIDIAN_RATE_FLOOR)`, even on the owner's network and device. `new_transition` (route pair never seen in the history) and `unusual_hour` travel in `signals` as context for the judge but never make a deviation on their own. The critical rule still blocks synchronously; after the `202`, the judge runs in the background and either replaces the block's rationale or records an `allow`/`alert`/`step_up`/`block` decision. Each session is judged once; it is judged again only on a rule block, a never-used `critical`/`sensitive` route, or its first rate spike, and a blocked session gets no more decisions. An AI block on a known network blocks only the session, never the owner's IP. A judge failure never breaks ingestion. Without a judge, a rate spike records no decision.
 
 ## Activity feed
 
@@ -56,7 +58,7 @@ With the engine running, send a 14-day owner history and an attacker session (st
 VERIDIAN_TOKEN=dev py -3.12 engine/scripts/send_sample_events.py --base-url http://localhost:8000
 ```
 
-It prints the blocklist (attacker session and IP) and the block decision.
+It prints the blocklist (attacker session and IP) and the block decision. With `--scenario bot`, the second step is a burst of 60 `GET /invoices/{id}` in 60 s from the owner's network and device: with the AI judge it can block that session only; rule-only, it records nothing.
 
 ## Demo rehearsal
 

@@ -49,6 +49,7 @@ def test_profile_shape_matches_contract(client):
         "devices": ["d_9f3"],
         "hours": [9, 13],
         "routes": ["GET /invoices", "GET /invoices/{id}"],
+        "usual_max_rate_per_min": 2,  # "hx" shares its second with "h3b"
         "state": "normal",
     }
 
@@ -77,6 +78,7 @@ def test_unknown_user_has_empty_profile(client):
         "devices": [],
         "hours": [],
         "routes": [],
+        "usual_max_rate_per_min": 0,
         "state": "normal",
     }
 

@@ -2,11 +2,12 @@
 
 Standard library only, so it runs without the engine's virtualenv:
 
-    VERIDIAN_TOKEN=dev python engine/scripts/send_sample_events.py [--base-url http://localhost:8000]
+    VERIDIAN_TOKEN=dev python engine/scripts/send_sample_events.py [--base-url http://localhost:8000] [--scenario bot]
 
 It sends 14 days of owner activity (old timestamps, owner's /24, invoices and viewing
 the bank account), then an attacker session from a new network that changes the bank
-account, and prints the blocklist and the decisions.
+account, and prints the blocklist and the decisions. With --scenario bot, the second
+step is instead a burst of invoice reads from the owner's own network and device.
 """
 
 import argparse
@@ -23,6 +24,7 @@ OWNER_DEVICE = "d_owner"
 ATTACKER_IP = "203.0.113.9"
 ATTACKER_DEVICE = "d_attacker"
 HISTORY_DAYS = 14
+BOT_BURST = 60  # events in 60 s: above the default floor of 30 per minute
 
 
 def iso(value: datetime) -> str:
@@ -84,10 +86,36 @@ def attacker_events(now: datetime, run_id: str) -> list[dict]:
     ]
 
 
+def bot_events(now: datetime, run_id: str) -> list[dict]:
+    """A script on the owner's own network and device: one invoice per second for a minute."""
+    session_id = f"s_bot_{run_id}"
+    return [
+        event(
+            f"e_{run_id}_b{step}",
+            now - timedelta(seconds=BOT_BURST - 1 - step),
+            session_id,
+            OWNER_IP,
+            OWNER_DEVICE,
+            "GET",
+            "/invoices/{id}",
+        )
+        for step in range(BOT_BURST)
+    ]
+
+
+SCENARIOS = {"default": attacker_events, "bot": bot_events}
+
+
 def main() -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_connection_args(parser)
+    parser.add_argument(
+        "--scenario",
+        choices=sorted(SCENARIOS),
+        default="default",
+        help="default: attacker from a new network; bot: burst from the owner's network and device",
+    )
     args = parser.parse_args()
     if not args.token:
         parser.error("set VERIDIAN_TOKEN or pass --token")
@@ -98,8 +126,9 @@ def main() -> int:
     try:
         status, body = request(args.base_url, args.token, "POST", "/v1/events", {"events": owner_history(now, run_id)})
         print(f"owner history: {status} {body}")
-        status, body = request(args.base_url, args.token, "POST", "/v1/events", {"events": attacker_events(now, run_id)})
-        print(f"attacker: {status} {body}")
+        events = SCENARIOS[args.scenario](now, run_id)
+        status, body = request(args.base_url, args.token, "POST", "/v1/events", {"events": events})
+        print(f"{args.scenario}: {status} {body}")
         for path in ("/v1/blocklist", "/v1/decisions?limit=5"):
             status, body = request(args.base_url, args.token, "GET", path)
             print(f"\nGET {path} -> {status}")

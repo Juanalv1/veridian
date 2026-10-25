@@ -109,7 +109,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 
 - **Siempre es la lista completa,** nunca solo los cambios. Sin `since`, devuelve la versión actual.
 - **Si `since` es la versión actual:** `304` sin cuerpo.
-- **Un bloqueo frena al atacante, no al dueño:** el motor bloquea la `session_id` y la `ip` del acceso sospechoso. `users` queda en el contrato para bloqueos de cuenta completa, pero el primer hito lo deja vacío, porque bloquear el `user_id` también deja afuera a la víctima.
+- **Un bloqueo frena al atacante, no al dueño:** el motor bloquea la `session_id` y la `ip` del acceso sospechoso. Si el acceso viene de una red conocida del dueño (`new_network` en `false`), solo bloquea la `session_id`: esa IP la comparte el dueño. `users` queda en el contrato para bloqueos de cuenta completa, pero el primer hito lo deja vacío, porque bloquear el `user_id` también deja afuera a la víctima.
 - **Antes de pasar cada petición a la app,** el middleware revisa la lista y responde `403 {"error": "blocked"}` si hay coincidencia.
 - **Se bloquea la siguiente petición, no la sospechosa:** por los ciclos de ~2 s, la petición que dispara el bloqueo ya pasó. Una consulta síncrona para rutas `critical` queda como mejora, fuera del primer hito.
 - **Si el motor no responde,** el middleware sigue con la última lista conocida y nunca frena la app.
@@ -132,7 +132,12 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
         "route": "/payouts/bank-account",
         "route_class": "critical",
         "route_never_used": true,
-        "path": ["/login", "/payouts/bank-account"]
+        "path": ["/login", "/payouts/bank-account"],
+        "rate_per_min": 2,
+        "usual_max_rate_per_min": 6,
+        "rate_spike": false,
+        "new_transition": true,
+        "unusual_hour": false
       },
       "rationale": "Red y dispositivo nunca vistos, y fue directo a cambiar la cuenta bancaria, algo que este usuario nunca hace.",
       "event_ids": ["e_01J9ZK3T"],
@@ -152,6 +157,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 
 - **`decision`:** `allow` | `alert` | `step_up` | `block`. Para la demo bastan `allow`, `alert` y `block`.
 - **`status`:** en qué quedó la decisión, no qué se decidió. `open` (sigue en pie; en un `block`, el bloqueo está activo) | `marked_normal` (alguien la marcó como normal; en un `block`, el bloqueo se levantó). Así el panel distingue un bloqueo activo de uno levantado. Se pueden sumar valores más adelante (por ejemplo `expired`); el panel trata un valor desconocido como `open`.
+- **Ritmo y camino en `signals`:** `rate_per_min` son los eventos de la sesión en los 60 s hasta el acceso; `usual_max_rate_per_min`, el máximo por minuto de cualquier sesión en lo aprendido; `rate_spike` es `true` si `rate_per_min` supera `max(VERIDIAN_RATE_FACTOR × usual_max_rate_per_min, VERIDIAN_RATE_FLOOR)` (3 y 30 por defecto, sin medir). Un `rate_spike` es desvío aunque la red y el dispositivo sean del dueño. `new_transition` (el par ruta anterior → ruta, como `"METHOD /ruta"`, nunca visto) y `unusual_hour` (hora UTC fuera de `hours`; `false` sin historial) son contexto para la IA y nunca disparan una decisión solos. Son claves nuevas: el panel ignora las que no conoce.
 - **`access`:** el acceso que disparó la decisión (los campos del evento de `event_ids`, sin `user_agent` ni `bytes`). El panel lo compara lado a lado con el perfil: "lo normal para el usuario" frente a "este acceso". Es opcional: si falta, o falta un campo, el panel muestra "—".
 - **Orden:** de la más nueva a la más vieja.
 - **Feedback:** `POST /v1/decisions/{id}/normal` marca la decisión como uso normal y lo aprende el perfil. Si había un bloqueo, quita su sesión y su IP de la lista y sube la `version`.
@@ -168,9 +174,12 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
   "devices": ["d_9f3"],
   "hours": [9, 13],
   "routes": ["GET /invoices", "GET /invoices/{id}"],
+  "usual_max_rate_per_min": 6,
   "state": "blocked"
 }
 ```
+
+- **`usual_max_rate_per_min`:** el máximo de eventos en 60 s de cualquier sesión del usuario, con las mismas reglas de aprendizaje del perfil. `0` sin historial.
 
 - **`routes` incluye el método** (`"GET /invoices"`), igual que la clasificación de rutas: `GET` y `POST` sobre la misma ruta son usos distintos.
 - **`hours` va en UTC,** igual que `ts`: horas enteras de 0 a 23 (`[9, 13]` = de 09:00 a 13:00 UTC). El panel las convierte a la hora local de quien mira.

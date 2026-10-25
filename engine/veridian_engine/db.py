@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS decision_events (
     PRIMARY KEY (client_id, decision_id, event_id)
 );
 
+-- Sessions whose first rate spike was already sent to the judge: it is judged once.
+CREATE TABLE IF NOT EXISTS rate_spike_judgments (
+    client_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    PRIMARY KEY (client_id, session_id)
+);
+
 CREATE TABLE IF NOT EXISTS blocklist_versions (
     client_id TEXT PRIMARY KEY,
     version INTEGER NOT NULL

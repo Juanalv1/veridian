@@ -27,6 +27,12 @@ def judge_deviations(settings: Settings, write_lock: threading.Lock, deviations:
             with write_lock, db.connect(settings.db_path) as conn:
                 if not needs_judgment(conn, deviation):
                     continue
+                if deviation.signals.get("rate_spike"):
+                    # Marked before the call, so a concurrent batch does not judge the same spike.
+                    conn.execute(
+                        "INSERT OR IGNORE INTO rate_spike_judgments (client_id, session_id) VALUES (?, ?)",
+                        (deviation.client_id, deviation.event.session_id),
+                    )
             judgment = settings.judge(deviation.signals, deviation.profile)
             with write_lock, db.connect(settings.db_path) as conn:
                 apply_judgment(conn, settings, deviation, judgment.decision, judgment.rationale)
@@ -35,7 +41,8 @@ def judge_deviations(settings: Settings, write_lock: threading.Lock, deviations:
 
 
 def needs_judgment(conn: sqlite3.Connection, deviation: Deviation) -> bool:
-    """Ask the AI once per session; only a rule block or a never-used risky route asks again.
+    """Ask the AI once per session; a rule block, a never-used risky route or the session's
+    first rate spike asks again.
 
     Batches arrive every ~2 s, so re-judging the same deviation would multiply model calls
     and give a non-deterministic judge many chances to flip a legitimate session.
@@ -45,6 +52,13 @@ def needs_judgment(conn: sqlite3.Connection, deviation: Deviation) -> bool:
     signals = deviation.signals
     if signals.get("route_never_used") and signals.get("route_class") in ("critical", "sensitive"):
         return True
+    if signals.get("rate_spike"):
+        spike_judged = conn.execute(
+            "SELECT 1 FROM rate_spike_judgments WHERE client_id = ? AND session_id = ?",
+            (deviation.client_id, deviation.event.session_id),
+        ).fetchone()
+        if spike_judged is None:
+            return True
     judged = conn.execute(
         "SELECT 1 FROM decisions WHERE client_id = ? AND session_id = ?",
         (deviation.client_id, deviation.event.session_id),
@@ -76,13 +90,16 @@ def apply_judgment(
     if already is not None:
         return None
 
+    # On a known network the owner shares the IP: blocking it would lock the victim out,
+    # so only the session is blocked. An empty ip stays out of the blocklist.
+    ip = str(event.ip) if deviation.signals.get("new_network") else ""
     decision_id = create_decision(
         conn,
         deviation.client_id,
         ts=settings.clock(),
         user_id=event.user_id,
         session_id=event.session_id,
-        ip=str(event.ip),
+        ip=ip,
         decision=decision,
         signals=deviation.signals,
         rationale=rationale,

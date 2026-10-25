@@ -60,6 +60,7 @@ def test_reset_wipes_only_the_callers_client(reset_client):
         "devices": [],
         "hours": [],
         "routes": [],
+        "usual_max_rate_per_min": 0,
         "state": "normal",
     }
     assert reset_client.get("/v1/decisions", headers=AUTH_A).json() == {"decisions": []}
