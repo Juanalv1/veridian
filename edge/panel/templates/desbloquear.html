@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>{{ title }}{% if brand %} · {{ brand.name }}{% endif %}</title>
+<link rel="stylesheet" href="/static/tokens.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/panel.css?v={{ asset_version }}">
+</head>
+<body class="auth-page unlock-page"{% if brand and brand.color %} style="--unlock-accent:{{ brand.color }};--unlock-on-accent:{{ brand.on_color }}"{% endif %}>
+<main class="auth-card unlock-card" aria-labelledby="unlock-title">
+  {% if brand %}
+  <div class="unlock-brand">
+    {% if brand.logo_url %}<img class="unlock-logo" src="{{ brand.logo_url }}" alt="{{ brand.name }}" height="40" referrerpolicy="no-referrer">{% else %}<span class="unlock-name">{{ brand.name }}</span>{% endif %}
+  </div>
+  {% endif %}
+  <div class="auth-heading">
+    <h1 id="unlock-title">{{ title }}</h1>
+    <p class="auth-muted">{{ text }}</p>
+  </div>
+  {% if kind == 'valid' %}
+  {% if access.time or access.device %}
+  <dl class="unlock-detail">
+    {% if access.time %}<div><dt>Fecha y hora</dt><dd>{{ access.time }}</dd></div>{% endif %}
+    {% if access.device %}<div><dt>Dispositivo</dt><dd>{{ access.device }}</dd></div>{% endif %}
+  </dl>
+  {% endif %}
+  <form method="post">
+    <input type="hidden" name="nonce" value="{{ nonce }}">
+    <button class="btn btn-primary unlock-button" type="submit">Fui yo, desbloquear</button>
+  </form>
+  <p class="auth-small">Si no fuiste tú, no hagas nada: cierra esta página y tu cuenta seguirá protegida.</p>
+  {% endif %}
+  {% if brand and (brand.support_email or brand.support_url) %}
+  <p class="auth-small unlock-support">¿Necesitas ayuda?
+    {% if brand.support_email %}<a href="mailto:{{ brand.support_email }}">{{ brand.support_email }}</a>{% endif %}
+    {% if brand.support_email and brand.support_url %} o {% endif %}
+    {% if brand.support_url %}<a href="{{ brand.support_url }}" rel="noopener noreferrer">{{ brand.support_url }}</a>{% endif %}
+  </p>
+  {% endif %}
+</main>
+</body>
+</html>

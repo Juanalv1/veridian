@@ -482,3 +482,14 @@ main.view-actividad:not(:has(.row, .item)) > nav { display:none; }
   .rail-btn:hover { background:var(--surface-hover); color:var(--ink); }
   .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .side .brand { flex-direction:column; gap:12px; }
 }
+
+/* Public unlock page (/desbloquear/{token}): the customer's brand. --unlock-accent is set only from a validated #RRGGBB. */
+.unlock-brand { display:flex; align-items:center; min-height:40px; }
+.unlock-logo { display:block; max-height:40px; max-width:100%; width:auto; }
+.unlock-name { font-family:var(--font-display); font-size:20px; font-weight:700; }
+.unlock-detail { margin:0; display:flex; flex-direction:column; gap:var(--space-2); border:1px solid var(--line); border-radius:var(--radius-md); padding:12px 14px; }
+.unlock-detail div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:var(--space-2); }
+.unlock-detail dt { color:var(--muted); font-size:14px; }
+.unlock-detail dd { margin:0; font-size:14px; font-weight:600; }
+.unlock-page .unlock-button { background:var(--unlock-accent, var(--viridian)); border-color:var(--unlock-accent, var(--viridian)); color:var(--unlock-on-accent, var(--on-viridian)); }
+.unlock-support a { color:var(--ink); overflow-wrap:anywhere; }
