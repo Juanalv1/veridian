@@ -74,8 +74,23 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 - **Respuesta:** `202 {"accepted": 1}`.
 - **Idempotente por `id`:** reenviar un lote no cuenta dos veces.
 - **`route` es la plantilla de la ruta** (`/invoices/{id}`), no la URL con IDs. Así el perfil agrupa bien.
-- **Clasificación de rutas:** la hace el motor con `routes.yaml`; el middleware no la envía. El Dev 2 entrega la lista de plantillas de rutas de la app de ejemplo.
-- **`ip` es la del cliente real:** detrás de un proxy (por ejemplo, Render), el middleware toma el primer valor de `X-Forwarded-For`. Si no, todas las peticiones llegan con la IP del proxy y la regla de red nueva deja de funcionar.
+- **Clasificación de rutas:** la hace el motor con `routes.yaml`, por método y plantilla (`"POST /payouts/bank-account"`); el middleware no la envía. Clasificar solo por plantilla haría `critical` también el simple hecho de ver la cuenta bancaria, que el dueño hace a menudo. Rutas de la app de ejemplo:
+
+  | Método y ruta | Clase |
+  |---|---|
+  | `GET /login`, `POST /login` | `normal` |
+  | `POST /logout` | `normal` |
+  | `GET /invoices` | `normal` |
+  | `GET /invoices/{id}` | `normal` |
+  | `GET /invoices/export` (descarga todas las facturas) | `sensitive` |
+  | `GET /payouts/bank-account` (ver la cuenta) | `sensitive` |
+  | `POST /payouts/bank-account` (cambiar la cuenta) | `critical` |
+
+- **`ip` es la del cliente real, y no la puede elegir el cliente:** `X-Forwarded-For` lo puede escribir cualquiera. Si el middleware tomara el primer valor, el atacante enviaría `X-Forwarded-For: <IP del dueño>` y la regla de red nueva no lo vería.
+  - El middleware recibe `trusted_proxies` (cantidad de proxies propios delante de la app; `0` por defecto).
+  - Con `0`, usa la IP de la conexión e ignora el encabezado.
+  - Con `N`, toma el valor número `N` contando desde la derecha de `X-Forwarded-For`: el que agregó nuestro proxy más externo. Si el encabezado trae menos de `N` valores, usa el primero.
+  - **Por verificar:** si Render reemplaza el `X-Forwarded-For` del cliente o le agrega su valor al final. Se mide al desplegar, con una petición que envíe el encabezado falso.
 - **`device_id`:** cookie propia del middleware en el navegador del usuario. Puede venir vacío.
 - **Nunca se envían** cuerpos de peticiones, contraseñas ni datos de clientes.
 
