@@ -107,6 +107,10 @@ def create_app(
 
     login_redirect = RedirectResponse  # alias for readability below
 
+    @app.get("/")
+    async def home(request: Request):
+        return login_redirect("/invoices" if current_user(request) else "/login", status_code=303)
+
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request):
         if current_user(request):
