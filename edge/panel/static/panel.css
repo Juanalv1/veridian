@@ -493,3 +493,7 @@ main.view-actividad:not(:has(.row, .item)) > nav { display:none; }
 .unlock-detail dd { margin:0; font-size:14px; font-weight:600; }
 .unlock-page .unlock-button { background:var(--unlock-accent, var(--viridian)); border-color:var(--unlock-accent, var(--viridian)); color:var(--unlock-on-accent, var(--on-viridian)); }
 .unlock-support a { color:var(--ink); overflow-wrap:anywhere; }
+.tm-facts { margin:0; display:flex; flex-direction:column; gap:var(--space-2); }
+.tm-facts div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:var(--space-2); }
+.tm-facts dt { color:var(--muted); font-size:14px; }
+.tm-facts dd { margin:0; font-size:14px; font-weight:600; overflow-wrap:anywhere; }

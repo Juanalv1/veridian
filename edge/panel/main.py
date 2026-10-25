@@ -10,6 +10,7 @@ GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET add GitHub sign-in; without both it st
 
 import asyncio
 import dataclasses
+import logging
 import re
 import time
 from collections.abc import Callable
@@ -30,13 +31,15 @@ from .config import Settings
 from .fmt import count as _count
 from .fmt import seconds_text
 from .overview import build_overview, iso_z, local_day_window, user_rows
+from .brand import Brand
 from .team import Team
+from .unlock import SelfUnlock, UnlockPathFilter
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "29"
+ASSET_VERSION = "30"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -173,7 +176,8 @@ def _days(n) -> str:
 NAV_GROUPS = (
     ("ACCESOS", (("resumen", "/", "Resumen", False), ("actividad", "/actividad", "Actividad", False),
                  ("usuarios", "/usuarios", "Usuarios", False), ("rutas", "/rutas", "Rutas críticas", False))),
-    ("PROYECTO", (("claves", "/claves", "Claves de API", True), ("webhook", "/webhook", "Webhook", True))),
+    ("PROYECTO", (("claves", "/claves", "Claves de API", True), ("webhook", "/webhook", "Webhook", True),
+                  ("marca", "/marca", "Marca", True))),
     ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True), ("miembros", "/miembros", "Miembros", True),
                       ("auditoria", "/auditoria", "Auditoría", True))),
 )
@@ -181,10 +185,19 @@ NAV_GROUPS = (
 MANAGER_ONLY = frozenset({"claves", "webhook", "auditoria"})
 
 
+# Pages every member reads (a viewer sees them read-only); hidden only when the role could not be read.
+MEMBER_ONLY = frozenset({"marca"})
+
+
 def nav_for(role: str | None):
     """The sidebar groups for a role (`owner`, `admin`, `viewer`, or None when it could not be read)."""
     allowed = role in ("owner", "admin")
-    groups = ((title, tuple(i for i in items if allowed or i[0] not in MANAGER_ONLY)) for title, items in NAV_GROUPS)
+    known = role in ("owner", "admin", "viewer")
+
+    def shown(key: str) -> bool:
+        return allowed or (key not in MANAGER_ONLY and (known or key not in MEMBER_ONLY))
+
+    groups = ((title, tuple(i for i in items if shown(i[0]))) for title, items in NAV_GROUPS)
     return tuple((title, items) for title, items in groups if items)
 DEFAULT_UTC_OFFSET_MIN = -240  # Caracas, until the browser tells its own (cookie `vtz`, minutes east of UTC)
 NO_USERS = "El motor todavía no entrega la lista de usuarios."
@@ -244,11 +257,16 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, session_cookie="session",
                            max_age=auth_module.SESSION_MAX_AGE_S, same_site="lax",
                            https_only=settings.public_url.startswith("https"))
+    # The public unlock page carries its token in the path: keep it out of uvicorn's access log.
+    access_log = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, UnlockPathFilter) for f in access_log.filters):
+        access_log.addFilter(UnlockPathFilter())
     cache = TTLCache(clock)
     accounts = accounts_module.Accounts(base, bearer, client, templates, cache, auth.session_guard)
     app.include_router(auth.public_router())
     app.include_router(auth.session_router())
     app.include_router(accounts.router())
+    app.include_router(SelfUnlock(settings, bearer, client, templates).router())  # public: no session
     panel = APIRouter(dependencies=[Depends(auth.session_guard), Depends(auth.project_guard),
                                     Depends(accounts.switcher_guard)])
 
@@ -576,7 +594,9 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             url += "?" + urlencode({"error": failure})
         return RedirectResponse(url, status_code=303)
 
-    panel.include_router(Team(accounts, shell, now).router())
+    team = Team(accounts, shell, now)
+    panel.include_router(team.router())
+    panel.include_router(Brand(team).router())
     app.include_router(panel)
     return app
 

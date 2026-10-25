@@ -207,7 +207,7 @@ def test_owner_and_admin_see_keys_members_and_audit_links():
     owner = panel_of(engine)
     admin = member_panel(engine, org_a(engine), "admin")
     for panel in (owner, admin):
-        assert nav_links(panel.get("/").text) == ["/", "/actividad", "/usuarios", "/rutas", "/claves", "/webhook", "/proyectos",
+        assert nav_links(panel.get("/").text) == ["/", "/actividad", "/usuarios", "/rutas", "/claves", "/webhook", "/marca", "/proyectos",
                                                    "/miembros", "/auditoria"]
         html = side(panel.get("/").text)
         assert html.index("PROYECTO") < html.index("ORGANIZACIÓN")
@@ -222,7 +222,9 @@ def test_a_viewer_sees_neither_keys_nor_audit_links_on_any_page():
         assert "/claves" not in links and "/auditoria" not in links, path
         assert "/miembros" in links and "/proyectos" in links
     nav = re.search(r'<nav[^>]*aria-label="Secciones"[^>]*>(.*?)</nav>', side(viewer.get("/").text), re.S).group(1)
-    assert "PROYECTO" not in nav.replace("Proyectos", "")
+    # The PROYECTO group is left with the read-only brand page: no keys, no webhook.
+    group = re.search(r'PROYECTO</span>(.*?)(?:<div class="nav-group">|$)', nav, re.S).group(1)
+    assert re.findall(r'href="([^"]+)"', group) == ["/marca"]
 
 
 def test_the_current_section_is_marked_on_the_new_pages():

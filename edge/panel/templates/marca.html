@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<main id="live" class="wrap view-team">
+  <div class="tm-page">
+    <div class="acct-head">
+      <h1 class="acct-title">Marca y desbloqueo por correo</h1>
+      <p class="acct-lead">Cuando Veridian bloquea a un usuario de {{ project.name }}, puede escribirle con tu marca para que se desbloquee solo, sin un admin. Necesita el correo del usuario (opción <span class="mono">user_email</span> del SDK).</p>
+    </div>
+
+    {% if can_edit %}
+    <form class="acct-form" method="post" action="/marca">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if errors.form %}<span class="field-error" role="alert">{{ errors.form }}</span>{% endif %}
+
+      <label class="check">
+        <input type="checkbox" name="self_unlock_enabled"{% if values.self_unlock_enabled %} checked{% endif %}>
+        <span class="choice-body">
+          <span class="choice-title">Desbloqueo por correo</span>
+          <span class="choice-text">El usuario bloqueado recibe un correo con tu marca y un botón «Fui yo, desbloquear». Solo funciona si el proyecto bloquea{% if not enforcing %} (ahora solo observa){% endif %} y el usuario tiene correo.</span>
+        </span>
+      </label>
+
+      <section class="tm-card" aria-labelledby="brand-title">
+        <h2 id="brand-title" class="tm-h2">Marca</h2>
+        <div class="field{% if errors.brand_name %} invalid{% endif %}">
+          <label for="brand-name">Nombre</label>
+          <input id="brand-name" type="text" name="brand_name" value="{{ values.brand_name }}" maxlength="{{ name_max + 20 }}" placeholder="{{ project.name }}" autocomplete="off"{% if errors.brand_name %} aria-invalid="true" aria-describedby="brand-name-error"{% endif %}>
+          {% if errors.brand_name %}<span id="brand-name-error" class="field-error" role="alert">{{ errors.brand_name }}</span>{% else %}<span class="acct-small">Se ve como remitente, en el asunto y en la página. Si lo dejas vacío, usamos el nombre del proyecto.</span>{% endif %}
+        </div>
+        <div class="field{% if errors.brand_logo_url %} invalid{% endif %}">
+          <label for="brand-logo">Logo (URL https)</label>
+          <input id="brand-logo" type="url" name="brand_logo_url" value="{{ values.brand_logo_url }}" maxlength="2048" placeholder="https://tuapp.com/logo.png" autocomplete="off"{% if errors.brand_logo_url %} aria-invalid="true" aria-describedby="brand-logo-error"{% endif %}>
+          {% if errors.brand_logo_url %}<span id="brand-logo-error" class="field-error" role="alert">{{ errors.brand_logo_url }}</span>{% endif %}
+        </div>
+        <div class="field{% if errors.brand_color %} invalid{% endif %}">
+          <label for="brand-color">Color del botón</label>
+          <input id="brand-color" type="text" name="brand_color" value="{{ values.brand_color }}" maxlength="7" placeholder="#2563EB" autocomplete="off"{% if errors.brand_color %} aria-invalid="true" aria-describedby="brand-color-error"{% endif %}>
+          {% if errors.brand_color %}<span id="brand-color-error" class="field-error" role="alert">{{ errors.brand_color }}</span>{% else %}<span class="acct-small">Código hexadecimal de seis dígitos. Vacío usa el color de Veridian.</span>{% endif %}
+        </div>
+      </section>
+
+      <section class="tm-card" aria-labelledby="support-title">
+        <h2 id="support-title" class="tm-h2">Soporte</h2>
+        <p class="acct-small">Aparece como «¿Necesitas ayuda?» en el correo y en la página. Si no completas ninguno, no se muestra.</p>
+        <div class="field{% if errors.brand_support_url %} invalid{% endif %}">
+          <label for="brand-support-url">URL de soporte (https)</label>
+          <input id="brand-support-url" type="url" name="brand_support_url" value="{{ values.brand_support_url }}" maxlength="2048" placeholder="https://tuapp.com/ayuda" autocomplete="off"{% if errors.brand_support_url %} aria-invalid="true" aria-describedby="brand-support-url-error"{% endif %}>
+          {% if errors.brand_support_url %}<span id="brand-support-url-error" class="field-error" role="alert">{{ errors.brand_support_url }}</span>{% endif %}
+        </div>
+        <div class="field{% if errors.brand_support_email %} invalid{% endif %}">
+          <label for="brand-support-email">Correo de soporte</label>
+          <input id="brand-support-email" type="email" name="brand_support_email" value="{{ values.brand_support_email }}" maxlength="254" placeholder="soporte@tuapp.com" autocomplete="off"{% if errors.brand_support_email %} aria-invalid="true" aria-describedby="brand-support-email-error"{% endif %}>
+          {% if errors.brand_support_email %}<span id="brand-support-email-error" class="field-error" role="alert">{{ errors.brand_support_email }}</span>{% endif %}
+        </div>
+      </section>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Guardar</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="acct-small">Solo un admin u owner puede cambiar esto.</p>
+    <section class="tm-card" aria-labelledby="brand-title">
+      <h2 id="brand-title" class="tm-h2">Marca</h2>
+      <dl class="tm-facts">
+        <div><dt>Desbloqueo por correo</dt><dd>{{ 'Activo' if values.self_unlock_enabled else 'Apagado' }}</dd></div>
+        <div><dt>Nombre</dt><dd>{{ values.brand_name or project.name }}</dd></div>
+        <div><dt>Logo</dt><dd>{{ values.brand_logo_url or 'Sin logo' }}</dd></div>
+        <div><dt>Color del botón</dt><dd>{{ values.brand_color or 'Color de Veridian' }}</dd></div>
+        <div><dt>URL de soporte</dt><dd>{{ values.brand_support_url or 'Sin definir' }}</dd></div>
+        <div><dt>Correo de soporte</dt><dd>{{ values.brand_support_email or 'Sin definir' }}</dd></div>
+      </dl>
+    </section>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

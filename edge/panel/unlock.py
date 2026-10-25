@@ -143,9 +143,9 @@ class SelfUnlock:
         code, body = await self.engine("GET", token)
         if code is None or code >= 500:
             return self.unavailable(request)
-        if code == 404 or body is None or code != 200:
-            return self.missing(request) if code == 404 else self.unavailable(request)
-        state = body.get("state")
+        if code == 404:
+            return self.missing(request)
+        state = body.get("state") if code == 200 and body is not None else None
         if state not in MESSAGES:
             return self.unavailable(request)
         valid = state == "valid"

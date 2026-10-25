@@ -73,6 +73,9 @@ def describe(entry: dict, org: str) -> dict:
         "webhook.enable": ("activó el webhook" if meta.get("enabled") else "pausó el webhook", "", where),
         "webhook.delete": ("eliminó el webhook", "", where),
         "webhook.test": ("envió una prueba del webhook", "", where),
+        "decision.self_unlocked": ("", entry.get("target_id"),
+                                   f"{where} · Confirmó desde el correo. El perfil aprende ese acceso."),
+        "project.update": ("cambió la marca o el desbloqueo por correo de", "", where),
         "member.role_changed": ("cambió el rol de", meta.get("email"),
                                 f"{where} · de {label(str(meta.get('from')))} a {label(str(meta.get('to')))}"),
         "member.removed": ("quitó a", meta.get("email"), f"{where} · era {role}"),
@@ -80,7 +83,9 @@ def describe(entry: dict, org: str) -> dict:
         "invitation.resent": ("reenvió la invitación a", meta.get("email"), f"{where} · como {role}"),
         "invitation.revoked": ("canceló la invitación a", meta.get("email"), f"{where} · como {role}"),
     }.get(str(entry.get("action")), (str(entry.get("action")), entry.get("target_id"), where))
-    return {"seq": entry.get("seq"), "ts": stamp(entry.get("ts")), "actor": entry.get("actor_name") or "Alguien",
+    actor = ("Desbloqueado por el usuario" if entry.get("action") == "decision.self_unlocked"
+             else entry.get("actor_name") or "Alguien")
+    return {"seq": entry.get("seq"), "ts": stamp(entry.get("ts")), "actor": actor,
             "verb": verb, "target": target or "", "detail": detail}
 
 

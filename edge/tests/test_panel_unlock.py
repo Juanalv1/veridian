@@ -135,18 +135,18 @@ def test_the_button_unlocks_and_says_so():
 
 def test_a_second_click_says_the_link_was_used_and_does_not_unlock_again():
     engine, public, calls, token = setup()
-    unlock(public, token)
+    nonce = nonce_of(public.get(f"/desbloquear/{token}").text)  # a double click: the same form, twice
+    post = lambda: public.post(f"/desbloquear/{token}", data={"nonce": nonce}, csrf=False,
+                               headers={"Origin": public.origin})
+    assert post().status_code == 200
     version = state_of(engine).version
-    r = unlock(public, token)
+    r = post()
     assert r.status_code == 409 and "Este enlace ya se usó" in text(r.text) and "Fui yo, desbloquear" not in text(r.text)
     assert state_of(engine).version == version
 
 
 def test_post_without_the_nonce_or_with_another_tokens_nonce_does_nothing():
     engine, public, calls, token = setup()
-    other = TestClient(engine).post("/v1/check", json={"event": {**ATTACK, "id": "e2", "session_id": "s2",
-                                                                  "user_email": "ana@example.com"}},
-                                    headers=SDK_KEY)
     for data in ({}, {"nonce": "x"}, {"nonce": nonce_of(public.get(f"/desbloquear/{token}").text) + "0"}):
         r = public.post(f"/desbloquear/{token}", data=data, csrf=False, headers={"Origin": public.origin})
         assert r.status_code == 403, data
