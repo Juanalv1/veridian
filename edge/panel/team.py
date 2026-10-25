@@ -11,14 +11,14 @@ import asyncio
 import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
 from .accounts import NAME_MAX, ROLE_LABELS, UNREACHABLE, Accounts, clean_name, engine_error
-from .fmt import ago, expires_in, short_date
+from .fmt import ago, expires_in, short_date, stamp
 
 ROLES = ("viewer", "admin", "owner")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -39,11 +39,39 @@ KEY_NAME_ERROR = f"Escribe un nombre para la clave (hasta {NAME_MAX} caracteres)
 KEY_GONE = "Esa clave ya no existe."
 NO_KEYS_LEFT = "Ya no queda ninguna clave activa: el middleware no puede reportar y Veridian no protege la app hasta que crees otra."
 
+AUDIT_PAGE = 50
+AUDIT_NO_ACCESS = "El registro de cambios lo ven los admins y owners de {org}."
+# The "Qué" filter: action prefixes. Ajustes and data deletions join when the engine audits them.
+WHAT = {"bloqueos": ("decision.",), "claves": ("api_key.",), "miembros": ("member.", "invitation.")}
+WHAT_OPTIONS = (("", "Todo"), ("bloqueos", "Bloqueos levantados"), ("claves", "Claves"),
+                ("miembros", "Miembros e invitaciones"))
+
 Shell = Callable[..., Awaitable]  # (request, template, section, ctx, status=200) -> response
 
 
 def label(role: str) -> str:
     return ROLE_LABELS.get(role, role)
+
+
+def describe(entry: dict, org: str) -> dict:
+    """One audit entry as a sentence: who, what they did, to what, and where (docs/DISENO-PRODUCTO.md, AuditLog)."""
+    meta = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
+    where = entry.get("project_name") or org
+    role = label(str(meta.get("role", "")))
+    verb, target, detail = {
+        "decision.marked_normal": ("levantó el bloqueo de la decisión", entry.get("target_id"),
+                                   f"{where} · El perfil aprende ese acceso."),
+        "api_key.created": ("creó la clave", meta.get("prefix"), f"{where} · {meta.get('name')}"),
+        "api_key.revoked": ("revocó la clave", meta.get("prefix"), f"{where} · {meta.get('name')}"),
+        "member.role_changed": ("cambió el rol de", meta.get("email"),
+                                f"{where} · de {label(str(meta.get('from')))} a {label(str(meta.get('to')))}"),
+        "member.removed": ("quitó a", meta.get("email"), f"{where} · era {role}"),
+        "invitation.created": ("invitó a", meta.get("email"), f"{where} · como {role}"),
+        "invitation.resent": ("reenvió la invitación a", meta.get("email"), f"{where} · como {role}"),
+        "invitation.revoked": ("canceló la invitación a", meta.get("email"), f"{where} · como {role}"),
+    }.get(str(entry.get("action")), (str(entry.get("action")), entry.get("target_id"), where))
+    return {"seq": entry.get("seq"), "ts": stamp(entry.get("ts")), "actor": entry.get("actor_name") or "Alguien",
+            "verb": verb, "target": target or "", "detail": detail}
 
 
 def change_error(status: int | None, body) -> str:
@@ -181,6 +209,41 @@ class Team:
             "denied": False, "org": ctx["org"], "project": ctx["project"], "keys": rows,
             "any_active": any(r["active"] for r in rows), "created": created, "error": error, "name": name}, status))
 
+    # -- audit ---------------------------------------------------------------------------------------------
+
+    async def audit_page(self, request: Request, ctx: dict, project: str, what: str, who: str, before: str):
+        org = ctx["org"]
+        project = project if project in {p["id"] for p in org["projects"]} else ""
+        what = what if what in WHAT else ""
+        cursor = int(before) if before.isdigit() and int(before) > 0 else None
+        params: dict = {"limit": AUDIT_PAGE, **({"project": project} if project else {}), **({"before": cursor} if cursor else {})}
+        base = f"/v1/orgs/{quote(org['id'], safe='')}"
+        audit, members = await asyncio.gather(self.fetch(request, f"{base}/audit", params), self.fetch(request, f"{base}/members"))
+        if audit is not None and audit.status_code == 403:
+            return await self.shell(request, "auditoria.html", "auditoria", {
+                "denied": True, "org": org, "no_access": AUDIT_NO_ACCESS.format(org=org["name"])}, 403)
+        rows = self.items(audit, "entries")
+        if rows is None:
+            return await self.unreachable(request, "auditoria")
+        try:
+            newer = audit.json().get("next_before")
+        except ValueError:
+            newer = None
+        shown = [e for e in rows
+                 if (not what or str(e.get("action", "")).startswith(WHAT[what])) and (not who or e.get("actor_person_id") == who)]
+        people = self.items(members, "members") or []
+        names = [m.get("name") or m.get("email") for m in people]
+        options = [{"id": m.get("person_id"), "label": f"{n} ({m.get('email')})" if names.count(n) > 1 else n}
+                   for m, n in zip(people, names)]
+        older = None
+        if isinstance(newer, int) and not isinstance(newer, bool):
+            older = "/auditoria?" + urlencode({k: v for k, v in (("project", project), ("what", what), ("who", who),
+                                                                  ("before", newer)) if v})
+        return await self.shell(request, "auditoria.html", "auditoria", {
+            "denied": False, "org": org, "entries": [describe(e, org["name"]) for e in shown], "older": older,
+            "filtered": bool(what or who), "what": what, "who": who, "project": project,
+            "what_options": WHAT_OPTIONS, "who_options": options, "projects": org["projects"]})
+
     # -- routes ------------------------------------------------------------------------------------------
 
     def router(self) -> APIRouter:
@@ -270,6 +333,11 @@ class Team:
             if status == 201:
                 return me.done(request, f"Invitación reenviada a {inv['email']}.", "/miembros")
             return me.refused(request, change_error(status, body), "/miembros")
+
+        @router.get("/auditoria", response_class=HTMLResponse)
+        async def audit(request: Request, project: str = "", what: str = "", who: str = "", before: str = ""):
+            early, ctx = await me.where(request)
+            return early if early is not None else await me.audit_page(request, ctx, project, what, who, before)
 
         @router.get("/claves", response_class=HTMLResponse)
         async def keys(request: Request):

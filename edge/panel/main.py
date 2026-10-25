@@ -34,7 +34,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "25"
+ASSET_VERSION = "26"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -54,6 +54,7 @@ LIFTED = ("Levantado", "Bloqueo levantado", "lifted")
 ROUTE_CLASSES = {"critical": "crítico", "sensitive": "sensible"}
 FORBIDDEN = "No tienes acceso a este proyecto."
 MARK_ERROR = "No se pudo marcar la decisión como normal. Inténtalo de nuevo."
+MARK_FORBIDDEN = "Tu rol no permite marcar decisiones como normales. Solo un admin u owner puede hacerlo."
 MAX_PROFILE_ROUTES = 4
 
 
@@ -171,10 +172,11 @@ NAV_GROUPS = (
     ("ACCESOS", (("resumen", "/", "Resumen", False), ("actividad", "/actividad", "Actividad", False),
                  ("usuarios", "/usuarios", "Usuarios", False), ("rutas", "/rutas", "Rutas críticas", False))),
     ("PROYECTO", (("claves", "/claves", "Claves de API", True),)),
-    ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True), ("miembros", "/miembros", "Miembros", True))),
+    ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True), ("miembros", "/miembros", "Miembros", True),
+                      ("auditoria", "/auditoria", "Auditoría", True))),
 )
 # Links only an admin or owner is offered (the engine refuses the rest anyway). With the role unknown they stay hidden.
-MANAGER_ONLY = frozenset({"claves"})
+MANAGER_ONLY = frozenset({"claves", "auditoria"})
 
 
 def nav_for(role: str | None):
@@ -371,10 +373,11 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         return decisions, engine_error, activity, blocklist, rest
 
     async def render_activity(request: Request, user: str | None, decision_id: str | None, event_id: str | None,
-                              error: bool):
+                              error: str | None):
         # Independent engine calls run together. The profile of the user in the URL starts with them
         # too; on `/actividad` the selected user is only known once the decisions are in.
         t0 = time.perf_counter()
+        role_lookup = asyncio.ensure_future(accounts.role(request))  # to offer "Esto era normal" only to admin and owner
         guess = asyncio.ensure_future(load_profile(user)) if user else None
         decisions, engine_error, activity, blocklist, _ = await core()
         blocked_ips = set(blocklist["ips"]) if blocklist is not None else None
@@ -414,6 +417,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                          else load_profile(current.get("user_id", "")))
         if guess is not None and not guess.done():
             guess.cancel()
+        role = await role_lookup
         engine_ms = (time.perf_counter() - t0) * 1000
         t1 = time.perf_counter()
         if current is not None:
@@ -434,7 +438,8 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         return await page(request, "actividad.html", "actividad", {
             "decisions": decisions, "activity": activity, "access": row if current is None else None,
             "watching": _watching(activity) if activity is not None else "", "engine_error": engine_error,
-            "current": current, "profile": profile, "notice": MARK_ERROR if error else None,
+            "current": current, "profile": profile, "viewer_role": role == "viewer",
+            "notice": MARK_FORBIDDEN if error == "forbidden" else MARK_ERROR if error else None,
             "refresh_url": refresh_url, **_shell(decisions, activity),
         }, engine_ms, t1)
 
@@ -491,28 +496,28 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     @panel.get("/actividad", response_class=HTMLResponse)
     @panel.get("/actividad/{event_id:path}", response_class=HTMLResponse)
     async def actividad(request: Request, event_id: str | None = None, error: str | None = None):
-        return await render_activity(request, None, None, event_id or None, bool(error))
+        return await render_activity(request, None, None, event_id or None, error or None)
 
     @panel.get("/users/{user:path}", response_class=HTMLResponse)
     @panel.get("/users/{user:path}/decisions/{decision_id}", response_class=HTMLResponse)
     async def by_user(request: Request, user: str, decision_id: str | None = None, error: str | None = None):
-        return await render_activity(request, user, decision_id, None, bool(error))
+        return await render_activity(request, user, decision_id, None, error or None)
 
     @panel.post("/decisions/{decision_id}/normal")
     async def mark_normal(request: Request, decision_id: str, user: str | None = Form(None)):
-        ok = False
+        failure = "mark"
         try:
             r = await client.post(f"{base}/v1/decisions/{quote(decision_id, safe='')}/normal", headers=engine_headers())
-            ok = r.status_code == 200
+            failure = None if r.status_code == 200 else "forbidden" if r.status_code == 403 else "mark"
         except httpx.HTTPError:
             pass
         cache.invalidate()  # whatever the engine answered, what was cached may no longer be true
         if request.headers.get("HX-Request") == "true":
             # htmx swaps the returned page in place: same selected decision, same error text.
-            return await render_activity(request, user, decision_id, None, not ok)
+            return await render_activity(request, user, decision_id, None, failure)
         url = user_url(user)
-        if not ok:
-            url += "?" + urlencode({"error": "mark"})
+        if failure:
+            url += "?" + urlencode({"error": failure})
         return RedirectResponse(url, status_code=303)
 
     panel.include_router(Team(accounts, shell, now).router())

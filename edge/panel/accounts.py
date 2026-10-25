@@ -145,6 +145,13 @@ class Accounts:
                 "project": proj["name"],
                 "mode": mode[0] if mode else None, "mode_kind": mode[1] if mode else None}
 
+    async def role(self, request: Request) -> str | None:
+        """The person's role in the org of the session project (`owner`, `admin`, `viewer`), None if unknown. Used
+        only to decide what to offer: the engine checks the role again on every write."""
+        pid = request.session.get("project")
+        orgs = await self.load_orgs(request)
+        return next((o["role"] for o in orgs or [] for p in o["projects"] if p["id"] == pid), None)
+
     async def switcher_guard(self, request: Request) -> None:
         """A dependency of the panel pages: starts the card's lookup so it runs while the page reads its own
         data (`await request.state.switcher`). A poll (htmx) swaps only #live, so it skips the lookup."""

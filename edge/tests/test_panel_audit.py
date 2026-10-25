@@ -9,7 +9,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from tests.panel_support import make_panel, stub_client
-from tests.test_panel_accounts import (OTHER, member_panel, new_engine, org_a, panel_of, project_a, project_b, side, text)
+from tests.test_panel_accounts import OTHER, member_panel, new_engine, org_a, panel_of, project_a, side, text
 
 SEED = [{"user_id": "u_42", "ips": ["190.202.14.7"], "routes": ["GET /invoices"]}]
 ATTACK = {"id": "e_atk", "ts": "2026-10-26T10:14:03Z", "user_id": "u_42", "session_id": "s_atk", "ip": "203.0.113.9",
@@ -123,8 +123,8 @@ def test_there_is_no_way_to_edit_the_audit_from_the_panel():
 def seeded_audit(engine, panel):
     panel.post("/miembros/invitar", data={"email": "marta@example.com", "role": "viewer"})
     panel.post("/claves/nueva", data={"name": "En A"})
-    panel.post("/proyectos/abrir", data={"project_id": project_b(engine)})
-    panel.post("/claves/nueva", data={"name": "En B"})
+    panel.post("/proyectos/nuevo", data={"org": org_a(engine), "name": "Segundo", "enforcement": "observe"})
+    panel.post("/claves/nueva", data={"name": "En segundo"})
     panel.post("/proyectos/abrir", data={"project_id": project_a(engine)})
 
 

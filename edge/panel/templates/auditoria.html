@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<main id="live" class="wrap view-team">
+  <div class="tm-page">
+  {% if denied %}
+    <div class="tm-card tm-denied">
+      <h1 class="tm-denied-title">No tienes acceso a la auditoría</h1>
+      <p class="acct-lead">{{ no_access }}</p>
+    </div>
+  {% else %}
+    <div class="acct-head">
+      <h1 class="acct-title">Auditoría</h1>
+      <p class="acct-lead">Quién cambió qué en {{ org.name }} y sus proyectos. Nadie puede editar ni borrar este registro.</p>
+    </div>
+
+    <form class="tm-filters" method="get" action="/auditoria">
+      <div class="tm-filter">
+        <label for="f-what">Qué</label>
+        <select id="f-what" name="what">
+          {% for value, name in what_options %}<option value="{{ value }}"{% if value == what %} selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="tm-filter">
+        <label for="f-project">Dónde</label>
+        <select id="f-project" name="project">
+          <option value="">Toda la organización</option>
+          {% for p in projects %}<option value="{{ p.id }}"{% if p.id == project %} selected{% endif %}>{{ p.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="tm-filter">
+        <label for="f-who">Quién</label>
+        <select id="f-who" name="who">
+          <option value="">Todas las personas</option>
+          {% for m in who_options %}<option value="{{ m.id }}"{% if m.id == who %} selected{% endif %}>{{ m.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-secondary tm-apply" type="submit">Filtrar</button>
+    </form>
+
+    {% if not entries %}
+    <div class="tm-empty">
+      {% if filtered or older or project %}
+      <h2 class="tm-h2">Ningún cambio coincide con este filtro</h2>
+      <p class="acct-small">Prueba con otro filtro{% if older %} o mira los cambios anteriores{% endif %}.</p>
+      {% else %}
+      <h2 class="tm-h2">Todavía no hay cambios</h2>
+      <p class="acct-small">Aquí aparecerán los bloqueos levantados y los cambios de claves, miembros y ajustes.</p>
+      {% endif %}
+    </div>
+    {% else %}
+    <ol class="tm-audit">
+      {% for e in entries %}
+      <li class="tm-entry" data-seq="{{ e.seq }}">
+        <span class="tm-ts">{{ e.ts }}</span>
+        <span class="tm-what"><span class="tm-actor">{{ e.actor }}</span> {{ e.verb }} <span class="tm-target">{{ e.target }}</span></span>
+        {% if e.detail %}<span class="tm-detail">{{ e.detail }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+    {% if older %}<a class="btn btn-secondary tm-older" href="{{ older }}">Ver anteriores</a>{% endif %}
+  {% endif %}
+  </div>
+</main>
+{% endblock %}

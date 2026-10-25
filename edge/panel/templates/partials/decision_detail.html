@@ -13,6 +13,10 @@
   <div class="actions">
     {% if d.marked_normal %}
       <span class="consequence">Marcado como normal. Veridian lo suma al perfil de {{ d.user_id }}.</span>
+    {% elif d.decision != 'allow' and viewer_role %}
+      {# Viewers read; they do not lift blocks (decision 3). The engine refuses the POST too. #}
+      <button class="btn btn-primary" type="button" disabled aria-describedby="mark-why">Esto era normal</button>
+      <span id="mark-why" class="consequence">Solo un admin u owner puede marcar una decisión como normal.</span>
     {% elif d.decision != 'allow' %}
       <form method="post" action="/decisions/{{ d.id | urlencode }}/normal">
         <input type="hidden" name="user" value="{{ d.user_id }}">
