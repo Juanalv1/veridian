@@ -592,6 +592,13 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     async def by_user(request: Request, user: str, decision_id: str | None = None, error: str | None = None):
         return await render_activity(request, user, decision_id, None, error or None)
 
+    @panel.get("/decisiones/{decision_id:path}")
+    async def decision_link(decision_id: str):
+        # The engine's admin email and webhook link here: they only know the decision id, not its user.
+        decisions, _ = await load_decisions()
+        found = next((d for d in decisions if d.get("id") == decision_id), None)
+        return RedirectResponse(decision_url(found) if found else "/actividad", status_code=303)
+
     @panel.post("/decisions/{decision_id}/normal")
     async def mark_normal(request: Request, decision_id: str, user: str | None = Form(None)):
         failure = "mark"

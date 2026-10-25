@@ -786,3 +786,12 @@ def test_selection_falls_back_to_the_first_row_of_the_decision_without_event_ids
     html = stub_panel([dec(event_ids=[])], activity=acts).get("/actividad").text
     r = rows(html)
     assert 'aria-current="true"' in r[0] and 'aria-current="true"' not in r[1]
+
+
+def test_the_email_and_webhook_link_opens_the_decision():
+    # The engine links admins to /decisiones/{id} (U17 email, contract 13 webhook): it has no user_id to build more.
+    panel = stub_panel([dec(id="d/1 x", user="acme/ana torres")])
+    r = panel.get("/decisiones/d%2F1%20x", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/users/acme%2Fana%20torres/decisions/d%2F1%20x"
+    missing = panel.get("/decisiones/d_nope", follow_redirects=False)
+    assert missing.status_code == 303 and missing.headers["location"] == "/actividad"
