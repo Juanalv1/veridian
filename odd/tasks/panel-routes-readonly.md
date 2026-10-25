@@ -36,8 +36,8 @@ Mode: on. Source: `INIT.md` ("test first when there is clear behavior"). Runners
 
 ## Tasks
 
-- [ ] T1 Engine `GET /v1/routes` + contract 8 in `docs/REPARTO.md`. Route: delegated (writer trigger: engine code, tests and docs).
-- [ ] T2 `fake_engine` endpoint + panel `/rutas` renders the classification grouped by class, with "todo lo demás: normal", a note that it is configured in the engine, and an honest fallback. Route: delegated (same writer).
+- [x] T1 Engine `GET /v1/routes` + contract 8 in `docs/REPARTO.md`. Route: delegated (writer trigger: engine code, tests and docs). Evidence: 77f71d7; RED 3 failed/1 passed, GREEN engine 147 passed.
+- [x] T2 `fake_engine` endpoint + panel `/rutas` renders the classification grouped by class, with "todo lo demás: normal", a note that it is configured in the engine, and an honest fallback. Route: delegated (same writer). Evidence: 5f54858; RED 7 failed, GREEN edge 258 passed, engine 147 passed.
 
 ## Acceptance
 
@@ -52,4 +52,4 @@ RDD: off (decided by global). No native review.
 
 ## Progress
 
-Created 2026-10-25. Next: T1.
+Created 2026-10-25. T1 and T2 done (commits 77f71d7, 5f54858). Next: visual check in a browser if wanted. Note: engine deps are not in pyproject; run `uv run --with-requirements requirements.txt pytest -q` in `engine/`.
