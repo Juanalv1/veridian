@@ -48,6 +48,14 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    - Poner un límite de organizaciones por persona para evitar abusos (decidir el número).
    - Actualizar el contrato 10 en `REPARTO.md` y los READMEs que describen `VERIDIAN_ORG_CREATORS`.
    - **Tests:** una persona sin invitación crea su organización y queda `owner`; pasado el límite recibe un error claro.
+6. **La demo completa** (pedido de Juan, 2026-10-25). Carlos es responsable de que la demo en vivo funcione en el escenario:
+   - **Ensayar la demo** con el sistema real en Render, contra el guion de la demo que está escribiendo Juan (`docs/GUION.md` y `docs/DEMO.md`). Mientras el guion no esté listo, ensayar el escenario de `docs/DEMO.md`: el dueño entra normal y otra persona, desde otra red, intenta cambiar la cuenta bancaria.
+   - **Preparar cada ensayo** con `engine/scripts/prepare_demo.py` (ya hecho por Christian, `bbda6a7`): `--calibrar` en el wifi del evento y luego el modo normal antes de cada ensayo. Reportar lo que falle.
+   - **Rotar el token `demo`**, que quedó expuesto en una conversación (motor: `VERIDIAN_TOKENS`; app y panel: `VERIDIAN_TOKEN`), y **poner `VERIDIAN_SECRET_KEY`** (Fernet) para el webhook. Las dos salen de la tarea 3 de Christian.
+   - **El middleware no tomó la lista nueva después de un reset** (ver "Pendiente" en su sección de SDK): investigarlo, porque aparece justo en los ensayos.
+   - **Cerrar U13** (punto 4): sacar el reset para que la demo use solo el borrado por proyecto.
+   - **Medir y anotar** en `docs/PENDIENTES.md` lo que digan los ensayos: tiempos de cada momento, si la IA bloquea siempre al atacante y si nunca bloquea al dueño.
+   - Preparar el video de respaldo de una corrida buena.
 
 ### Dev B: notificaciones y operación
 
@@ -58,8 +66,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    - No hay proveedor real todavía (decisión 4 abierta); usa `NullMailer` en producción hasta que se elija.
 3. **Operación en Render:**
    - **Hecho (2026-10-25):** medidos los proxies delante del motor: son 2 (`VERIDIAN_TRUSTED_PROXIES=2`, ver "Advertencias");
-   - rotar el token del cliente `demo`, que quedó expuesto en una conversación (motor: `VERIDIAN_TOKENS`; app y panel: `VERIDIAN_TOKEN`);
-   - poner `VERIDIAN_SECRET_KEY` (Fernet) para el webhook.
+   - rotar el token `demo` y poner `VERIDIAN_SECRET_KEY` **pasaron a Carlos** (tarea 6 de Carlos, la demo completa).
 4. **REPARTO.md:** documentar en neutral los contratos 13, 14 y 15 a medida que aterricen.
 5. **Hecho (2026-10-25): `engine/scripts/prepare_demo.py`.** Una vez: en el panel, Miembros, invitar `ensayo@veridian.demo` como **owner** de la organización Demo (el script entra como esa persona con `VERIDIAN_PANEL_TOKEN`). En `engine/.env`: `VERIDIAN_BASE_URL`, `VERIDIAN_TOKEN` (clave `demo`), `VERIDIAN_PANEL_TOKEN` y, opcional, `DEMO_USER_ID`, `RENDER_API_KEY` + `DEMO_RENDER_SERVICE_ID` para reiniciar la app al final. Uso: el presentador navega la app unos minutos en el wifi del evento, `prepare_demo.py --calibrar`, y antes de cada ensayo `prepare_demo.py` (borra con `DELETE /v1/projects/{id}/data`, ya no usa el reset). Imprime `listo: N redes, N dispositivo, 14 días` o qué falló. Lo que se pedía: (pedido de Juan; hoy son 4 comandos con 3 secretos y las IPs copiadas a mano). Coordinar con Carlos, porque U13 reemplaza el reset por el borrado por proyecto.
    - **Script:** `engine/scripts/prepare_demo.py`, sin argumentos en el uso normal.
