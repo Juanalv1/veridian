@@ -28,8 +28,12 @@ uv sync
 | `VERIDIAN_ALLOW_DEV_TOKEN=1` | motor falso | Acepta además el token local `dev-token` (solo desarrollo) |
 | `VERIDIAN_SEED=demo` | motor falso | Precarga el historial del dueño (`u_42` desde `127.0.0.1`). También acepta un JSON `[{"user_id", "ips", "routes"}]` |
 | `VERIDIAN_LEARN_DELAY` | motor falso | Segundos antes de que un evento no marcado entre al perfil (por defecto 300). Evita que el login del atacante legitime su red |
+| `VERIDIAN_PANEL_TOKEN` | motor falso y panel | Credencial de servicio del panel. El motor falso la exige (más `X-Veridian-Actor` y `X-Veridian-Project`) en todo lo que no es del SDK; `VERIDIAN_PANEL_TOKENS` admite una lista para rotar |
+| `VERIDIAN_BOOTSTRAP_OWNERS` | motor falso | Correos que, al entrar, quedan como `owner` de los proyectos sin owner (el proyecto de cada token sembrado) |
+| `VERIDIAN_PROJECT_CREATORS` | motor falso | Correos que pueden crear proyectos; vacío = nadie. Provisional hasta la decisión 2 |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `PUBLIC_URL` | panel | Login con Google y cookie de sesión. En local se leen de `edge/.env` sin pisar el entorno. Sin ellos el panel responde 503 (no hay modo abierto) |
 | `VERIDIAN_URL` | demo y panel | URL del motor (por defecto `http://localhost:8000`) |
-| `VERIDIAN_TOKEN` | demo y panel | Token Bearer con el que hablan con el motor |
+| `VERIDIAN_TOKEN` | demo | Token Bearer (clave del SDK) con el que habla con el motor. El panel ya no lo usa |
 | `TRUSTED_PROXIES` | demo | Cantidad de proxies propios delante de la app (por defecto `0`: se usa la IP de la conexión y se ignora `X-Forwarded-For`). En Render es `3` (medido) |
 | `DEMO_PASSWORD` | demo | Contraseña de los usuarios de ejemplo. Por defecto `demo1234`, solo para uso local |
 
@@ -41,14 +45,15 @@ En tres terminales, desde `edge/`:
 
 ```bash
 # 1. Motor falso (puerto 8000)
-VERIDIAN_TOKENS=dev-local VERIDIAN_SEED=demo uv run uvicorn fake_engine.app:app --port 8000
+VERIDIAN_TOKENS=dev-local VERIDIAN_SEED=demo VERIDIAN_PANEL_TOKEN=panel-local \
+  VERIDIAN_BOOTSTRAP_OWNERS=tu@correo.com uv run uvicorn fake_engine.app:app --port 8000
 
 # 2. App de ejemplo (puerto 8001)
 VERIDIAN_URL=http://localhost:8000 VERIDIAN_TOKEN=dev-local TRUSTED_PROXIES=1 \
   uv run uvicorn demo_app.main:app --port 8001
 
 # 3. Panel (puerto 8002)
-VERIDIAN_URL=http://localhost:8000 VERIDIAN_TOKEN=dev-local \
+VERIDIAN_URL=http://localhost:8000 VERIDIAN_PANEL_TOKEN=panel-local \
   uv run uvicorn panel.main:app --port 8002
 ```
 

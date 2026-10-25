@@ -5,10 +5,15 @@ from fastapi.testclient import TestClient
 
 from fake_engine import create_app as create_engine
 from panel.main import create_app
+from tests.panel_support import EMAIL, PANEL_TOKEN, engine_panel_headers, make_panel, stub_client
 
-TOKEN = "tok-panel"
+TOKEN = "tok-sdk"  # the SDK key of the engine's demo project; the panel uses its own credential
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 SEED = [{"user_id": "u_42", "ips": ["190.202.14.7"], "routes": ["GET /invoices"]}]
+
+
+def new_engine(**kw):
+    return create_engine(tokens={TOKEN}, panel_tokens={PANEL_TOKEN}, bootstrap_owners={EMAIL}, **kw)
 
 
 def engine_client(engine):
@@ -24,10 +29,9 @@ def event(**over):
 
 
 def blocked_setup(seed=SEED):
-    engine = create_engine(tokens={TOKEN}, seed=seed, learn_delay=0)
+    engine = new_engine(seed=seed, learn_delay=0)
     TestClient(engine).post("/v1/events", json={"events": [event()]}, headers=AUTH)
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine)),
-                       follow_redirects=False)
+    panel = make_panel(engine_client(engine))
     return engine, panel
 
 
@@ -42,7 +46,7 @@ def expiring_clock():
 
 
 def decision_id(engine):
-    return TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["id"]
+    return TestClient(engine).get("/v1/decisions", headers=engine_panel_headers(engine)).json()["decisions"][0]["id"]
 
 
 def stub_panel(decisions, profile=None, activity=None, blocklist=None):
@@ -60,8 +64,8 @@ def stub_panel(decisions, profile=None, activity=None, blocklist=None):
             return httpx.Response(200, json=profile)
         return httpx.Response(404, json={"error": "not_found"})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    return TestClient(create_app("http://engine", TOKEN, http_client=client), follow_redirects=False)
+    client = stub_client(handler)
+    return make_panel(client)
 
 
 def dec(id="d_1", user="u_1", decision="block", status="open", ts="2026-10-26T10:14:05Z", **over):
@@ -142,7 +146,7 @@ def test_open_block_renders_mark_normal_button():
 
 def test_marked_normal_block_shows_lifted_muted_line_and_no_button():
     engine, panel = blocked_setup()
-    TestClient(engine).post(f"/v1/decisions/{decision_id(engine)}/normal", headers=AUTH)
+    TestClient(engine).post(f"/v1/decisions/{decision_id(engine)}/normal", headers=engine_panel_headers(engine))
     r = panel.get("/actividad")
     # (the decision list's short "Levantado" word is covered by the no-activity fallback test below)
     assert "Bloqueo levantado" in r.text
@@ -157,7 +161,7 @@ def test_post_mark_normal_calls_engine_and_redirects():
     r = panel.post(f"/decisions/{did}/normal", data={"user": "u_42"})
     assert r.status_code == 303
     assert r.headers["location"] == "/users/u_42"
-    status = TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["status"]
+    status = TestClient(engine).get("/v1/decisions", headers=engine_panel_headers(engine)).json()["decisions"][0]["status"]
     assert status == "marked_normal"
 
 
@@ -174,8 +178,8 @@ def test_post_mark_normal_engine_down_redirects():
     def boom(request):
         raise httpx.ConnectError("down")
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(boom))
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=client), follow_redirects=False)
+    client = stub_client(boom)
+    panel = make_panel(client)
     r = panel.post("/decisions/d_1/normal", data={})
     assert r.status_code == 303 and "error=" in r.headers["location"]
 
@@ -188,8 +192,8 @@ def test_unknown_status_counts_as_open():
                 "signals": {}, "rationale": "x", "event_ids": [], "status": "expired"}]})
         return httpx.Response(404, json={"error": "not_found"})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/actividad")
+    client = stub_client(handler)
+    r = make_panel(client).get("/actividad")
     assert "Esto era normal" in r.text and "Bloqueo levantado" not in r.text
 
 
@@ -240,13 +244,13 @@ def test_nav_verdict_words():
 
 
 def test_user_param_selects_profile():
-    engine = create_engine(tokens={TOKEN}, seed=[
+    engine = new_engine(seed=[
         {"user_id": "u_42", "ips": ["190.202.14.7"], "routes": ["GET /invoices"]},
         {"user_id": "u_17", "ips": ["10.1.2.3"], "routes": ["GET /ledger"]}], learn_delay=0)
     c = TestClient(engine)
     c.post("/v1/events", json={"events": [event()]}, headers=AUTH)
     c.post("/v1/events", json={"events": [event(id="e_2", user_id="u_17", ip="172.16.5.4")]}, headers=AUTH)
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine)))
+    panel = make_panel(engine_client(engine))
     r = panel.get("/users/u_17")
     assert "Lo normal para u_17" in r.text
     assert "10.1.2.0/24" in r.text and "GET /ledger" in r.text and "190.202.14.0/24" not in r.text
@@ -261,8 +265,8 @@ def test_profile_hours_range_formatted():
         return httpx.Response(200, json={"user_id": "u_1", "history_days": 3, "networks": [],
                                          "devices": [], "hours": [9, 13], "routes": [], "state": "normal"})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/actividad")
+    client = stub_client(handler)
+    r = make_panel(client).get("/actividad")
     assert "09:00 – 13:00 UTC" in r.text and "Permitido" in r.text
     # the browser rewrites UTC hours to the viewer's local time
     assert 'data-utc-hours="9,13"' in r.text
@@ -276,8 +280,8 @@ def test_profile_missing_shows_placeholder():
                 "signals": {}, "rationale": "r", "event_ids": [], "status": "open"}]})
         return httpx.Response(404, json={"error": "not_found"})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/actividad")
+    client = stub_client(handler)
+    r = make_panel(client).get("/actividad")
     assert r.status_code == 200 and "Alerta" in r.text and "Lo normal para u_1" in r.text
 
 
@@ -287,14 +291,14 @@ def test_step_up_badge():
             "id": "d_1", "ts": "2026-10-26T10:14:05Z", "user_id": "u_1", "decision": "step_up",
             "signals": {}, "rationale": "r", "event_ids": []}]})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/actividad")
+    client = stub_client(handler)
+    r = make_panel(client).get("/actividad")
     assert "Segundo factor" in r.text
 
 
 def test_panel_empty_state():
-    engine = create_engine(tokens={TOKEN}, seed=[])
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine)))
+    engine = new_engine(seed=[])
+    panel = make_panel(engine_client(engine))
     r = panel.get("/actividad")
     assert r.status_code == 200 and "Todavía no hay accesos" in r.text and "En vivo" in r.text
 
@@ -303,16 +307,16 @@ def test_panel_engine_down_shows_friendly_message():
     def boom(request):
         raise httpx.ConnectError("down")
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(boom))
-    r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/actividad")
+    client = stub_client(boom)
+    r = make_panel(client).get("/actividad")
     assert r.status_code == 200
     assert "No se pudo conectar" in r.text and "Motor sin conexión" in r.text
     assert 'http-equiv="refresh"' in r.text
 
 
 def test_panel_engine_rejects_token_shows_message():
-    engine = create_engine(tokens={"other"})
-    r = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine))).get("/actividad")
+    client = stub_client(lambda request: httpx.Response(401, json={"error": "unauthorized"}))
+    r = make_panel(client).get("/actividad")
     assert r.status_code == 200 and "token" in r.text.lower()
 
 
@@ -322,8 +326,8 @@ def test_panel_escapes_untrusted_text():
             "id": "d_1", "ts": "2026-10-26T10:14:05Z", "user_id": "<script>alert(1)</script>",
             "decision": "block", "signals": {"route": "/x"}, "rationale": "<b>x</b>", "event_ids": []}]})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/actividad")
+    client = stub_client(handler)
+    r = make_panel(client).get("/actividad")
     assert "<script>alert(1)</script>" not in r.text
     assert "<b>x</b>" not in r.text
 
@@ -336,8 +340,8 @@ def test_user_url_escapes_ids_with_slashes_and_spaces():
                 "signals": {}, "rationale": "x", "event_ids": [], "status": "open"}]})
         return httpx.Response(404, json={"error": "not_found"})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=client))
+    client = stub_client(handler)
+    panel = make_panel(client)
     r = panel.get("/users/acme%2Fana%20torres")
     assert r.status_code == 200 and 'aria-current="true"' in r.text
 
@@ -394,7 +398,7 @@ def test_htmx_post_mark_normal_returns_updated_page_not_redirect():
     assert r.status_code == 200
     assert "Bloqueo levantado" in r.text and "Esto era normal" not in r.text
     assert 'id="live"' in r.text and 'id="conn"' in r.text
-    status = TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["status"]
+    status = TestClient(engine).get("/v1/decisions", headers=engine_panel_headers(engine)).json()["decisions"][0]["status"]
     assert status == "marked_normal"
 
 
@@ -580,10 +584,9 @@ def test_mark_normal_is_hidden_for_allow_decisions():
 
 
 def test_end_to_end_owner_then_attacker_then_rejections_then_mark_normal():
-    engine = create_engine(tokens={TOKEN}, seed=SEED, learn_delay=0)
+    engine = new_engine(seed=SEED, learn_delay=0)
     api = TestClient(engine)
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine), clock=expiring_clock()),
-                       follow_redirects=False)
+    panel = make_panel(engine_client(engine), clock=expiring_clock())
     api.post("/v1/events", json={"events": [event(id="e_own", ip="190.202.14.7", session_id="s_own",
                                                   method="GET", route="/invoices")]}, headers=AUTH)
     html = panel.get("/actividad").text

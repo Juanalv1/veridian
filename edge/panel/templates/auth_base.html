@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Veridian · {% block title %}{% endblock %}</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v={{ asset_version }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&amp;family=IBM+Plex+Sans:wght@400;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<link rel="stylesheet" href="/static/tokens.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/panel.css?v={{ asset_version }}">
+</head>
+<body class="auth-page">
+<main class="auth-card">
+  <div class="auth-brand"><img src="/static/mark.svg?v={{ asset_version }}" alt="" width="26" height="26"><span class="wordmark">Veridian</span></div>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

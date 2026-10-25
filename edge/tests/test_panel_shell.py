@@ -6,9 +6,8 @@ from datetime import datetime, timezone
 import httpx
 from fastapi.testclient import TestClient
 
-from panel.main import create_app
+from tests.panel_support import make_panel, stub_client
 
-TOKEN = "tok"
 NOW = datetime(2026, 10, 26, 15, 0, tzinfo=timezone.utc)  # 11:00 in Caracas (UTC-4)
 CARACAS = {"vtz": "-240"}
 
@@ -62,7 +61,7 @@ class Engine:
         self.summary_body, self.users, self.down, self.routes = summary_body, users, down, routes
         self.blocklist = {"version": 1, "users": [], "sessions": ["s"], "ips": ["203.0.113.9"]} if blocklist is None else blocklist
         self.requests = []
-        self.client = httpx.AsyncClient(transport=httpx.MockTransport(self.handle))
+        self.client = stub_client(self.handle)
 
     def handle(self, request):
         self.requests.append(request)
@@ -86,8 +85,7 @@ class Engine:
         return httpx.Response(404, json={"error": "not_found"})
 
     def panel(self, cookies=CARACAS):
-        app = create_app("http://engine", TOKEN, http_client=self.client, now=lambda: NOW)
-        return TestClient(app, follow_redirects=False, cookies=cookies)
+        return make_panel(self.client, now=lambda: NOW, cookies=cookies)
 
     def summary_requests(self):
         return [r for r in self.requests if r.url.path == "/v1/summary"]

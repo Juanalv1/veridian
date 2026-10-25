@@ -255,3 +255,21 @@
   .bar[data-late] .tip { left:auto; right:0; }
   .bar[data-late] .tip, .bar:not([data-late]) .tip { max-width:none; }
   .users-table th, .users-table td { overflow-wrap:normal; white-space:nowrap; }
+
+/* Login and "sin proyectos" pages, and the session block of the sidebar. */
+.auth-page { display:grid; place-items:center; padding:var(--space-4); }
+.auth-card { width:100%; max-width:420px; display:flex; flex-direction:column; gap:var(--space-4);
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-md); padding:var(--space-8) var(--space-6); }
+.auth-card h1 { margin:0; font-family:var(--font-display); font-size:22px; }
+.auth-card p, .auth-card form { margin:0; }
+.auth-brand { display:flex; align-items:center; gap:var(--space-2); }
+.auth-muted { color:var(--muted); font-size:14px; }
+.auth-who { font-family:var(--font-mono); font-size:14px; overflow-wrap:anywhere; border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px 12px; }
+.auth-error { border:1px solid var(--state-block); border-left-width:4px; border-radius:var(--radius-sm); padding:10px 12px; font-size:14px; }
+.auth-card .btn { width:100%; }
+.session { display:flex; flex-direction:column; gap:var(--space-2); margin-top:var(--space-4); }
+.session .who { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.session .logout { min-height:36px; padding:6px 12px; background:transparent; color:var(--ink); border:1px solid var(--line);
+  border-radius:var(--radius-md); font-family:var(--font-sans); font-size:14px; cursor:pointer; }
+.session .logout:hover { border-color:var(--line-hover); background:var(--surface-hover); }
+.session .logout:focus-visible { outline:var(--focus-ring); outline-offset:var(--focus-offset); }

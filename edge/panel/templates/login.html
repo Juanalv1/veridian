@@ -1,0 +1,8 @@
+{% extends "auth_base.html" %}
+{% block title %}Iniciar sesión{% endblock %}
+{% block content %}
+  <h1>Entra a tu panel</h1>
+  <p class="auth-muted">Usa tu cuenta de Google para ver los accesos de tus proyectos y las decisiones de Veridian.</p>
+  {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
+  <a class="btn btn-primary" href="/auth/google">Continuar con Google</a>
+{% endblock %}

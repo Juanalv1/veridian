@@ -6,9 +6,8 @@ import httpx
 from fastapi.testclient import TestClient
 
 from panel.cache import TTLCache
-from panel.main import create_app
+from tests.panel_support import make_panel, stub_client
 
-TOKEN = "tok-panel"
 DECISION = {"id": "d_1", "ts": "2026-10-26T10:14:05Z", "user_id": "u_1", "decision": "block", "status": "open",
             "signals": {}, "rationale": "r", "event_ids": []}
 ACTIVITY = [{"event_id": "e_1", "ts": "2026-10-26T10:14:03Z", "user_id": "u_1", "decision_id": "d_1",
@@ -23,7 +22,7 @@ class Engine:
 
     def __init__(self, delay=0.0):
         self.delay, self.calls, self.client = delay, [], None
-        self.client = httpx.AsyncClient(transport=httpx.MockTransport(self.handle))
+        self.client = stub_client(self.handle)
 
     async def handle(self, request):
         self.calls.append(request.url.path)
@@ -47,8 +46,7 @@ class Clock:
 
 
 def panel_for(engine, clock=None):
-    app = create_app("http://engine", TOKEN, http_client=engine.client, **({"clock": clock} if clock else {}))
-    return TestClient(app, follow_redirects=False)
+    return make_panel(engine.client, **({"clock": clock} if clock else {}))
 
 
 # -- concurrency ---------------------------------------------------------------------------------
@@ -121,8 +119,8 @@ def test_failed_engine_answers_are_not_cached():
         calls.append(request.url.path)
         return httpx.Response(500, json={})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=client, clock=Clock()))
+    client = stub_client(handler)
+    panel = make_panel(client, clock=Clock())
     panel.get("/actividad")
     panel.get("/actividad")
     assert calls.count("/v1/decisions") == 2

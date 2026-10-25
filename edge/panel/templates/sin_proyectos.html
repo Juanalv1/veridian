@@ -1,0 +1,12 @@
+{% extends "auth_base.html" %}
+{% block title %}Sin proyectos{% endblock %}
+{% block content %}
+  <h1>Sin proyectos</h1>
+  <p class="auth-muted">Esta cuenta de Google todavía no pertenece a ningún proyecto. Pide a un administrador que te invite con este correo.</p>
+  <p class="auth-who">{{ email }}</p>
+  <a class="btn btn-primary" href="/auth/google">Usar otra cuenta</a>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn btn-secondary" type="submit">Cerrar sesión</button>
+  </form>
+{% endblock %}

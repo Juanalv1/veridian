@@ -6,6 +6,11 @@
 // extension on hover/focus/press, and by pages already visited) or behind a skeleton when not.
 // Without JS the links are plain links.
 (function () {
+  // Every htmx request carries the session's CSRF token (the server also checks Origin).
+  document.addEventListener("htmx:configRequest", function (e) {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.content) e.detail.headers["X-CSRF-Token"] = meta.content;
+  });
   function pad(n) { return String(n).padStart(2, "0"); }
   function localize(root) {
     root.querySelectorAll("time.ts[datetime]").forEach(function (el) {

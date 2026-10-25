@@ -1,10 +1,14 @@
 """Panel: live activity feed and the selected decision compared against the user's profile; refreshed every 2 s.
 
-Env: VERIDIAN_URL (engine base URL), VERIDIAN_TOKEN (Bearer token).
+Everything sits behind a Google login. The panel talks to the engine with its own service credential plus
+the signed-in person and project (X-Veridian-Actor, X-Veridian-Project); the engine checks membership and role.
+
+Env: VERIDIAN_URL (engine base URL), VERIDIAN_PANEL_TOKEN (service credential), GOOGLE_CLIENT_ID,
+GOOGLE_CLIENT_SECRET, SESSION_SECRET, PUBLIC_URL. Without them the panel refuses to serve (no open mode).
 """
 
 import asyncio
-import os
+import dataclasses
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -12,12 +16,14 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 
 import httpx
-from fastapi import FastAPI, Form, Request
+from fastapi import APIRouter, Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from . import auth as auth_module
 from .cache import TTLCache
+from .config import Settings
 from .fmt import count as _count
 from .fmt import seconds_text
 from .overview import build_overview, iso_z, local_day_window, user_rows
@@ -26,7 +32,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "21"
+ASSET_VERSION = "22"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -44,6 +50,7 @@ PROFILE_TTL = 15.0
 ACTIVITY_VERDICTS = {"normal": ("Normal", "normal"), "review": ("Raro", "alert"), "block": ("Bloqueado", "block")}
 LIFTED = ("Levantado", "Bloqueo levantado", "lifted")
 ROUTE_CLASSES = {"critical": "crítico", "sensitive": "sensible"}
+FORBIDDEN = "No tienes acceso a este proyecto."
 MARK_ERROR = "No se pudo marcar la decisión como normal. Inténtalo de nuevo."
 MAX_PROFILE_ROUTES = 4
 
@@ -183,18 +190,41 @@ def _shell(decisions: list[dict], activity: list[dict] | None) -> dict:
 def create_app(engine_url: str | None = None, token: str | None = None,
                http_client: httpx.AsyncClient | None = None,
                clock: Callable[[], float] = time.monotonic,
-               now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> FastAPI:
-    base = (engine_url or os.environ.get("VERIDIAN_URL", "http://localhost:8000")).rstrip("/")
-    bearer = token if token is not None else os.environ.get("VERIDIAN_TOKEN", "")
+               now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+               settings: Settings | None = None,
+               google_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
+    """`token` is the service credential for the engine; `google_transport` replaces the network to Google (tests)."""
+    settings = settings or Settings.from_env()
+    settings = dataclasses.replace(
+        settings, engine_url=(engine_url or settings.engine_url).rstrip("/"),
+        panel_token=token if token is not None else settings.panel_token)
+    base, bearer = settings.engine_url, settings.panel_token
     client = http_client or httpx.AsyncClient(timeout=3.0)
-    headers = {"Authorization": f"Bearer {bearer}"}
+    templates.env.globals["asset_version"] = ASSET_VERSION
     app = FastAPI(title="Veridian panel", docs_url=None, redoc_url=None, openapi_url=None)
+    auth = auth_module.install(app, settings, templates, client, google_transport)
+    # Registered on the routers below, in this order: configured -> session (+CSRF) -> project.
+    app.router.dependencies.append(Depends(auth.configured_guard))
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+    if settings.configured:
+        from starlette.middleware.sessions import SessionMiddleware
+        app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, session_cookie="session",
+                           max_age=auth_module.SESSION_MAX_AGE_S, same_site="lax",
+                           https_only=settings.public_url.startswith("https"))
+    app.include_router(auth.public_router())
+    app.include_router(auth.session_router())
+    panel = APIRouter(dependencies=[Depends(auth.session_guard), Depends(auth.project_guard)])
 
     cache = TTLCache(clock)
 
+    def engine_headers() -> dict[str, str]:
+        who = auth_module.current.get()
+        return {"Authorization": f"Bearer {bearer}", "X-Veridian-Actor": who.person, "X-Veridian-Project": who.project}
+
     async def engine_get(path: str, ttl: float, params: dict | None = None) -> httpx.Response:
-        key = (path, tuple(sorted((params or {}).items())))
+        headers = engine_headers()
+        # Keyed by person and project: the app serves everyone, so a cached read must never cross either.
+        key = (headers["X-Veridian-Actor"], headers["X-Veridian-Project"], path, tuple(sorted((params or {}).items())))
         return await cache.get(key, ttl, lambda: client.get(f"{base}{path}", params=params, headers=headers))
 
     async def load_decisions() -> tuple[list[dict], str | None]:
@@ -203,7 +233,9 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         except httpx.HTTPError:
             return [], "No se pudo conectar con el motor. Reintentando…"
         if r.status_code == 401:
-            return [], "El motor rechazó el token (revisa VERIDIAN_TOKEN)."
+            return [], "El motor rechazó el token del panel (revisa VERIDIAN_PANEL_TOKEN)."
+        if r.status_code == 403:
+            return [], FORBIDDEN
         if r.status_code != 200:
             return [], f"El motor respondió con error {r.status_code}. Reintentando…"
         try:
@@ -294,7 +326,8 @@ def create_app(engine_url: str | None = None, token: str | None = None,
 
     def page(request: Request, template: str, section: str, ctx: dict, engine_ms: float, t0_render: float):
         response = templates.TemplateResponse(request, template, {
-            "refresh": REFRESH_SECONDS, "asset_version": ASSET_VERSION, "sections": SECTIONS, "section": section, **ctx})
+            "refresh": REFRESH_SECONDS, "sections": SECTIONS, "section": section,
+            "csrf": request.session.get("csrf", ""), "email": request.session.get("email", ""), **ctx})
         response.headers["Server-Timing"] = (
             f"engine;dur={engine_ms:.1f}, render;dur={(time.perf_counter() - t0_render) * 1000:.1f}")
         return response
@@ -414,34 +447,34 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             "groups": groups, "no_endpoint": NO_ROUTES_ENDPOINT, "engine_error": engine_error, "refresh_url": "/rutas",
             **_shell(decisions, activity)}, engine_ms, time.perf_counter())
 
-    @app.get("/", response_class=HTMLResponse)
+    @panel.get("/", response_class=HTMLResponse)
     async def resumen(request: Request):
         return await render_overview(request)
 
-    @app.get("/usuarios", response_class=HTMLResponse)
+    @panel.get("/usuarios", response_class=HTMLResponse)
     async def usuarios(request: Request):
         return await render_users(request)
 
-    @app.get("/rutas", response_class=HTMLResponse)
+    @panel.get("/rutas", response_class=HTMLResponse)
     async def rutas(request: Request):
         return await render_routes(request)
 
     # Decorators register bottom-up: the more specific route must come first.
-    @app.get("/actividad", response_class=HTMLResponse)
-    @app.get("/actividad/{event_id:path}", response_class=HTMLResponse)
+    @panel.get("/actividad", response_class=HTMLResponse)
+    @panel.get("/actividad/{event_id:path}", response_class=HTMLResponse)
     async def actividad(request: Request, event_id: str | None = None, error: str | None = None):
         return await render_activity(request, None, None, event_id or None, bool(error))
 
-    @app.get("/users/{user:path}", response_class=HTMLResponse)
-    @app.get("/users/{user:path}/decisions/{decision_id}", response_class=HTMLResponse)
+    @panel.get("/users/{user:path}", response_class=HTMLResponse)
+    @panel.get("/users/{user:path}/decisions/{decision_id}", response_class=HTMLResponse)
     async def by_user(request: Request, user: str, decision_id: str | None = None, error: str | None = None):
         return await render_activity(request, user, decision_id, None, bool(error))
 
-    @app.post("/decisions/{decision_id}/normal")
+    @panel.post("/decisions/{decision_id}/normal")
     async def mark_normal(request: Request, decision_id: str, user: str | None = Form(None)):
         ok = False
         try:
-            r = await client.post(f"{base}/v1/decisions/{quote(decision_id, safe='')}/normal", headers=headers)
+            r = await client.post(f"{base}/v1/decisions/{quote(decision_id, safe='')}/normal", headers=engine_headers())
             ok = r.status_code == 200
         except httpx.HTTPError:
             pass
@@ -454,6 +487,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             url += "?" + urlencode({"error": "mark"})
         return RedirectResponse(url, status_code=303)
 
+    app.include_router(panel)
     return app
 
 

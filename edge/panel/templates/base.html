@@ -4,6 +4,7 @@
 <head>
 <meta charset="utf-8">
 {% block head_extra %}{% endblock %}
+<meta name="csrf-token" content="{{ csrf }}">
 <meta name="htmx-config" content='{"historyCacheSize":0,"includeIndicatorStyles":false}'>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Veridian · Panel</title>
@@ -42,6 +43,11 @@
       <span class="conn-line"><span class="dot" aria-hidden="true"></span><span class="conn-label">{% if engine_error %}Motor sin conexión{% else %}En vivo{% endif %}</span></span>
       {% if last_access and not engine_error %}<span class="last-access">último acceso hace <span class="ago">…</span></span>{% endif %}
     </div>
+    <form class="session" method="post" action="/logout">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <span class="who" title="{{ email }}">{{ email }}</span>
+      <button class="logout" type="submit">Cerrar sesión</button>
+    </form>
   </aside>
   <div class="backdrop" aria-hidden="true"></div>
   <div class="content">
