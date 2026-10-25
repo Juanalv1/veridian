@@ -41,7 +41,7 @@ Mode: on. Source: `INIT.md` ("test first when there is clear behavior"). Runner:
 - [ ] T4 (U10) Panel: project selector and creation, project from session, `TTLCache` keyed by project, retire `VERIDIAN_TOKEN`. Depends on decisions 1–2.
 - [ ] T5 (U11) Fake engine contracts 11, 12, 15 + panel members, invitations, API keys (shown once), audit. Depends on decision 3.
 - [ ] T6 Panel side of contracts 13 (webhook settings) and 14 (delete user / project data).
-- [ ] T7 (U18) SDK: tests that `401`/`429` on `/v1/check` and `/v1/blocklist` fail open; SDK README and landing say "create a key in the panel"; fix root README package name (`veridian-sdk`, `import veridian_sdk`). Route: delegated, parallel worktree.
+- [x] T7 (U18) SDK: tests that `401`/`429` on `/v1/check` and `/v1/blocklist` fail open; SDK README and landing say "create a key in the panel"; fix root README package name (`veridian-sdk`, `import veridian_sdk`). Route: delegated, parallel worktree. Evidence: 61d9a14 (14 cases: 401, 429 with/without `Retry-After` on check, blocklist, routes, events and the background loops), 8b1f914 (docs). No RED: already passing, middleware untouched. Behavior: `Retry-After` is ignored (no backoff), requests proceed; events stay queued until a flush succeeds; background loops stay under 40 calls in 0.2 s with 429 everywhere (mildly timing-based). `uv run --project edge pytest -q edge/tests` 308 passed in the worktree; 76 passed for `test_middleware.py` after cherry-pick to main.
 - [ ] T8 (U16) Privacy artifacts in `docs/`: subprocessors with the fields sent to the AI (verified against code), DPA template outline, deletion/retention procedures. Route: delegated, parallel worktree.
 
 ## Progress
