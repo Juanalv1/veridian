@@ -39,6 +39,8 @@ class Settings:
     clock: Callable[[], datetime] = field(default=utc_now)
     # judge(signals, profile) -> Judgment. None means rule-only: no AI decisions.
     judge: Callable[[dict, dict], Any] | None = None
+    # Seconds POST /v1/check waits for the judge on a gray deviation before the fallback decides.
+    sync_judge_timeout_s: float = 10.0
     # Demo rehearsals only: enables POST /v1/admin/reset. Keep off for real customers.
     allow_reset: bool = False
 
@@ -58,6 +60,7 @@ class Settings:
             rate_factor=float(os.environ.get("VERIDIAN_RATE_FACTOR", "3")),
             rate_floor=int(os.environ.get("VERIDIAN_RATE_FLOOR", "30")),
             judge=default_judge(),
+            sync_judge_timeout_s=float(os.environ.get("VERIDIAN_SYNC_JUDGE_TIMEOUT_S", "10")),
             allow_reset=os.environ.get("VERIDIAN_ALLOW_RESET", "").strip().lower() == "true",
         )
 

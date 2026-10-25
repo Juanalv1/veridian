@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from . import db
 from .activity import list_activity
 from .auth import Unauthorized, client_id_from_request
+from .check import CheckRequest, check_event
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
@@ -55,6 +56,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Runs after the 202 is sent: ingestion never waits for the AI.
             background_tasks.add_task(judge_deviations, settings, write_lock, latest_per_session(deviations))
         return {"accepted": len(inserted)}
+
+    @app.post("/v1/check")
+    def post_check(
+        body: CheckRequest, background_tasks: BackgroundTasks, client_id: str = Depends(client_id_from_request)
+    ) -> dict:
+        """Contract 9: decide a critical request before the app executes it."""
+        result = check_event(settings, route_classes, write_lock, client_id, body.event)
+        if result.explain_later is not None:
+            # A rule block answers at once; the AI rewrites its rationale after the response.
+            background_tasks.add_task(judge_deviations, settings, write_lock, [result.explain_later])
+        return result.body()
 
     @app.get("/v1/summary")
     def get_summary(

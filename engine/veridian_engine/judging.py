@@ -28,22 +28,27 @@ def judge_deviations(settings: Settings, write_lock: threading.Lock, deviations:
             with write_lock, db.connect(settings.db_path) as conn:
                 if not needs_judgment(conn, deviation):
                     continue
-                if deviation.signals.get("rate_spike"):
-                    # Marked before the call, so a concurrent batch does not judge the same spike.
-                    conn.execute(
-                        "INSERT OR IGNORE INTO rate_spike_judgments (client_id, session_id) VALUES (?, ?)",
-                        (deviation.client_id, deviation.event.session_id),
-                    )
-                # One row per real model call, for the panel's reviewed_by_ai count.
-                conn.execute(
-                    "INSERT INTO ai_judgments (client_id, event_id, ts) VALUES (?, ?, ?)",
-                    (deviation.client_id, deviation.event.id, format_ts(deviation.event.ts)),
-                )
+                reserve_judgment(conn, deviation)
             judgment = settings.judge(deviation.signals, deviation.profile)
             with write_lock, db.connect(settings.db_path) as conn:
                 apply_judgment(conn, settings, deviation, judgment.decision, judgment.rationale)
         except Exception:  # noqa: BLE001 - a judge failure must never break ingestion
             logger.exception("AI judgment failed for session %s", deviation.event.session_id)
+
+
+def reserve_judgment(conn: sqlite3.Connection, deviation: Deviation) -> None:
+    """Record, before calling the judge, that this deviation is being judged."""
+    if deviation.signals.get("rate_spike"):
+        # Marked before the call, so a concurrent batch does not judge the same spike.
+        conn.execute(
+            "INSERT OR IGNORE INTO rate_spike_judgments (client_id, session_id) VALUES (?, ?)",
+            (deviation.client_id, deviation.event.session_id),
+        )
+    # One row per real model call, for the panel's reviewed_by_ai count.
+    conn.execute(
+        "INSERT INTO ai_judgments (client_id, event_id, ts) VALUES (?, ?, ?)",
+        (deviation.client_id, deviation.event.id, format_ts(deviation.event.ts)),
+    )
 
 
 def needs_judgment(conn: sqlite3.Connection, deviation: Deviation) -> bool:

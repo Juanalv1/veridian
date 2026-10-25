@@ -31,6 +31,7 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_RATE_FLOOR` | `30` | Minimum events per minute for a spike, whatever the history. Unmeasured starting point |
 | `ANTHROPIC_API_KEY` | | Enables the AI judge. Without it the engine is rule-only: the critical block, no AI decisions |
 | `VERIDIAN_MODEL` | `claude-opus-5-5` | Model used by the AI judge |
+| `VERIDIAN_SYNC_JUDGE_TIMEOUT_S` | `10` | Seconds `POST /v1/check` waits for the judge on a gray deviation before its fallback decides |
 | `VERIDIAN_ALLOW_RESET` | `false` | `true` enables `POST /v1/admin/reset` (demo rehearsals only) |
 
 They can also live in a `.env` file (git-ignored), found by searching upward from the working directory. Real environment variables take precedence.
@@ -38,6 +39,10 @@ They can also live in a `.env` file (git-ignored), found by searching upward fro
 ## AI judge
 
 A deviation is an event with a new network, a new device (non-empty `device_id` not in the profile), a never-used `critical`/`sensitive` route, or a rate spike: more events of the session in the last 60 s than `max(VERIDIAN_RATE_FACTOR × usual max per minute, VERIDIAN_RATE_FLOOR)`, even on the owner's network and device. `new_transition` (route pair never seen in the history) and `unusual_hour` travel in `signals` as context for the judge but never make a deviation on their own. Two rules block synchronously: a never-used critical route from a new network (session and IP), and a rate spike (the session; also the IP only when the network is new, since on the owner's network the IP is the owner's). Then, after the `202`, the judge runs in the background and either replaces the block's rationale or records an `allow`/`alert`/`step_up`/`block` decision. Each session is judged once; it is judged again only on a rule block, a never-used `critical`/`sensitive` route, or its first rate spike, and a blocked session gets no more decisions. An AI block on a known network blocks only the session, never the owner's IP. A judge failure never breaks ingestion. Without a judge, both rules still block.
+
+## Synchronous check
+
+`POST /v1/check` with `{"event": <contract-1 event>}` decides a `critical` request before the app executes it (contract 9) and answers `{"verdict": "allow"|"block", "decision_id": ...}`. The event is stored as if it came through `/v1/events`, so the middleware's later batch resend is ignored by id and never judged twice; re-checking a known id answers from the current blocklist. No deviation → `allow` without AI. A rule block → `block` at once, and the judge rewrites the rationale afterwards. A gray deviation → the judge decides in a worker thread, waiting at most `VERIDIAN_SYNC_JUDGE_TIMEOUT_S`; past it, or on error, the judge's deterministic fallback (`alert`) applies. `block`/`step_up` → `block` (stored as a block: session, plus IP only on a new network); `allow`/`alert` → `allow`. Without a judge, only the rules block. Any internal error answers `allow` (fail-open).
 
 ## Activity feed
 
