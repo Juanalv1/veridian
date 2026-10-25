@@ -35,7 +35,14 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
 
 ### Dev B: notificaciones y operación
 
-1. **U12, conexión del webhook.** Lo está haciendo un agente en la máquina de Juan; ver "En curso". Después, B expone los endpoints del contrato 13 (configurar, probar y desactivar el webhook de un proyecto, admin+), cuando U6 esté en `main`.
+1. **U12, endpoints del webhook** (contrato 13, admin+, cuando U6 esté en `main`). La conexión ya está en `main`: cada `block` encola una notificación en la misma transacción (`decisions.create_decision`) y un hilo la envía firmada, con reintentos. Falta exponerlo por HTTP:
+   - `PUT .../webhook` → `webhook_store.set_webhook_endpoint(conn, pid, url, now=, resolver=)`. Devuelve el secreto una sola vez. Si la URL es insegura (`UnsafeUrlError`) responde `422`; si falta `VERIDIAN_SECRET_KEY` (`SecretKeyMissing`), `503`.
+   - `DELETE .../webhook` → `clear_webhook_endpoint`. Para leer y activar o desactivar: `get_webhook_endpoint` y `set_webhook_enabled`.
+   - `GET .../webhook/deliveries` → `notifications/outbox.list_notifications`.
+   - `POST .../webhook/test`: no hay nada construido detrás todavía.
+   - **Decidir:**
+     - la migración `0003` creó `project.webhook_url` y `project.webhook_secret_enc`, pero la `0005` usa una tabla aparte, `webhook_endpoint`; hay que borrar esas columnas o pasar a usarlas;
+     - los proyectos en `observe` también notifican (`blocked.session: true`); ¿está bien?
 2. **U17, conexión del correo.**
    - El módulo `engine/veridian_engine/mailer.py` ya existe.
    - Falta encolar `kind='email'` en el mismo outbox del webhook, para los owners y admins con `notify_email`.
@@ -55,7 +62,6 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
 | Unidad | Rama local | Qué hace |
 |---|---|---|
 | U6 | `worktree-agent-a53044581f721d52c` | Migración `0004` (organización; miembros, invitaciones y auditoría por organización; datos actuales en la organización "Demo"), acceso del panel, guarda de rol, endpoints con las formas del motor falso del Dev 2, claves de API (contrato 12), `mark_normal` con rol y auditoría |
-| U12 | `worktree-agent-a6db6cbc392a4912d` | Migración `0005` (`webhook_endpoint`, `notifications`), encolar en cada `block`, hilo de envío, dependencia `cryptography`, sin endpoints |
 
 ## Ya está en `main`
 
@@ -65,6 +71,7 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
   - claves con hash SHA-256 y comparación en tiempo constante;
   - `429` con `Retry-After` por IP real y por prefijo;
   - los tokens de `VERIDIAN_TOKENS` se importan como claves `legacy`, así que la demo sigue autenticando.
+- [x] **U12, conexión:** migración `0005`, notificación en cada `block`, hilo de envío (`VERIDIAN_WEBHOOKS`, `VERIDIAN_PANEL_URL`), `cryptography` en `requirements.txt`. Sin endpoints.
 - [x] **U14:** `enforcement` (`observe`/`enforce`) y `ai_enabled` por proyecto (`project_settings.py`). Sin endpoints: los expone U6 con `PATCH /v1/projects/{id}`.
 - [x] **Módulos listos, todavía sin conectar:**
   - U12: `notifications/webhook.py`, `secret_box.py`;
@@ -77,7 +84,7 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
   - señales de ritmo y recorrido;
   - actividad, resumen, usuarios;
   - clasificador OpenAPI como borrador.
-- Suite completa: **366 passed** (`cd engine && .venv/Scripts/python -m pytest -q`).
+- Suite completa: **398 passed** (`cd engine && .venv/Scripts/python -m pytest -q`).
 
 ## Enfoques fallidos (no repetir)
 
@@ -138,8 +145,7 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
    .venv/Scripts/pip install -r requirements.txt
    .venv/Scripts/python -m pytest -q
    ```
-   - Esperado: todo en verde (366 o más).
-   - Si falla `cryptography`: la agrega U12; mientras U12 no esté en `main`, un test de `notifications` se omite.
+   - Esperado: todo en verde (398 o más).
 2. **Levantar en local:**
    ```
    VERIDIAN_TOKEN=dev .venv/Scripts/uvicorn veridian_engine.api:create_app --factory --reload
@@ -242,7 +248,6 @@ Anota los resultados en `docs/PENDIENTES.md` (sección "Por medir"), con fecha, 
 - **No hay vuelta atrás automática de las migraciones.** Volver a código viejo exige restaurar la copia `.pre-NNNN` del disco.
 - **`VERIDIAN_TRUSTED_PROXIES=3` no está medido para el motor.** Si en realidad hay menos proxies, la IP del límite de fallos sale del valor de la conexión (compartido). Si hay más, sale de una entrada que el cliente controla.
 - **Quitar un token de `VERIDIAN_TOKENS` ya no lo revoca:** queda importado como clave. Para revocarlo hay que usar el contrato 12 (U6) o poner `revoked_at` en `api_key`.
-- **La venv compartida de la máquina de Juan ya tiene `cryptography` instalada.** Puede que en tu máquina falte hasta que U12 la agregue a `requirements.txt`.
 - **`docs/PENDIENTES.md` tiene los hallazgos del ensayo real:**
   - la IP del dueño rota por CGNAT;
   - la escalada `review` → `step_up` → `block` en el panel;
