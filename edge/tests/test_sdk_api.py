@@ -21,6 +21,9 @@ KEY = "tok-sdk"
 ENGINE_URL = "http://engine"
 REPO = Path(__file__).resolve().parents[2]
 QUICKSTART = REPO / "sdk" / "python" / "examples" / "quickstart.py"
+NODE_QUICKSTART = REPO / "sdk" / "node" / "examples" / "quickstart.js"
+PANEL_SNIPPET = REPO / "edge" / "panel" / "templates" / "partials" / "snippet.html"
+LANDING_PAGE = REPO / "landing" / "index.html"
 
 
 @pytest.fixture(autouse=True)
@@ -356,9 +359,71 @@ def test_the_landing_shows_the_quickstart_exactly():
 
 
 def test_the_panel_template_shows_the_quickstart_exactly():
-    page = (REPO / "edge" / "panel" / "templates" / "partials" / "snippet.html").read_text(encoding="utf-8")
+    page = PANEL_SNIPPET.read_text(encoding="utf-8")
     block = re.search(r'<code id="snippet-python"[^>]*>(.*?)</code>', page, flags=re.S)
     assert block and code_lines(visible_text(block.group(1))) == code_lines(snippet_code())
+
+
+def node_code() -> str:
+    return NODE_QUICKSTART.read_text(encoding="utf-8").strip()
+
+
+@pytest.mark.parametrize("path", [QUICKSTART, NODE_QUICKSTART])
+def test_no_quickstart_line_is_longer_than_80_characters(path):
+    long = [line for line in code_lines(path.read_text(encoding="utf-8")) if len(line) > 80]
+    assert long == []
+
+
+@pytest.mark.parametrize("path", [QUICKSTART, NODE_QUICKSTART])
+def test_the_quickstarts_stay_short_and_free_of_install_steps(path):
+    text = path.read_text(encoding="utf-8")
+    assert "pip install" not in text and "npm install" not in text
+    assert len(code_lines(text)) <= 25
+
+
+@pytest.mark.parametrize("path, params", [(QUICKSTART, ["user=", "trusted_proxies=0"]),
+                                          (NODE_QUICKSTART, ["user:", "trustedProxies: 0"])])
+def test_the_quickstarts_keep_the_user_and_trusted_proxies_parameters(path, params):
+    text = path.read_text(encoding="utf-8")
+    assert all(p in text for p in params)
+
+
+def test_the_readmes_show_the_node_quickstart_exactly():
+    for doc in ["README.md", "sdk/node/README.md"]:
+        text = (REPO / doc).read_text(encoding="utf-8")
+        blocks = re.findall(r"```js\n(.*?)```", text, flags=re.S)
+        assert code_lines(node_code()) in [code_lines(b) for b in blocks], doc
+
+
+def test_the_landing_shows_the_node_quickstart_exactly():
+    page = LANDING_PAGE.read_text(encoding="utf-8")
+    block = re.search(r'<code id="snippet-node"[^>]*>(.*?)</code>', page, flags=re.S)
+    assert block and code_lines(visible_text(block.group(1))) == code_lines(node_code())
+
+
+def test_the_panel_template_shows_the_node_quickstart_exactly():
+    page = PANEL_SNIPPET.read_text(encoding="utf-8")
+    block = re.search(r'<code id="snippet-node"[^>]*>(.*?)</code>', page, flags=re.S)
+    assert block and code_lines(visible_text(block.group(1))) == code_lines(node_code())
+
+
+@pytest.mark.parametrize("source", [PANEL_SNIPPET, LANDING_PAGE])
+def test_the_node_tab_is_published_with_install_and_copy_buttons(source):
+    page = source.read_text(encoding="utf-8")
+    assert "en preparación" not in page
+    assert 'data-copy="npm install veridian-sdk"' in page
+    assert 'data-copy-from="snippet-node"' in page
+    assert "veridian-sdk/next" in page
+
+
+@pytest.mark.parametrize("source", [PANEL_SNIPPET, LANDING_PAGE])
+def test_the_explanations_live_in_prose_not_in_the_code(source):
+    page = source.read_text(encoding="utf-8")
+    for code_id in ("snippet-python", "snippet-node"):
+        code = re.search(r'<code id="%s"[^>]*>(.*?)</code>' % code_id, page, flags=re.S).group(1)
+        assert "hash" not in visible_text(code) and "Actividad" not in visible_text(code)
+    prose = visible_text(page)
+    assert "hash" in prose and "Actividad" in prose and "trusted_proxies" in prose
 
 
 # --- a refused blocklist poll is visible ---------------------------------------------------------

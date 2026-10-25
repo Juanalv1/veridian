@@ -37,36 +37,60 @@
         <span class="sn-name"><b>3</b> Agrega el middleware (FastAPI, Starlette o cualquier app ASGI)</span>
         <button class="btn btn-secondary" type="button" data-copy-from="snippet-python" hidden>Copiar código</button>
       </div>
-      <pre class="tm-snippet"><code id="snippet-python"><span class="c"># 1. Instala el SDK:            pip install veridian-sdk</span>
-<span class="c"># 2. Pon tu clave en el entorno (nunca en el código), la que creaste en el panel:</span>
-<span class="c">#                               VERIDIAN_API_KEY=vrd_...</span>
-<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+      <pre class="tm-snippet"><code id="snippet-python"><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
 <span class="k">from</span> veridian_sdk <span class="k">import</span> VeridianMiddleware
 
 app = FastAPI()
 
 app.add_middleware(
     VeridianMiddleware,
-    <span class="c"># Quién hace la petición: el id de tu usuario, o None si nadie inició sesión.</span>
-    <span class="c"># Si nadie inició sesión y request.state.user no existe, cuenta como None, sin errores.</span>
-    <span class="c"># Corre antes de tus rutas: si tu login pone el usuario en request.state desde</span>
-    <span class="c"># otro middleware, agrega ese middleware después de este, así corre primero.</span>
+    <span class="c"># Id de tu usuario, o None si nadie inició sesión</span>
     user=<span class="k">lambda</span> request: request.state.user.id,
-    <span class="c"># Cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1).</span>
-    <span class="c"># Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.</span>
+    <span class="c"># Proxies tuyos delante de la app (0 si no hay)</span>
     trusted_proxies=0,
-)
-
-<span class="c"># La sesión se detecta sola: cookie sessionid, connect.sid, sid, session_id, PHPSESSID</span>
-<span class="c"># o JSESSIONID, o el token Bearer. Veridian solo recibe un hash, nunca el valor.</span>
-<span class="c"># Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</span>
-<span class="c"># Para comprobar la conexión: entra a tu app con un usuario y, en unos segundos,</span>
-<span class="c"># ese acceso aparece en Actividad, en el panel de Veridian.</span></code></pre>
+)</code></pre>
+    </div>
+    <div class="sn-step">
+      <p class="tm-reveal-text">La sesión se detecta sola y Veridian solo recibe un hash, nunca el valor. Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</p>
+      <p class="tm-reveal-text"><code>trusted_proxies</code> es cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1). Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.</p>
+      <p class="tm-reveal-text">Para comprobar la conexión, entra a tu app con un usuario: en unos segundos el acceso aparece en Actividad y el panel marca Conectado.</p>
     </div>
   </div>
   <div role="tabpanel" id="snippet-panel-node" aria-labelledby="snippet-tab-node" class="sn-panel" hidden>
     <div class="sn-step">
-      <p class="tm-reveal-text">El SDK de Node (Express y Next.js) está en preparación. Cuando se publique, este paso mostrará cómo instalarlo y conectarlo con la misma clave.</p>
+      <div class="sn-step-head">
+        <span class="sn-name"><b>2</b> Instala el SDK</span>
+        <button class="btn btn-secondary" type="button" data-copy="npm install veridian-sdk" hidden>Copiar</button>
+      </div>
+      <pre class="tm-snippet"><code><span class="c">$</span> npm install veridian-sdk</code></pre>
+    </div>
+    <div class="sn-step">
+      <div class="sn-step-head">
+        <span class="sn-name"><b>3</b> Agrega el middleware (Express)</span>
+        <button class="btn btn-secondary" type="button" data-copy-from="snippet-node" hidden>Copiar código</button>
+      </div>
+      <pre class="tm-snippet"><code id="snippet-node"><span class="k">import</span> express <span class="k">from</span> 'express';
+<span class="k">import</span> { veridian } <span class="k">from</span> 'veridian-sdk';
+
+<span class="k">const</span> app = express();
+
+app.use(
+  veridian({
+    <span class="c">// Id de tu usuario, o null si nadie inició sesión</span>
+    user: (req) => req.user.id,
+    <span class="c">// Proxies tuyos delante de la app (0 si no hay)</span>
+    trustedProxies: 0,
+  }),
+);
+
+<span class="c">// ...aquí van tus rutas...</span>
+
+app.listen(3000);</code></pre>
+    </div>
+    <div class="sn-step">
+      <p class="tm-reveal-text">La sesión se detecta sola y Veridian solo recibe un hash, nunca el valor. Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</p>
+      <p class="tm-reveal-text">Registra Veridian después del middleware que identifica a tu usuario (Passport, express-session) y antes de tus rutas. <code>trustedProxies</code> es cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1); con 0 se ignora X-Forwarded-For, que cualquiera puede escribir.</p>
+      <p class="tm-reveal-text">Para comprobar la conexión, entra a tu app con un usuario: en unos segundos el acceso aparece en Actividad y el panel marca Conectado. ¿Usas Next.js? Mira el README de <code>veridian-sdk/next</code> en npm.</p>
     </div>
   </div>
 </div>

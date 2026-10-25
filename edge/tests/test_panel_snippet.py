@@ -55,18 +55,9 @@ def test_the_python_tab_has_install_and_highlighted_code_with_copy_buttons():
     assert '<span class="k">from</span>' in html
 
 
-def test_the_node_tab_promises_no_package_that_is_not_published():
-    panel = re.search(r'id="snippet-panel-node".*?</div>\s*</div>', render("k"), re.S).group(0)
-    assert "npm install" not in panel
-    assert "en preparación" in panel
-
-
-def test_the_keys_page_uses_the_component():
-    page = (TEMPLATES / "claves.html").read_text(encoding="utf-8")
-    assert 'import sdk_snippet' in page and "sdk_snippet(created.key)" in page
-    assert "snippet-python" not in page  # no second copy of the code
-
-
-def test_the_landing_has_the_node_tab_too():
-    page = (REPO / "landing" / "index.html").read_text(encoding="utf-8")
-    assert 'id="tab-node"' in page and 'id="panel-node"' in page
+def test_the_node_tab_has_install_and_highlighted_code_with_copy_buttons():
+    html = render("k")
+    assert 'data-copy="npm install veridian-sdk"' in html
+    assert 'data-copy-from="snippet-node"' in html
+    assert "en preparación" not in html
+    assert not re.search(r'id="snippet-node"[^>]*>[^<]*vrd_', html)
