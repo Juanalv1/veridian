@@ -291,3 +291,130 @@ def test_decision_carries_the_triggering_access(client):
         "method": "POST",
         "route": "/payouts/bank-account",
     }
+
+
+# --- 403 events (rejected by the middleware) -------------------------------
+
+
+def rejected(**over):
+    fields = dict(id="e_rej1", session_id="s_atk", ip="203.0.113.9", method="GET",
+                  route="/invoices", status=403, bytes=21, ts="2026-10-26T10:14:09Z")
+    fields.update(over)
+    return make_event(**fields)
+
+
+def test_403_events_never_enter_the_profile(client):
+    r = post_events(client, [rejected(ip="198.51.100.4", route="/invoices/export", device_id="d_rej")])
+    assert r.json() == {"accepted": 1}
+    prof = client.get("/v1/users/u_42/profile", headers=AUTH).json()
+    assert "198.51.100.0/24" not in prof["networks"]
+    assert "GET /invoices/export" not in prof["routes"]
+    assert "d_rej" not in prof["devices"]
+
+
+def test_403_events_never_trigger_a_decision(client):
+    post_events(client, [rejected(method="POST", route="/payouts/bank-account")])
+    assert client.get("/v1/decisions", headers=AUTH).json()["decisions"] == []
+    assert client.get("/v1/blocklist", headers=AUTH).json()["version"] == 0
+
+
+# --- activity (contract 5) -------------------------------------------------
+
+
+def activity(client, query="", headers=AUTH):
+    return client.get(f"/v1/activity{query}", headers=headers)
+
+
+def test_activity_requires_auth(client):
+    r = activity(client, headers={})
+    assert r.status_code == 401 and r.json() == {"error": "unauthorized"}
+
+
+def test_activity_empty(client):
+    assert activity(client).json() == {"activity": []}
+
+
+def test_activity_normal_events_have_no_decision_newest_first(client):
+    post_events(client, [make_event(id="e_a", ts="2026-10-26T10:00:00Z")])
+    post_events(client, [make_event(id="e_b", ts="2026-10-26T10:00:05Z", route="/invoices/{id}")])
+    items = activity(client).json()["activity"]
+    assert [i["event_id"] for i in items] == ["e_b", "e_a"]
+    assert items[0] == {
+        "event_id": "e_b", "ts": "2026-10-26T10:00:05Z", "user_id": "u_42", "session_id": "s_1",
+        "ip": "190.202.14.9", "device_id": "d_1", "method": "GET", "route": "/invoices/{id}",
+        "verdict": "normal", "decision_id": None,
+    }
+    assert "user_agent" not in items[0] and "bytes" not in items[0]
+
+
+def test_activity_limit_default_bounds_and_422(client):
+    post_events(client, [make_event(id=f"e_{n}") for n in range(60)])
+    assert len(activity(client).json()["activity"]) == 50
+    assert len(activity(client, "?limit=3").json()["activity"]) == 3
+    assert len(activity(client, "?limit=200").json()["activity"]) == 60
+    for bad in ("0", "201", "abc"):
+        assert activity(client, f"?limit={bad}").status_code == 422
+
+
+def test_activity_triggering_access_is_block_with_its_decision(client):
+    post_events(client, [make_event(id="e_ok"), attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_atk"]["verdict"] == "block" and items["e_atk"]["decision_id"] == d["id"]
+    assert items["e_ok"]["verdict"] == "normal" and items["e_ok"]["decision_id"] is None
+
+
+def test_activity_rejected_requests_of_a_blocked_session_are_block(client):
+    post_events(client, [attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    post_events(client, [rejected(id="e_r1"), rejected(id="e_r2", route="/invoices/export")])
+    items = activity(client).json()["activity"]
+    assert [i["event_id"] for i in items] == ["e_r2", "e_r1", "e_atk"]
+    assert all(i["verdict"] == "block" and i["decision_id"] == d["id"] for i in items)
+
+
+def test_activity_owner_in_another_session_stays_normal_after_a_block(client):
+    post_events(client, [attack()])
+    post_events(client, [make_event(id="e_own", session_id="s_own", ts="2026-10-26T10:20:00Z")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_own"]["verdict"] == "normal" and items["e_own"]["decision_id"] is None
+
+
+def test_activity_same_session_before_the_block_stays_normal(client):
+    post_events(client, [make_event(id="e_login", session_id="s_atk", ip="203.0.113.9", method="POST", route="/login")])
+    post_events(client, [attack()])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_login"]["verdict"] == "normal" and items["e_login"]["decision_id"] is None
+    assert items["e_atk"]["verdict"] == "block"
+
+
+def test_activity_marked_normal_turns_its_accesses_back_to_normal(client):
+    post_events(client, [attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    post_events(client, [rejected(id="e_r1")])
+    client.post(f"/v1/decisions/{d['id']}/normal", headers=AUTH)
+    items = activity(client).json()["activity"]
+    assert {i["event_id"] for i in items} == {"e_r1", "e_atk"}
+    assert all(i["verdict"] == "normal" for i in items)
+
+
+def test_activity_review_verdict_for_alert_and_step_up():
+    from fake_engine.app import verdict_of
+
+    assert verdict_of({"decision": "alert", "status": "open"}) == "review"
+    assert verdict_of({"decision": "step_up", "status": "open"}) == "review"
+    assert verdict_of({"decision": "allow", "status": "open"}) == "normal"
+    assert verdict_of({"decision": "block", "status": "open"}) == "block"
+    assert verdict_of({"decision": "block", "status": "marked_normal"}) == "normal"
+    assert verdict_of({"decision": "alert", "status": "marked_normal"}) == "normal"
+
+
+def test_activity_clients_are_isolated(client):
+    post_events(client, [make_event()])
+    assert activity(client, headers={"Authorization": "Bearer tok-b"}).json() == {"activity": []}
+
+
+def test_activity_idempotent_events_listed_once(client):
+    post_events(client, [make_event(id="e_x")])
+    post_events(client, [make_event(id="e_x")])
+    assert len(activity(client).json()["activity"]) == 1

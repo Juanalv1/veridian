@@ -1,6 +1,6 @@
 """In-memory stand-in for the Veridian engine.
 
-Honors the four contracts in docs/REPARTO.md and mirrors Dev 1's first
+Honors the five contracts in docs/REPARTO.md and mirrors Dev 1's first
 milestone rule: a `critical` route the user never used, hit from a /24 never
 seen for that user, produces a `block` decision and blocks its session and IP.
 No AI, no persistence.
@@ -81,6 +81,13 @@ def network_of(ip: str) -> str:
     return str(ipaddress.ip_network(f"{addr}/{prefix}", strict=False))
 
 
+def verdict_of(decision: dict) -> str:
+    """Contract 5 verdict of a decision: normal | review | block."""
+    if decision.get("status") == "marked_normal":
+        return "normal"
+    return {"block": "block", "alert": "review", "step_up": "review"}.get(decision.get("decision"), "normal")
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -115,6 +122,7 @@ class ClientState:
     ips: list[str] = field(default_factory=list)
     decisions: list[dict] = field(default_factory=list)  # oldest first
     pending_events: dict[str, EventIn] = field(default_factory=dict)
+    log: list[EventIn] = field(default_factory=list)  # every accepted event, oldest first
     normal: set[str] = field(default_factory=set)
     blocked_users: set[str] = field(default_factory=set)
     # Events are learned only after `learn_delay` seconds, like the real engine
@@ -144,6 +152,11 @@ class ClientState:
         p.devices.update(devices)
 
     def ingest(self, event: EventIn) -> None:
+        self.log.append(event)
+        if event.status == 403:
+            # Rejected by the middleware: the app never saw it, so it says
+            # nothing about the user. Never learned, never judged.
+            return
         self.apply_pending()
         profile = self.profile(event.user_id)
         key = f"{event.method} {event.route}"
@@ -197,6 +210,44 @@ class ClientState:
                 },
             }
         )
+
+    def activity(self, limit: int) -> list[dict]:
+        """Newest-first accesses with their verdict (contract 5).
+
+        An access is `block` when it triggered a block decision, or when it is a
+        request the middleware rejected (403) in that decision's session after
+        the triggering access. Marking the decision normal turns all of them
+        back to `normal` (verdict_of).
+        """
+        by_event = {eid: d for d in self.decisions for eid in d["event_ids"]}
+        # session -> [(log index of the trigger, decision)], oldest first
+        index = {e.id: i for i, e in enumerate(self.log)}
+        blocks: dict[str, list[tuple[int, dict]]] = {}
+        for d in self.decisions:
+            sid = (d.get("access") or {}).get("session_id")
+            if d["decision"] == "block" and sid and d["event_ids"][0] in index:
+                blocks.setdefault(sid, []).append((index[d["event_ids"][0]], d))
+        items = []
+        for i in range(len(self.log) - 1, max(len(self.log) - 1 - limit, -1), -1):
+            e = self.log[i]
+            decision = by_event.get(e.id)
+            if decision is None and e.status == 403:
+                decision = next((d for at, d in reversed(blocks.get(e.session_id, [])) if at < i), None)
+            items.append(
+                {
+                    "event_id": e.id,
+                    "ts": e.ts,
+                    "user_id": e.user_id,
+                    "session_id": e.session_id,
+                    "ip": e.ip,
+                    "device_id": e.device_id,
+                    "method": e.method,
+                    "route": e.route,
+                    "verdict": verdict_of(decision) if decision else "normal",
+                    "decision_id": decision["id"] if decision else None,
+                }
+            )
+        return items
 
     def mark_normal(self, decision_id: str) -> dict | None:
         decision = next((d for d in self.decisions if d["id"] == decision_id), None)
@@ -300,6 +351,10 @@ def create_app(
     @app.get("/v1/decisions")
     def get_decisions(st: State, limit: Annotated[int, Query(ge=1, le=500)] = 50):
         return {"decisions": list(reversed(st.decisions))[:limit]}
+
+    @app.get("/v1/activity")
+    def get_activity(st: State, limit: Annotated[int, Query(ge=1, le=200)] = 50):
+        return {"activity": st.activity(limit)}
 
     @app.post("/v1/decisions/{decision_id}/normal")
     def post_normal(decision_id: str, st: State):
