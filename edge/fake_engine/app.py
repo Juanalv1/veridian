@@ -19,12 +19,12 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, Path, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, StringConstraints, ValidationError
 
 DEV_TOKEN = "dev-token"
 
@@ -86,19 +86,21 @@ class EventIn(BaseModel):
     id: str
     ts: str
     user_id: str
-    session_id: str | None = None
+    session_id: str = Field(min_length=1)  # required, like the real engine
     ip: str
     user_agent: str | None = None
     device_id: str | None = None
     method: str
     route: str
-    status: int
+    status: int = Field(ge=100, le=599)
     bytes: int
     user_email: str | None = None  # optional personal data (self-unlock); kept per user, never in the event
 
 
 class EventsIn(BaseModel):
-    events: list[EventIn]
+    # Validated one by one in POST /v1/events, like the real engine: a bad event is
+    # rejected on its own and never sinks the batch.
+    events: list[Any]
 
 
 class CheckIn(BaseModel):
@@ -987,13 +989,22 @@ def create_app(
     @app.post("/v1/events", status_code=202)
     def post_events(body: EventsIn, st: State):
         accepted_count = 0
-        for event in body.events:
+        rejected = 0
+        for item in body.events:
+            try:
+                event = EventIn.model_validate(item)
+            except ValidationError:
+                rejected += 1
+                continue
             if event.id in st.seen_event_ids:
                 continue
             st.seen_event_ids.add(event.id)
             accepted_count += 1
             st.ingest(event)
-        return {"accepted": accepted_count}
+        answer = {"accepted": accepted_count}
+        if rejected:
+            answer["rejected"] = rejected
+        return answer
 
     @app.post("/v1/check")
     def post_check(body: CheckIn, st: State):

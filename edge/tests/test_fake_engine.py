@@ -118,8 +118,22 @@ def test_dev_token_only_when_env_allows(monkeypatch):
 
 
 def test_invalid_event_body_is_422(client):
-    assert client.post("/v1/events", json={"events": [{"id": "x"}]}, headers=AUTH).status_code == 422
     assert client.post("/v1/events", json={}, headers=AUTH).status_code == 422
+    assert client.post("/v1/events", json={"events": "x"}, headers=AUTH).status_code == 422
+
+
+def test_invalid_events_are_rejected_one_by_one_like_the_real_engine(client):
+    events = [
+        make_event(id="e_ok"),
+        {"id": "x"},
+        make_event(id="e_no_session", session_id=None),
+        make_event(id="e_empty_session", session_id=""),
+        make_event(id="e_status_0", status=0),
+        make_event(id="e_status_600", status=600),
+    ]
+    r = post_events(client, events)
+    assert r.status_code == 202
+    assert r.json() == {"accepted": 1, "rejected": 5}
 
 
 # --- events ----------------------------------------------------------------
@@ -481,15 +495,9 @@ def test_activity_ip_rule_applies_from_the_block_on_not_before(client):
     assert items["e_before"]["verdict"] == "normal" and items["e_before"]["decision_id"] is None
 
 
-def test_activity_ip_rule_without_a_session_on_the_trigger(client):
-    post_events(client, [attack(session_id=None)])
-    post_events(client, [make_event(id="e_x", session_id="s_x", ip="203.0.113.9")])
-    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
-    assert items["e_x"]["verdict"] == "block"
-    # a session-less trigger must not drag every session-less access into the block
-    post_events(client, [make_event(id="e_none", session_id=None, ip="198.51.100.3")])
-    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
-    assert items["e_none"]["verdict"] == "normal"
+def test_a_session_less_event_is_rejected_and_never_blocks(client):
+    assert post_events(client, [attack(session_id=None)]).json() == {"accepted": 0, "rejected": 1}
+    assert client.get("/v1/decisions", headers=client.panel_a).json()["decisions"] == []
 
 
 def test_activity_other_ip_and_other_session_stay_normal_after_a_block(client):
