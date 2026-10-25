@@ -11,6 +11,7 @@
 > - **Corrección de una brecha previa:** el panel lee `GET /v1/blocklist` y `GET /v1/routes` (texto de la consecuencia de un bloqueo y página Rutas); ahora la tabla de llamantes los marca como accesibles para `sdk` **y** `panel`.
 > - **Decisiones abiertas:** la 1 queda decidida; la 2 pasa a ser quién crea organizaciones. Valores provisionales (no preguntados): ver decisión 2.
 > - **Plan de trabajo:** cambian U4, U6, U10 y U11.
+> - **Eliminar una organización (decisión del usuario, 2026-10-25):** solo un `owner` puede hacerlo y solo cuando ya no le quedan proyectos (se eliminan antes, uno por uno); si tiene proyectos se rechaza. Se añade `DELETE /v1/orgs/{id}` al contrato 10 y se resuelve el hueco "eliminación de organización sin definir".
 
 ## Problema y objetivo
 
@@ -104,7 +105,7 @@ erDiagram
 `EVENT` y `DECISION` son las tablas actuales con `client_id` renombrado a `project_id`.
 
 - **Person:** una cuenta de Google verificada. La identidad es `google_sub` (estable); el `email` puede cambiar. Una persona existe una vez, sin importar a cuántas organizaciones pertenezca.
-- **Organization:** la empresa o cuenta que agrupa proyectos y personas. Es el nivel donde viven los miembros y los roles. Una persona puede pertenecer a varias. Se elimina con borrado lógico (`deleted_at`); el contrato de eliminación de una organización **no está definido** (pendiente de definir).
+- **Organization:** la empresa o cuenta que agrupa proyectos y personas. Es el nivel donde viven los miembros y los roles. Una persona puede pertenecer a varias. Se elimina con borrado lógico (`deleted_at`), solo por un `owner` y solo cuando no le quedan proyectos sin eliminar (contrato 10).
 - **Project:** la unidad de datos y de claves. Reemplaza a `client_id` y pertenece a **una** organización (`org_id`). Todo dato de la plataforma de datos cuelga de un proyecto. No tiene miembros ni roles propios: hereda los de su organización.
 - **Membership:** la relación persona–organización con un rol. Es la única fuente de permisos y vale para todos los proyectos de la organización. Una persona tiene un solo rol por organización.
 - **Invitation:** invitación **a la organización** por correo con rol y vencimiento. Se acepta sola cuando esa persona entra con Google y el correo verificado coincide; no hace falta enviar correo para que funcione (ver decisión 4).
@@ -120,7 +121,7 @@ Los roles viven **solo** en la organización: una persona tiene un rol por organ
 |---|---|
 | `viewer` | Ver portada, actividad, decisiones, usuarios, perfiles y rutas de cualquier proyecto de la organización. Nada que cambie estado. |
 | `admin` | Todo lo del viewer, más: crear proyectos, marcar decisiones como normales, administrar claves, rutas, webhook y ajustes de proyectos, invitar y quitar `viewer` y `admin`, cambiar rol entre `viewer` y `admin`, ver la auditoría, borrar datos de un usuario. |
-| `owner` | Todo lo del admin, más: administrar otros `owner` (invitar, cambiar rol, quitar), borrar todos los datos de un proyecto, eliminar un proyecto. |
+| `owner` | Todo lo del admin, más: administrar otros `owner` (invitar, cambiar rol, quitar), borrar todos los datos de un proyecto, eliminar un proyecto, eliminar la organización (solo si no le queda ningún proyecto sin eliminar; antes hay que eliminar los proyectos uno por uno). |
 
 **Reglas de dominio (se prueban):**
 
@@ -245,7 +246,7 @@ Los de la columna "Llamante" `panel` llevan siempre `X-Veridian-Actor`. La organ
 
 | N.º | Endpoints | Llamante y rol | Notas |
 |---|---|---|---|
-| **10 Personas, organizaciones y proyectos** | `POST /v1/people/login`; `GET /v1/me/orgs`; `POST /v1/orgs`; `GET`/`PATCH /v1/orgs/{id}`; `GET`/`POST /v1/orgs/{id}/projects`; `GET`/`PATCH`/`DELETE /v1/projects/{id}` | `panel`; `POST /v1/orgs`: correo permitido (decisión 2, provisional); `PATCH` de organización y `POST .../projects`: admin; `GET`: viewer; `PATCH` de proyecto: admin; `DELETE` de proyecto: owner | `login` devuelve `{person, orgs: [{id, name, role, projects: [{id, name}]}]}`; `GET /v1/me/orgs` devuelve `{orgs: [...]}` igual. `POST /v1/orgs` hace owner al creador. `PATCH` de organización cambia `name`; `PATCH` de proyecto cambia `name`, `retention_days`, `enforcement`, `ai_enabled`. Un proyecto responde con `org_id` y el `role` del actor en esa organización. `DELETE` de proyecto es borrado lógico (`deleted_at`) y programa la purga. Sustituyen a `GET /v1/me/projects` y `POST /v1/projects`. |
+| **10 Personas, organizaciones y proyectos** | `POST /v1/people/login`; `GET /v1/me/orgs`; `POST /v1/orgs`; `GET`/`PATCH`/`DELETE /v1/orgs/{id}`; `GET`/`POST /v1/orgs/{id}/projects`; `GET`/`PATCH`/`DELETE /v1/projects/{id}` | `panel`; `POST /v1/orgs`: correo permitido (decisión 2, provisional); `PATCH` de organización y `POST .../projects`: admin; `GET`: viewer; `PATCH` de proyecto: admin; `DELETE` de organización: owner; `DELETE` de proyecto: owner | `login` devuelve `{person, orgs: [{id, name, role, projects: [{id, name}]}]}`; `GET /v1/me/orgs` devuelve `{orgs: [...]}` igual. `POST /v1/orgs` hace owner al creador. `PATCH` de organización cambia `name`; `PATCH` de proyecto cambia `name`, `retention_days`, `enforcement`, `ai_enabled`. Un proyecto responde con `org_id` y el `role` del actor en esa organización. `DELETE` de proyecto es borrado lógico (`deleted_at`) y programa la purga. `DELETE /v1/orgs/{id}` es borrado lógico (`deleted_at`) y se anota en el `AuditLog` de la organización; responde `204` sin cuerpo, `403` a admin, viewer y no miembros, y `409 {"error": "org_not_empty"}` mientras tenga proyectos sin eliminar. Una organización eliminada desaparece de `login`, `GET /v1/me/orgs` y de todas sus rutas (`403`). El fake engine aún no tiene `DELETE` de proyecto ni `AuditLog`: marca `deleted_at` y no escribe auditoría. Sustituyen a `GET /v1/me/projects` y `POST /v1/projects`. |
 | **11 Miembros e invitaciones** (de la organización) | `GET /v1/orgs/{id}/members`; `PATCH`/`DELETE /v1/orgs/{id}/members/{person_id}`; `GET`/`POST /v1/orgs/{id}/invitations`; `DELETE /v1/orgs/{id}/invitations/{inv_id}` | `panel`; admin (para `viewer`/`admin`), owner (para `owner`) | Reglas de dominio de la sección Roles: siempre queda un owner; nadie cambia su propio rol ni se quita a sí mismo; un admin no gestiona owners. Invitación vence a los 14 días por defecto (valor de configuración, no medido). Solo hay una lista de miembros por organización. |
 | **12 Claves de API** | `GET`/`POST /v1/projects/{id}/api-keys`; `POST .../api-keys/{key_id}/revoke` | `panel`; admin (de la organización del proyecto) | `POST` devuelve `{"id","name","prefix","key"}` y **`key` solo esa vez**. Formato `vrd_<8 de prefijo>_<secreto aleatorio de 32 bytes en base64url>`. `GET` nunca devuelve `key` ni `key_hash`. |
 | **13 Webhook** | `PUT /v1/projects/{id}/webhook`; `POST .../webhook/test`; `GET .../webhook/deliveries` | `panel`; admin | Ver Notificaciones. `PUT` devuelve el secreto de firma una sola vez. |
