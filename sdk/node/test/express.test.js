@@ -57,7 +57,7 @@ for (const [name, express] of [['express 5', express5], ['express 4', express4]]
   test(`${name}: routes inside a mounted router keep their full template`, async () => {
     const { app, mw } = build();
     const base = await serve(app);
-    await fetch(`${base}/api/ping/3`, { headers: { 'x-login': 'u_1' } });
+    await fetch(`${base}/api/ping/3`, { headers: { 'x-login': 'u_1', cookie: 'sessionid=abc' } });
     const [e] = await flushed(mw);
     assert.equal(e.route, '/api/ping/{n}');
   });
@@ -65,11 +65,11 @@ for (const [name, express] of [['express 5', express5], ['express 4', express4]]
   test(`${name}: the device cookie is set once and reused`, async () => {
     const { app, mw } = build();
     const base = await serve(app);
-    const first = await fetch(`${base}/items/1`, { headers: { 'x-login': 'u_1' } });
+    const first = await fetch(`${base}/items/1`, { headers: { 'x-login': 'u_1', cookie: 'sessionid=abc' } });
     const cookie = first.headers.get('set-cookie');
     assert.match(cookie, /^vrd_did=d_[0-9a-f]{12}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=31536000$/);
     const id = cookie.split(';')[0].split('=')[1];
-    const second = await fetch(`${base}/items/2`, { headers: { 'x-login': 'u_1', cookie: `vrd_did=${id}` } });
+    const second = await fetch(`${base}/items/2`, { headers: { 'x-login': 'u_1', cookie: `sessionid=abc; vrd_did=${id}` } });
     assert.equal(second.headers.get('set-cookie'), null);
     const events = await flushed(mw);
     assert.deepEqual(events.map((e) => e.device_id), [id, id]);
@@ -193,7 +193,7 @@ for (const [name, express] of [['express 5', express5], ['express 4', express4]]
   test(`${name}: close() stops the timers and sends what is queued`, async () => {
     const { app, mw } = build({ background: true, flushInterval: 10000, pollInterval: 10000, routesPollInterval: 10000, reportRoutes: false });
     const base = await serve(app);
-    await fetch(`${base}/items/1`, { headers: { 'x-login': 'u_1' } });
+    await fetch(`${base}/items/1`, { headers: { 'x-login': 'u_1', cookie: 'sessionid=abc' } });
     await new Promise((r) => setTimeout(r, 30));
     await mw.close();
     assert.equal(engine.of('POST', '/v1/events').flatMap((r) => r.body.events).length, 1);

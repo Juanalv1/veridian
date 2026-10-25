@@ -135,7 +135,7 @@ def test_an_admin_can_mark_normal(client, engine):
 
 def test_panel_reads_are_scoped_to_the_project_header(client, engine):
     owner = login(client, email=OWNER)
-    event = {"id": "e_1", "ts": "2026-10-26T10:14:03Z", "user_id": "u_1", "ip": "1.1.1.1", "method": "GET",
+    event = {"id": "e_1", "ts": "2026-10-26T10:14:03Z", "user_id": "u_1", "session_id": "s_1", "ip": "1.1.1.1", "method": "GET",
              "route": "/invoices", "status": 200, "bytes": 1}
     client.post("/v1/events", json={"events": [event]}, headers=bearer(SDK))
     a = client.get("/v1/activity", headers=acting(owner, project_of(engine, SDK))).json()["activity"]

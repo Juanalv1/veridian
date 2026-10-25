@@ -11,7 +11,7 @@ from fake_engine import create_app
 from tests.test_fake_engine_accounts import FUTURE, OWNER, PANEL, SDK, SDK_B, acting, bearer, login, org_of, project_of
 
 KEY_FORMAT = re.compile(r"^vrd_[a-z0-9]{8}_[A-Za-z0-9_-]{43}$")
-EVENT = {"id": "e_1", "ts": "2026-10-26T10:14:03Z", "user_id": "u_1", "ip": "1.1.1.1", "method": "GET",
+EVENT = {"id": "e_1", "ts": "2026-10-26T10:14:03Z", "user_id": "u_1", "session_id": "s_1", "ip": "1.1.1.1", "method": "GET",
          "route": "/invoices", "status": 200, "bytes": 1}
 
 

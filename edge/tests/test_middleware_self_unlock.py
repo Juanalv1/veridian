@@ -39,7 +39,7 @@ async def test_without_the_option_events_carry_no_user_email(rec):
     assert "user_email" not in rec.events[0]
 
 
-@pytest.mark.parametrize("cookies", [{"uid": "u_42"}, {"uid": "u_42", "em": ""}])
+@pytest.mark.parametrize("cookies", [{"uid": "u_42", "sid": "s_1"}, {"uid": "u_42", "sid": "s_1", "em": ""}])
 async def test_a_missing_email_is_none_not_an_error(rec, cookies, caplog):
     mw = make_mw(build_app(), rec.client(), user_email=email_of)
     with caplog.at_level(logging.WARNING, logger="veridian"):
@@ -53,7 +53,7 @@ async def test_a_lookup_that_fails_because_nobody_is_logged_in_is_quiet(rec, cap
     mw = make_mw(build_app(), rec.client(), user_email=lambda request: request.state.user.email)
     with caplog.at_level(logging.WARNING, logger="veridian"):
         async with client_for(mw) as c:
-            assert (await c.get("/items/1", cookies={"uid": "u_42"})).status_code == 200
+            assert (await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})).status_code == 200
     await mw.flush()
     assert "user_email" not in rec.events[0] and caplog.records == []
 
@@ -61,7 +61,7 @@ async def test_a_lookup_that_fails_because_nobody_is_logged_in_is_quiet(rec, cap
 async def test_something_that_is_not_an_address_is_not_sent(rec):
     mw = make_mw(build_app(), rec.client(), user_email=lambda request: "not-an-address")
     async with client_for(mw) as c:
-        await c.get("/items/1", cookies={"uid": "u_42"})
+        await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})
     await mw.flush()
     assert "user_email" not in rec.events[0]
 
@@ -76,7 +76,7 @@ async def test_the_email_set_by_the_app_during_the_request_is_used(rec):
 
     mw = make_mw(app, rec.client(), user_email=email_of)
     async with client_for(mw) as c:
-        await c.post("/signin")
+        await c.post("/signin", cookies={"sid": "s_1"})
     await mw.flush()
     assert rec.events[0]["user_email"] == EMAIL
 

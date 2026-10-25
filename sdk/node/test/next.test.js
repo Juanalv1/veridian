@@ -29,7 +29,7 @@ test('a wrapped handler runs and the request is reported with the route given', 
 
 test('without a route option the pathname is the route', async () => {
   const protect = make();
-  await protect(async () => new Response('x'))(req('/api/ping', { headers: { 'x-login': 'u_1' } }));
+  await protect(async () => new Response('x'))(req('/api/ping', { headers: { 'x-login': 'u_1', cookie: 'sessionid=abc' } }));
   assert.equal((await events(protect))[0].route, '/api/ping');
 });
 
@@ -75,7 +75,7 @@ test('without trusted proxies the IP cannot be known, so X-Forwarded-For is igno
 
 test('an ip option can say where the client address is', async () => {
   const protect = make({ ip: (request) => request.headers.get('x-real-ip') });
-  await protect(async () => new Response('x'))(req('/a', { headers: { 'x-login': 'u_1', 'x-real-ip': '198.51.100.5' } }));
+  await protect(async () => new Response('x'))(req('/a', { headers: { 'x-login': 'u_1', cookie: 'sessionid=abc', 'x-real-ip': '198.51.100.5' } }));
   assert.equal((await events(protect))[0].ip, '198.51.100.5');
 });
 
@@ -93,7 +93,7 @@ test('a critical request is checked and refused before the handler runs', async 
 
 test('a handler that throws is reported as a 500 and the error still propagates', async () => {
   const protect = make();
-  await assert.rejects(protect(async () => { throw new Error('app bug'); })(req('/a', { headers: { 'x-login': 'u_1' } })), /app bug/);
+  await assert.rejects(protect(async () => { throw new Error('app bug'); })(req('/a', { headers: { 'x-login': 'u_1', cookie: 'sessionid=abc' } })), /app bug/);
   assert.equal((await events(protect))[0].status, 500);
 });
 
