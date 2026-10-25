@@ -28,3 +28,20 @@ def test_sample_scenario_blocks_only_the_attacker(client):
     assert listed["sessions"] == ["s_attacker_t1"]
     assert listed["ips"] == [script.ATTACKER_IP]
     assert listed["users"] == []
+
+
+def test_dotenv_fills_missing_variables_only(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text('# comment\nVERIDIAN_BASE_URL="https://engine.example"\nVERIDIAN_TOKEN=from-file\n')
+    nested = tmp_path / "engine"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+    monkeypatch.delenv("VERIDIAN_BASE_URL", raising=False)
+    monkeypatch.setenv("VERIDIAN_TOKEN", "from-env")
+
+    load_script().load_dotenv()
+
+    import os
+
+    assert os.environ["VERIDIAN_BASE_URL"] == "https://engine.example"
+    assert os.environ["VERIDIAN_TOKEN"] == "from-env"
+    monkeypatch.delenv("VERIDIAN_BASE_URL")

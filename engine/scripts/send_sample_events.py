@@ -16,6 +16,7 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 USER_ID = "u_42"
 OWNER_IP = "190.202.14.7"
@@ -97,7 +98,22 @@ def request(base_url: str, token: str, method: str, path: str, body: dict | None
         return error.code, error.read().decode(errors="replace")
 
 
+def load_dotenv() -> None:
+    """Fill unset variables from the nearest .env above the cwd (stdlib only, like the rest of the script)."""
+    for folder in (Path.cwd(), *Path.cwd().parents):
+        dotenv = folder / ".env"
+        if dotenv.is_file():
+            break
+    else:
+        return
+    for line in dotenv.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and not key.startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
 def main() -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", default=os.environ.get("VERIDIAN_BASE_URL", "http://localhost:8000"))
     parser.add_argument("--token", default=os.environ.get("VERIDIAN_TOKEN"))
