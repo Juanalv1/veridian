@@ -435,7 +435,8 @@ def test_a_member_lists_the_projects_of_the_org(client):
     assert [p["id"] for p in projects] == ["client_a", "client_b"]
     assert projects[0] == {"id": "client_a", "org_id": DEMO_ORG_ID, "name": "client_a", "retention_days": 90,
                            "enforcement": "enforce", "ai_enabled": True, "created_at": "2026-10-26T12:00:00Z",
-                           "role": "viewer"}
+                           "role": "viewer", "brand_name": None, "brand_logo_url": None, "brand_color": None,
+                           "brand_support_url": None, "brand_support_email": None, "self_unlock_enabled": False}
 
 
 def test_a_viewer_cannot_create_a_project_but_an_admin_can(client):

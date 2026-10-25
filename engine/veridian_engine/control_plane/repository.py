@@ -261,7 +261,7 @@ def rename_organization(conn: sqlite3.Connection, *, actor_id: str, org_id: str,
 
 def list_org_projects(conn: sqlite3.Connection, org_id: str) -> list[dict]:
     rows = conn.execute(
-        "SELECT id, org_id, name, retention_days, enforcement, ai_enabled, created_at FROM project"
+        f"SELECT {_PROJECT_COLUMNS} FROM project"
         " WHERE org_id = ? AND deleted_at IS NULL ORDER BY created_at, rowid",
         (org_id,),
     ).fetchall()
@@ -313,14 +313,22 @@ def bootstrap_owner(
 # --- projects ---
 
 
+_PROJECT_COLUMNS = ("id, org_id, name, retention_days, enforcement, ai_enabled, created_at, brand_name,"
+                    " brand_logo_url, brand_color, brand_support_url, brand_support_email, self_unlock_enabled")
+# Columns `update_project` writes as they come (name and retention_days are written explicitly).
+_BRAND_COLUMNS = ("brand_name", "brand_logo_url", "brand_color", "brand_support_url", "brand_support_email")
+
+
 def _project_dict(row) -> dict:
     return {"id": row[0], "org_id": row[1], "name": row[2], "retention_days": row[3], "enforcement": row[4],
-            "ai_enabled": bool(row[5]), "created_at": row[6]}
+            "ai_enabled": bool(row[5]), "created_at": row[6], "brand_name": row[7], "brand_logo_url": row[8],
+            "brand_color": row[9], "brand_support_url": row[10], "brand_support_email": row[11],
+            "self_unlock_enabled": bool(row[12])}
 
 
 def get_project(conn: sqlite3.Connection, project_id: str) -> dict | None:
     row = conn.execute(
-        "SELECT id, org_id, name, retention_days, enforcement, ai_enabled, created_at FROM project"
+        f"SELECT {_PROJECT_COLUMNS} FROM project"
         " WHERE id = ? AND deleted_at IS NULL",
         (project_id,),
     ).fetchone()
@@ -362,7 +370,7 @@ def update_project(
     changes: dict,
     now: datetime,
 ) -> None:
-    """Change name and retention_days here; enforcement and ai_enabled go through
+    """Change name, retention_days, the brand fields and self_unlock_enabled here; enforcement and ai_enabled go through
     project_settings.set_project_flags (it bumps the blocklist version), called by the caller
     inside the same transaction. This function checks the role and writes the audit row."""
     with atomic(conn):
@@ -371,6 +379,12 @@ def update_project(
             conn.execute("UPDATE project SET name = ? WHERE id = ?", (changes["name"], project_id))
         if "retention_days" in changes:
             conn.execute("UPDATE project SET retention_days = ? WHERE id = ?", (changes["retention_days"], project_id))
+        for column in _BRAND_COLUMNS:
+            if column in changes:
+                conn.execute(f"UPDATE project SET {column} = ? WHERE id = ?", (changes[column], project_id))
+        if "self_unlock_enabled" in changes:
+            conn.execute("UPDATE project SET self_unlock_enabled = ? WHERE id = ?",
+                         (int(changes["self_unlock_enabled"]), project_id))
         _audit_person(conn, actor_id, "project.update", "project", project_id, now, org_id=org_id,
                       project_id=project_id, meta=changes)
 

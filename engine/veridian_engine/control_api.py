@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import db, webhook_store
+from .brand import BRAND_TEXT_FIELDS, BrandColor, BrandEmail, BrandName, BrandUrl, check_logo_url
 from .auth import Caller, caller_from_request
 from .control_plane import repository
 from .control_plane.repository import (
@@ -82,6 +83,13 @@ class ProjectPatch(BaseModel):
     retention_days: int | None = Field(default=None, ge=1)
     enforcement: Literal["observe", "enforce"] | None = None
     ai_enabled: bool | None = None
+    # Self-unlock by email (docs/DESBLOQUEO-POR-CORREO.md). Null or "" clears a brand field.
+    brand_name: BrandName = Field(default=None, max_length=80)
+    brand_logo_url: BrandName = Field(default=None, max_length=2048)
+    brand_color: BrandColor = None
+    brand_support_url: BrandUrl = Field(default=None, max_length=2048)
+    brand_support_email: BrandEmail = None
+    self_unlock_enabled: bool | None = None
 
 
 Role = Literal["owner", "admin", "viewer"]
@@ -102,6 +110,7 @@ SECRET_KEY_MISSING = {"error": "secret_key_missing"}
 
 def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
     router = APIRouter()
+    resolver = settings.webhook_resolver or default_resolver  # webhook URL and brand logo URL
 
     def org_view(conn, org_id: str, person_id: str, with_created: bool = False) -> dict:
         org = repository.get_organization(conn, org_id)
@@ -291,9 +300,16 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
 
     @router.patch("/v1/projects/{project_id}")
     def patch_project(body: ProjectPatch, project: PanelProject = Depends(path_project("edit_settings"))) -> dict:
-        changes = body.model_dump(exclude_none=True)
+        # Only the sent fields change. None clears a brand text field; for the rest it means "not sent".
+        changes = {key: value for key, value in body.model_dump(exclude_unset=True).items()
+                   if value is not None or key in BRAND_TEXT_FIELDS}
         if "name" in changes:
             changes["name"] = changes["name"].strip()
+        if changes.get("brand_logo_url"):
+            try:
+                check_logo_url(changes["brand_logo_url"], resolver)
+            except UnsafeUrlError as exc:
+                return JSONResponse(status_code=422, content={"error": "unsafe_url", "detail": str(exc)})
         with write_lock, db.connect(settings.db_path) as conn:
             if changes:
                 repository.update_project(conn, actor_id=project.person_id, project_id=project.project_id,
@@ -397,8 +413,6 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
             return JSONResponse(status_code=404, content=NOT_FOUND)
 
     # --- contract 13: webhook ---
-
-    resolver = settings.webhook_resolver or default_resolver
 
     def audit_webhook(conn, project: PanelProject, action: str, meta: dict | None = None) -> None:
         repository.record_audit(conn, actor_person_id=project.person_id, actor_kind="person", action=action,
