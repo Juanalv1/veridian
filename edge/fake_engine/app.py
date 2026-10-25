@@ -7,18 +7,21 @@ seen for that user, produces a `block` decision and blocks its session and IP.
 No AI, no persistence.
 """
 
+import hashlib
+import hmac
 import ipaddress
 import json
 import os
+import secrets
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Header, Query, Request
+from fastapi import Depends, FastAPI, Header, Path, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 DEV_TOKEN = "dev-token"
 
@@ -54,6 +57,15 @@ class Unauthorized(Exception):
     pass
 
 
+class Forbidden(Exception):
+    pass
+
+
+# Roles of docs/DISENO-PRODUCTO.md, weakest first.
+ROLE_RANK = {"viewer": 0, "admin": 1, "owner": 2}
+Role = Literal["viewer", "admin", "owner"]
+
+
 class EventIn(BaseModel):
     id: str
     ts: str
@@ -74,6 +86,23 @@ class EventsIn(BaseModel):
 
 class CheckIn(BaseModel):
     event: EventIn
+
+
+class LoginIn(BaseModel):
+    google_sub: str = Field(min_length=1)
+    email: str = Field(min_length=3)
+    name: str | None = None
+
+
+class ProjectIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class ProjectPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    retention_days: int | None = Field(default=None, ge=1)
+    enforcement: Literal["observe", "enforce"] | None = None
+    ai_enabled: bool | None = None
 
 
 def network_of(ip: str) -> str:
@@ -374,11 +403,57 @@ class ClientState:
         return decision
 
 
+@dataclass
+class Person:
+    id: str
+    google_sub: str
+    email: str
+    name: str
+    created_at: str
+    last_login_at: str
+
+
+@dataclass
+class Project:
+    """The tenant: one isolated ClientState plus who may see it and with which role."""
+
+    id: str
+    name: str
+    state: ClientState
+    created_at: str
+    retention_days: int = 90
+    enforcement: str = "observe"
+    ai_enabled: bool = True
+    members: dict[str, str] = field(default_factory=dict)  # person_id -> role
+    invitations: list[dict] = field(default_factory=list)  # {email, role, expires_at, accepted_at}
+
+    def has_owner(self) -> bool:
+        return "owner" in self.members.values()
+
+    def invite(self, email: str, role: Role, expires_at: str) -> None:
+        self.invitations.append({"email": email.strip().lower(), "role": role, "expires_at": expires_at,
+                                 "accepted_at": None})
+
+    def public(self) -> dict:
+        return {"id": self.id, "name": self.name, "retention_days": self.retention_days,
+                "enforcement": self.enforcement, "ai_enabled": self.ai_enabled, "created_at": self.created_at}
+
+
 def _tokens_from_env() -> set[str]:
     tokens = {t.strip() for t in os.environ.get("VERIDIAN_TOKENS", "").split(",") if t.strip()}
     if os.environ.get("VERIDIAN_ALLOW_DEV_TOKEN") == "1":
         tokens.add(DEV_TOKEN)
     return tokens
+
+
+def _emails_from_env(name: str) -> set[str]:
+    return {e.strip().lower() for e in os.environ.get(name, "").split(",") if e.strip()}
+
+
+def _panel_tokens_from_env() -> set[str]:
+    """VERIDIAN_PANEL_TOKEN, plus VERIDIAN_PANEL_TOKENS (current and previous, to rotate without a cut)."""
+    raw = [os.environ.get("VERIDIAN_PANEL_TOKEN", "")] + os.environ.get("VERIDIAN_PANEL_TOKENS", "").split(",")
+    return {t.strip() for t in raw if t.strip()}
 
 
 def _seed_from_env() -> list[dict]:
