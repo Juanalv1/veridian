@@ -38,7 +38,7 @@
       <div class="chart" role="img" aria-label="{{ c.aria }}" style="--cols:{{ c.bars | length }}">
         <div class="axis" aria-hidden="true">{% for v in c.axis %}<span>{{ v }}</span>{% endfor %}</div>
         {% for b in c.bars %}
-        <div class="bar{% if b.blocks %} has-block{% endif %}" style="--h:{{ b.pct }}%"><span class="tip">{{ b.tip }}</span>{% if b.blocks %}<span class="marker"></span>{% endif %}<div class="fill" style="height:{{ b.pct }}%"></div></div>
+        <div class="bar{% if b.blocks %} has-block{% endif %}{% if loop.index > (c.bars | length) / 2 %} late{% endif %}" style="--h:{{ b.pct }}%"><span class="tip">{{ b.tip }}</span>{% if b.blocks %}<span class="marker"></span>{% endif %}<div class="fill" style="height:{{ b.pct }}%"></div></div>
         {% endfor %}
       </div>
       <div class="chart-labels" aria-hidden="true" style="--cols:{{ c.bars | length }}"><span></span>{% for b in c.bars %}<span>{{ b.label }}</span>{% endfor %}</div>
