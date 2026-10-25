@@ -18,7 +18,7 @@ from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -228,6 +228,9 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     # Registered on the routers below, in this order: configured -> session (+CSRF) -> project.
     app.router.dependencies.append(Depends(auth.configured_guard))
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+    # Render's health check: a plain Starlette route, outside the configured guard, so a missing secret
+    # closes the pages (503) without failing every deploy. Says nothing about the configuration.
+    app.add_route("/healthz", lambda _: PlainTextResponse("ok", headers={"Cache-Control": "no-store"}))
     if settings.configured:
         from starlette.middleware.sessions import SessionMiddleware
         app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, session_cookie="session",
