@@ -212,27 +212,30 @@ class ClientState:
         )
 
     def activity(self, limit: int) -> list[dict]:
-        """Newest-first accesses with their verdict (contract 5).
+        """Newest-first accesses with their verdict and HTTP status (contract 5).
 
-        An access is `block` when it triggered a block decision, or when it is a
-        request the middleware rejected (403) in that decision's session after
-        the triggering access. Marking the decision normal turns all of them
-        back to `normal` (verdict_of).
+        An access belongs to a block decision when, from the access that
+        triggered it (inclusive), it is in the blocked session (any status: the
+        request in flight before the middleware's next poll was served with 200)
+        or comes from the blocked IP, even in another session. This fake engine
+        always blocks the IP, and the session when the trigger has one. Marking
+        the decision normal turns all of them back to `normal` (verdict_of).
         """
-        by_event = {eid: d for d in self.decisions for eid in d["event_ids"]}
-        # session -> [(log index of the trigger, decision)], oldest first
         index = {e.id: i for i, e in enumerate(self.log)}
-        blocks: dict[str, list[tuple[int, dict]]] = {}
+        # (log index of the trigger, session, ip, decision), oldest first
+        blocks = []
         for d in self.decisions:
-            sid = (d.get("access") or {}).get("session_id")
-            if d["decision"] == "block" and sid and d["event_ids"][0] in index:
-                blocks.setdefault(sid, []).append((index[d["event_ids"][0]], d))
+            access = d.get("access") or {}
+            if d["decision"] == "block" and d["event_ids"][0] in index:
+                blocks.append((index[d["event_ids"][0]], access.get("session_id"), access.get("ip"), d))
         items = []
         for i in range(len(self.log) - 1, max(len(self.log) - 1 - limit, -1), -1):
             e = self.log[i]
-            decision = by_event.get(e.id)
-            if decision is None and e.status == 403:
-                decision = next((d for at, d in reversed(blocks.get(e.session_id, [])) if at < i), None)
+            decision = next(
+                (d for at, sid, ip, d in reversed(blocks)
+                 if at <= i and ((sid and e.session_id == sid) or (ip and e.ip == ip))),
+                None,
+            )
             items.append(
                 {
                     "event_id": e.id,
@@ -244,6 +247,7 @@ class ClientState:
                     "method": e.method,
                     "route": e.route,
                     "verdict": verdict_of(decision) if decision else "normal",
+                    "status": e.status,
                     "decision_id": decision["id"] if decision else None,
                 }
             )

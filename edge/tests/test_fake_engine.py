@@ -342,7 +342,7 @@ def test_activity_normal_events_have_no_decision_newest_first(client):
     assert items[0] == {
         "event_id": "e_b", "ts": "2026-10-26T10:00:05Z", "user_id": "u_42", "session_id": "s_1",
         "ip": "190.202.14.9", "device_id": "d_1", "method": "GET", "route": "/invoices/{id}",
-        "verdict": "normal", "decision_id": None,
+        "verdict": "normal", "status": 200, "decision_id": None,
     }
     assert "user_agent" not in items[0] and "bytes" not in items[0]
 
@@ -419,3 +419,68 @@ def test_activity_idempotent_events_listed_once(client):
     post_events(client, [make_event(id="e_x")])
     post_events(client, [make_event(id="e_x")])
     assert len(activity(client).json()["activity"]) == 1
+
+
+# --- activity: status, session rule for every status, IP rule --------------
+
+
+def test_activity_rows_carry_the_http_status(client):
+    post_events(client, [make_event(id="e_a", status=200), make_event(id="e_b", status=302),
+                         rejected(id="e_c")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert (items["e_a"]["status"], items["e_b"]["status"], items["e_c"]["status"]) == (200, 302, 403)
+
+
+def test_activity_served_requests_after_the_trigger_in_the_session_are_block_too(client):
+    post_events(client, [attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    # in flight before the middleware's next poll: the app answered 200
+    post_events(client, [make_event(id="e_late", session_id="s_atk", ip="203.0.113.9", status=200,
+                                    route="/invoices/export")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_late"]["verdict"] == "block" and items["e_late"]["decision_id"] == d["id"]
+    assert items["e_late"]["status"] == 200
+    # the trigger itself was served too, and is block
+    assert items["e_atk"]["status"] == 200 and items["e_atk"]["verdict"] == "block"
+
+
+def test_activity_blocked_ip_from_another_session_is_block_with_the_decision(client):
+    post_events(client, [attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    post_events(client, [rejected(id="e_other", session_id="s_other", ip="203.0.113.9")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_other"]["verdict"] == "block" and items["e_other"]["decision_id"] == d["id"]
+
+
+def test_activity_ip_rule_applies_from_the_block_on_not_before(client):
+    post_events(client, [make_event(id="e_before", session_id="s_old", ip="203.0.113.9", method="POST", route="/login")])
+    post_events(client, [attack(id="e_atk", ip="203.0.113.9")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_before"]["verdict"] == "normal" and items["e_before"]["decision_id"] is None
+
+
+def test_activity_ip_rule_without_a_session_on_the_trigger(client):
+    post_events(client, [attack(session_id=None)])
+    post_events(client, [make_event(id="e_x", session_id="s_x", ip="203.0.113.9")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_x"]["verdict"] == "block"
+    # a session-less trigger must not drag every session-less access into the block
+    post_events(client, [make_event(id="e_none", session_id=None, ip="198.51.100.3")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_none"]["verdict"] == "normal"
+
+
+def test_activity_other_ip_and_other_session_stay_normal_after_a_block(client):
+    post_events(client, [attack()])
+    post_events(client, [make_event(id="e_own", session_id="s_own", ip="190.202.14.7")])
+    items = {i["event_id"]: i for i in activity(client).json()["activity"]}
+    assert items["e_own"]["verdict"] == "normal" and items["e_own"]["decision_id"] is None
+
+
+def test_activity_marked_normal_turns_session_and_ip_accesses_back_to_normal(client):
+    post_events(client, [attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    post_events(client, [make_event(id="e_late", session_id="s_atk", ip="203.0.113.9", status=200),
+                         rejected(id="e_other", session_id="s_other")])
+    client.post(f"/v1/decisions/{d['id']}/normal", headers=AUTH)
+    assert all(i["verdict"] == "normal" for i in activity(client).json()["activity"])
