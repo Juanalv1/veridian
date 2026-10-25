@@ -1,0 +1,22 @@
+{
+  "name": "veridian-sdk",
+  "version": "0.1.0",
+  "description": "Express and Next.js middleware that reports access events to Veridian and blocks sessions, IPs and users on its blocklist",
+  "type": "module",
+  "license": "MIT",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./express": "./src/index.js",
+    "./next": "./src/next.js"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test"
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/Juanalv1/veridian.git", "directory": "sdk/node" },
+  "homepage": "https://github.com/Juanalv1/veridian",
+  "bugs": { "url": "https://github.com/Juanalv1/veridian/issues" },
+  "keywords": ["security", "middleware", "express", "nextjs", "credentials"]
+}
