@@ -1,4 +1,4 @@
-  <nav aria-label="Decisiones recientes" hx-boost="true" hx-target="#live" hx-sync="#live:replace">
+  <nav aria-label="Decisiones recientes" hx-boost="true" hx-target="#live" hx-sync="closest a:replace" preload="mouseenter">
     <span class="nav-title">Decisiones recientes</span>
     {% for d in decisions %}
       <a data-row="dc-{{ d.id }}" class="item" href="{{ d.href }}"{% if current and d.href == current.href %} aria-current="true"{% endif %}>

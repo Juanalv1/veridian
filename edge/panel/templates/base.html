@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/tokens.css?v={{ asset_version }}">
 <link rel="stylesheet" href="/static/panel.css?v={{ asset_version }}">
 </head>
-<body>
+<body hx-ext="preload">
 <header>
   <div class="wrap">
     <div class="brand">
@@ -27,6 +27,7 @@
 
 {% block content %}{% endblock %}
 <script src="/static/htmx.min.js?v={{ asset_version }}"></script>
+<script src="/static/preload.js?v={{ asset_version }}"></script>
 <script src="/static/panel.js?v={{ asset_version }}"></script>
 </body>
 </html>

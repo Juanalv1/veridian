@@ -27,4 +27,24 @@
     {% endif %}
   </section>
 </main>
+{# Inert until panel.js copies it into #detalle while a decision loads. Same shape as decision_detail.html. #}
+<template id="detalle-skeleton">
+  <div class="sk" aria-hidden="true">
+    <div class="head">
+      <span class="sk-bar sk-meta"></span>
+      <span class="sk-bar sk-verdict"></span>
+      <span class="sk-bar sk-line sk-w70"></span>
+      <span class="sk-bar sk-line sk-w50"></span>
+    </div>
+    <div class="box sk-table">
+      <div class="sk-row sk-head"><span class="sk-bar"></span></div>
+      <div class="sk-row"><span class="sk-bar sk-label"></span><span class="sk-bar"></span><span class="sk-bar"></span></div>
+      <div class="sk-row"><span class="sk-bar sk-label"></span><span class="sk-bar"></span><span class="sk-bar"></span></div>
+      <div class="sk-row"><span class="sk-bar sk-label"></span><span class="sk-bar"></span><span class="sk-bar"></span></div>
+      <div class="sk-row"><span class="sk-bar sk-label"></span><span class="sk-bar"></span><span class="sk-bar"></span></div>
+      <div class="sk-row"><span class="sk-bar sk-label"></span><span class="sk-bar"></span><span class="sk-bar"></span></div>
+    </div>
+  </div>
+  <span class="vh" role="status">Cargando la decisión…</span>
+</template>
 {% endblock %}
