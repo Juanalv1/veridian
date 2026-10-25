@@ -2,51 +2,153 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="{{ refresh }}">
+<meta http-equiv="refresh" content="{{ refresh }};url={{ refresh_url }}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Veridian · Decisiones</title>
+<title>Veridian · Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300..800&amp;family=JetBrains+Mono:wght@400;700&amp;family=Silkscreen:wght@400;700&amp;display=swap">
 <style>
-  :root { --ink:#e8edf5; --muted:#8c99ad; --line:#26324a; --bg:#0e1524; --card:#151f35; }
+  :root {
+    --bg:#111010; --panel:#1a1919; --line:#2c2a2a; --fg:#f2f2f2; --muted:#a3a0a0;
+    --accent:#49d08b; --block:#ff4d4d; --alert:#ffdd00; --allow:#4c9eff;
+    --mono:'JetBrains Mono', ui-monospace, monospace; --pixel:'Silkscreen', monospace;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  main { max-width:1100px; margin:0 auto; padding:28px 24px; }
-  header { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:20px; }
-  h1 { margin:0; font-size:1.6rem; } h1 span { color:#4f8cff; }
-  .live { color:var(--muted); font-size:.85rem; }
-  table { width:100%; border-collapse:collapse; background:var(--card); border-radius:10px; overflow:hidden; }
-  th, td { text-align:left; padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
-  .badge { display:inline-block; padding:3px 12px; border-radius:999px; font-weight:700; font-size:.85rem; text-transform:uppercase; }
-  .block { background:#5b1620; color:#ff9aa6; } .alert { background:#5a4210; color:#ffd36b; }
-  .step_up { background:#3a2a5e; color:#c4b0ff; } .allow { background:#12432f; color:#7be0b1; }
-  .signals span { display:inline-block; margin:0 6px 4px 0; padding:1px 8px; border:1px solid var(--line); border-radius:6px; font-size:.82rem; color:var(--muted); }
-  .note { padding:16px 18px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--muted); }
-  .error { color:#ffd36b; border-color:#5a4210; }
-  td.time, td.user { white-space:nowrap; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:'Urbanist', system-ui, sans-serif; min-height:100vh; }
+  a { color:var(--fg); } a:hover { color:var(--accent); }
+  a:focus-visible, button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .topbar { border-bottom:1px solid var(--line); }
+  .wrap { max-width:1360px; margin:0 auto; padding:18px 24px; }
+  .topbar .wrap { display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between; }
+  .logo { display:flex; align-items:center; gap:10px; font-family:var(--pixel); font-weight:700; font-size:15px; letter-spacing:2px; color:var(--accent); }
+  .conn { display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+  .conn.down .dot { background:var(--block); }
+  main.wrap { padding:24px; display:flex; flex-wrap:wrap; gap:20px; align-items:flex-start; }
+  .users { flex:1 1 240px; min-width:0; max-width:300px; display:flex; flex-direction:column; gap:10px; }
+  .decisions { flex:999 1 560px; min-width:0; display:flex; flex-direction:column; gap:12px; }
+  .profile { flex:1 1 280px; min-width:0; max-width:340px; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; display:flex; flex-direction:column; gap:16px; }
+  .label { font-family:var(--mono); font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); }
+  .head { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:8px; }
+  h1 { margin:0; font-size:28px; font-weight:800; }
+  .hint { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .user { display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; text-decoration:none; color:var(--fg); }
+  .user:hover { color:var(--fg); border-color:var(--muted); }
+  .user.blocked { border-color:var(--block); }
+  .user.selected { background:#232121; box-shadow:inset 3px 0 0 var(--accent); }
+  .user .id { font-family:var(--mono); font-size:15px; font-weight:700; }
+  .tag { font-family:var(--pixel); font-size:11px; letter-spacing:1px; color:#111; background:var(--accent); padding:5px 8px; border-radius:7px; }
+  .tag.blocked { background:var(--block); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; display:flex; flex-direction:column; gap:14px; }
+  .card.block { border-color:var(--block); }
+  .card.compact { padding:16px 20px; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; }
+  .row { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; }
+  .row-start { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .badge { font-family:var(--pixel); font-size:13px; letter-spacing:1px; color:#111; background:var(--alert); padding:6px 10px; border-radius:8px; }
+  .badge.block { background:var(--block); } .badge.allow { background:var(--allow); }
+  .badge.lifted { background:var(--muted); }
+  .meta { font-family:var(--mono); font-size:13px; color:var(--muted); }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; font-family:var(--mono); font-size:13px; }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:6px 10px; }
+  .chip.critical { border-color:var(--block); }
+  .path { font-family:var(--mono); font-size:13px; color:var(--muted); }
+  .rationale { margin:0; font-size:17px; line-height:1.5; }
+  .lifted-note { margin:0; font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .btn { font-family:var(--mono); font-size:14px; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:12px 16px; cursor:pointer; min-height:44px; }
+  .btn:hover { border-color:var(--accent); }
+  .pf-title { font-size:22px; font-weight:800; }
+  .pf-sub { font-size:14px; color:var(--muted); }
+  .pf-group { display:flex; flex-direction:column; gap:6px; }
+  .pf-group .label { text-transform:none; letter-spacing:0; }
+  .pf-val { font-family:var(--mono); font-size:14px; overflow-wrap:anywhere; }
+  .note { padding:16px 18px; border-radius:12px; background:var(--panel); border:1px solid var(--line); color:var(--muted); }
+  .note.warn { color:var(--alert); border-color:var(--alert); }
+  .note.err { color:var(--block); border-color:var(--block); }
 </style>
 </head>
 <body>
-<main>
-  <header><h1><span>Veridian</span> · Decisiones</h1><div class="live">Se actualiza cada {{ refresh }} s</div></header>
-  {% if error %}
-    <div class="note error">{{ error }}</div>
-  {% elif not decisions %}
-    <div class="note">Sin decisiones por ahora. Todo normal.</div>
-  {% else %}
-  <table>
-    <thead><tr><th>Hora</th><th>Usuario</th><th>Decisión</th><th>Señales</th><th>Explicación</th></tr></thead>
-    <tbody>
-    {% for d in decisions %}
-      <tr>
-        <td class="time">{{ d.ts }}</td>
-        <td class="user">{{ d.user_id }}</td>
-        <td><span class="badge {{ d.decision }}">{{ d.decision }}</span></td>
-        <td class="signals">{% for s in d.signal_labels %}<span>{{ s }}</span>{% endfor %}</td>
-        <td>{{ d.rationale }}</td>
-      </tr>
+<header class="topbar">
+  <div class="wrap">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="1" y="1" width="22" height="22" rx="6" stroke="currentColor" stroke-width="2"></rect><path d="M7 8 L12 17 L17 8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <span>VERIDIAN</span>
+    </div>
+    <div class="conn{% if engine_error %} down{% endif %}" role="status">
+      <span class="dot" aria-hidden="true"></span>
+      <span>{% if engine_error %}Motor sin conexión{% else %}Motor conectado · actualiza cada {{ refresh }} s{% endif %}</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <nav class="users" aria-label="Usuarios">
+    <span class="label">Usuarios</span>
+    {% for u in users %}
+      <a class="user{% if u.blocked %} blocked{% endif %}{% if u.id == selected %} selected{% endif %}"
+         href="/?user={{ u.id | urlencode }}"{% if u.id == selected %} aria-current="true"{% endif %}>
+        <span class="id">{{ u.id }}</span>
+        <span class="tag{% if u.blocked %} blocked{% endif %}">{% if u.blocked %}BLOQUEADO{% else %}NORMAL{% endif %}</span>
+      </a>
+    {% else %}
+      <div class="note">Sin usuarios todavía.</div>
     {% endfor %}
-    </tbody>
-  </table>
+  </nav>
+
+  <section class="decisions" aria-label="Decisiones">
+    <div class="head"><h1>Decisiones</h1><span class="hint">más nuevas primero</span></div>
+    {% if notice %}<div class="note err" role="alert">{{ notice }}</div>{% endif %}
+    {% if engine_error %}
+      <div class="note warn">{{ engine_error }}</div>
+    {% elif not decisions %}
+      <div class="note">Sin decisiones por ahora. Todo normal.</div>
+    {% endif %}
+    {% for d in decisions %}
+      {% if d.decision == 'allow' %}
+      <article class="card compact">
+        <span class="badge allow">{{ d.badge_label }}</span>
+        <span class="meta">{{ d.time }} · {{ d.user_id }}{% if d.route %} · {{ d.route }}{% endif %}</span>
+      </article>
+      {% else %}
+      <article class="card{% if d.badge_kind == 'block' %} block{% endif %}">
+        <div class="row">
+          <div class="row-start">
+            <span class="badge {{ d.badge_kind }}">{{ d.badge_label }}</span>
+            <span class="meta">{{ d.time }} · {{ d.user_id }}{% if d.route %} · {{ d.route }}{% endif %}</span>
+          </div>
+          {% if d.can_mark_normal %}
+          <form method="post" action="/decisions/{{ d.id | urlencode }}/normal">
+            <input type="hidden" name="user" value="{{ selected or '' }}">
+            <button class="btn" type="submit">Esto era normal</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if d.chips %}
+        <div class="chips">{% for c in d.chips %}<span class="chip{% if c.critical %} critical{% endif %}">{{ c.text }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if d.path %}<div class="path">Recorrido: {{ d.path }}</div>{% endif %}
+        {% if d.rationale %}<p class="rationale">{{ d.rationale }}</p>{% endif %}
+        {% if d.lifted %}<p class="lifted-note">Marcado como normal: la sesión y la IP salieron de la lista de bloqueos y el perfil lo aprende.</p>{% endif %}
+      </article>
+      {% endif %}
+    {% endfor %}
+  </section>
+
+  {% if selected %}
+  <aside class="profile" aria-label="Perfil">
+    <div class="pf-group">
+      <span class="label" style="text-transform:uppercase;letter-spacing:1px">Perfil</span>
+      <span class="pf-title">{{ selected }}</span>
+      {% if profile %}<span class="pf-sub">{{ profile.history_days }} días de historial</span>{% endif %}
+    </div>
+    {% if profile %}
+      <div class="pf-group"><span class="label">Redes</span>{% for n in profile.networks %}<span class="pf-val">{{ n }}</span>{% else %}<span class="pf-val">—</span>{% endfor %}</div>
+      <div class="pf-group"><span class="label">Dispositivos</span>{% for n in profile.devices %}<span class="pf-val">{{ n }}</span>{% else %}<span class="pf-val">—</span>{% endfor %}</div>
+      <div class="pf-group"><span class="label">Horario</span><span class="pf-val">{{ profile.hours_text or '—' }}</span></div>
+      <div class="pf-group"><span class="label">Rutas</span>{% for n in profile.routes %}<span class="pf-val">{{ n }}</span>{% else %}<span class="pf-val">—</span>{% endfor %}</div>
+    {% else %}
+      <div class="note">Sin perfil todavía</div>
+    {% endif %}
+  </aside>
   {% endif %}
 </main>
 </body>

@@ -158,14 +158,14 @@ def test_blocked_event_is_not_learned(client):
     post_events(client, [attack()])
     prof = client.get("/v1/users/u_42/profile", headers=AUTH).json()
     assert "203.0.113.0/24" not in prof["networks"]
-    assert prof["routes"] == ["/invoices", "/invoices/{id}", "/payouts/bank-account"]  # seed only
+    assert prof["routes"] == ["GET /invoices", "GET /invoices/{id}", "GET /payouts/bank-account"]  # seed only
 
 
 def test_normal_events_are_learned(client):
     post_events(client, [make_event(id="e_l", ip="198.51.100.4", route="/invoices/export")])
     prof = client.get("/v1/users/u_42/profile", headers=AUTH).json()
     assert "198.51.100.0/24" in prof["networks"]
-    assert "/invoices/export" in prof["routes"]
+    assert "GET /invoices/export" in prof["routes"]
     assert "d_1" in prof["devices"]
 
 

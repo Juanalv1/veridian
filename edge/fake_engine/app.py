@@ -311,7 +311,7 @@ def create_app(
             "networks": sorted(p.networks),
             "devices": sorted(p.devices),
             "hours": hours,
-            "routes": sorted({k.split(" ", 1)[1] for k in p.route_keys}),
+            "routes": sorted(p.route_keys),
             "state": "blocked" if user_id in st.blocked_users else "normal",
         }
 

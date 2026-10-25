@@ -1,32 +1,65 @@
-"""Panel: lists the engine's decisions and refreshes itself.
+"""Panel: users, decisions and profile from the engine, refreshed every 2 s.
 
 Env: VERIDIAN_URL (engine base URL), VERIDIAN_TOKEN (Bearer token).
 """
 
+import asyncio
 import os
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 import httpx
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 REFRESH_SECONDS = 2
 
+# decision -> (label, css modifier)
+BADGES = {
+    "block": ("BLOQUEADO", "block"),
+    "alert": ("ALERTA", "alert"),
+    "allow": ("PERMITIDO", "allow"),
+    "step_up": ("SEGUNDO FACTOR", "alert"),
+}
+LIFTED_BADGE = ("BLOQUEO LEVANTADO", "lifted")
+MARK_ERROR = "No se pudo marcar la decisión como normal. Inténtalo de nuevo."
 
-def _signals_text(signals: dict) -> list[str]:
-    labels = []
+
+def _chips(signals: dict) -> list[dict]:
+    chips = []
     if signals.get("new_network"):
-        labels.append("red nueva")
+        chips.append({"text": "red nueva", "critical": False})
     if signals.get("new_device"):
-        labels.append("dispositivo nuevo")
-    if signals.get("route"):
-        cls = signals.get("route_class")
-        labels.append(f"ruta {signals['route']}" + (f" ({cls})" if cls else ""))
-    if signals.get("route_never_used"):
-        labels.append("ruta nunca usada")
-    return labels
+        chips.append({"text": "dispositivo nuevo", "critical": False})
+    route_class = signals.get("route_class")
+    if route_class:
+        used = "nunca usada" if signals.get("route_never_used") else "ya usada"
+        chips.append({"text": f"{route_class} · {used}", "critical": route_class == "critical"})
+    elif signals.get("route_never_used"):
+        chips.append({"text": "ruta nunca usada", "critical": False})
+    return chips
+
+
+def _decorate(d: dict) -> dict:
+    signals = d.get("signals") or {}
+    lifted = d.get("decision") == "block" and d.get("status") == "marked_normal"
+    label, kind = LIFTED_BADGE if lifted else BADGES.get(d.get("decision"), (str(d.get("decision", "")).upper(), "alert"))
+    path = signals.get("path") or []
+    d["badge_label"], d["badge_kind"], d["lifted"] = label, kind, lifted
+    d["time"] = str(d.get("ts", ""))[11:19]
+    d["route"] = signals.get("route") or ""
+    d["chips"] = _chips(signals)
+    d["path"] = " → ".join(str(p) for p in path) if path else ""
+    d["can_mark_normal"] = d.get("status") != "marked_normal"
+    return d
+
+
+def _hours(hours: list) -> str:
+    if len(hours) == 2:
+        return f"{int(hours[0]):02d}:00 – {int(hours[1]):02d}:00"
+    return ", ".join(f"{int(h):02d}:00" for h in hours)
 
 
 def create_app(engine_url: str | None = None, token: str | None = None,
@@ -34,12 +67,12 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     base = (engine_url or os.environ.get("VERIDIAN_URL", "http://localhost:8000")).rstrip("/")
     bearer = token if token is not None else os.environ.get("VERIDIAN_TOKEN", "")
     client = http_client or httpx.AsyncClient(timeout=3.0)
+    headers = {"Authorization": f"Bearer {bearer}"}
     app = FastAPI(title="Veridian panel", docs_url=None, redoc_url=None, openapi_url=None)
 
-    async def load() -> tuple[list[dict], str | None]:
+    async def load_decisions() -> tuple[list[dict], str | None]:
         try:
-            r = await client.get(f"{base}/v1/decisions", params={"limit": 50},
-                                 headers={"Authorization": f"Bearer {bearer}"})
+            r = await client.get(f"{base}/v1/decisions", params={"limit": 50}, headers=headers)
         except httpx.HTTPError:
             return [], "No se pudo conectar con el motor. Reintentando…"
         if r.status_code == 401:
@@ -48,19 +81,50 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             return [], f"El motor respondió con error {r.status_code}. Reintentando…"
         try:
             decisions = r.json()["decisions"]
-        except (ValueError, KeyError, TypeError):
+            return [_decorate(d) for d in decisions], None
+        except (ValueError, KeyError, TypeError, AttributeError):
             return [], "Respuesta inesperada del motor. Reintentando…"
-        for d in decisions:
-            d["signal_labels"] = _signals_text(d.get("signals") or {})
-        return decisions, None
+
+    async def load_profile(user_id: str) -> dict | None:
+        try:
+            r = await client.get(f"{base}/v1/users/{quote(user_id, safe='')}/profile", headers=headers)
+            if r.status_code != 200:
+                return None
+            p = r.json()
+            return p if isinstance(p, dict) else None
+        except (httpx.HTTPError, ValueError):
+            return None
 
     @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request):
-        decisions, error = await load()
-        return templates.TemplateResponse(
-            request, "index.html",
-            {"decisions": decisions, "error": error, "refresh": REFRESH_SECONDS},
-        )
+    async def index(request: Request, user: str | None = None, error: str | None = None):
+        decisions, engine_error = await load_decisions()
+        user_ids = list(dict.fromkeys(d.get("user_id", "") for d in decisions))
+        profiles = dict(zip(user_ids, await asyncio.gather(*(load_profile(u) for u in user_ids))))
+        users = [{"id": u, "state": (profiles[u] or {}).get("state", "normal"),
+                  "blocked": (profiles[u] or {}).get("state") == "blocked"} for u in user_ids]
+        selected = user if user in profiles else (user_ids[0] if user_ids else None)
+        profile = profiles.get(selected) if selected else None
+        if profile is not None:
+            profile = {**profile, "hours_text": _hours(profile.get("hours") or [])}
+        return templates.TemplateResponse(request, "index.html", {
+            "decisions": decisions, "engine_error": engine_error, "refresh": REFRESH_SECONDS,
+            "users": users, "selected": selected, "profile": profile,
+            "notice": MARK_ERROR if error else None,
+            "refresh_url": "/?" + urlencode({"user": selected}) if selected else "/",
+        })
+
+    @app.post("/decisions/{decision_id}/normal")
+    async def mark_normal(decision_id: str, user: str | None = Form(None)):
+        ok = False
+        try:
+            r = await client.post(f"{base}/v1/decisions/{quote(decision_id, safe='')}/normal", headers=headers)
+            ok = r.status_code == 200
+        except httpx.HTTPError:
+            pass
+        query = {"user": user} if user else {}
+        if not ok:
+            query["error"] = "mark"
+        return RedirectResponse("/?" + urlencode(query) if query else "/", status_code=303)
 
     return app
 
