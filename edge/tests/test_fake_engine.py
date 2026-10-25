@@ -7,6 +7,8 @@ from fake_engine import create_app
 
 TOKEN = "tok-a"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
+PANEL = "panel-secret"
+OWNER_EMAIL = "owner@example.com"
 
 SEED = [
     {
@@ -47,10 +49,28 @@ def attack(**over):
     return make_event(**fields)
 
 
+def panel_headers(client, sdk_token=TOKEN):
+    """Panel principal acting as the bootstrap owner on the project that `sdk_token` belongs to."""
+    person = client.post(
+        "/v1/people/login",
+        json={"google_sub": "sub-owner", "email": OWNER_EMAIL, "name": "Owner"},
+        headers={"Authorization": f"Bearer {PANEL}"},
+    ).json()["person"]
+    return {
+        "Authorization": f"Bearer {PANEL}",
+        "X-Veridian-Actor": person["id"],
+        "X-Veridian-Project": client.app.state.project_id_for(sdk_token),
+    }
+
+
 @pytest.fixture
 def client():
-    app = create_app(tokens={TOKEN, "tok-b"}, seed=SEED, learn_delay=0)
-    return TestClient(app)
+    app = create_app(tokens={TOKEN, "tok-b"}, seed=SEED, learn_delay=0,
+                     panel_tokens={PANEL}, bootstrap_owners={OWNER_EMAIL})
+    c = TestClient(app)
+    c.panel_a = panel_headers(c, TOKEN)
+    c.panel_b = panel_headers(c, "tok-b")
+    return c
 
 
 def post_events(client, events, headers=AUTH):
@@ -269,7 +289,9 @@ def test_clients_are_isolated(client):
 
 def test_attackers_own_events_do_not_whitelist_their_network_before_the_delay():
     now = [0.0]
-    c = TestClient(create_app(tokens={TOKEN}, seed=SEED, learn_delay=300, clock=lambda: now[0]))
+    c = TestClient(create_app(tokens={TOKEN}, seed=SEED, learn_delay=300, clock=lambda: now[0],
+                              panel_tokens={PANEL}, bootstrap_owners={OWNER_EMAIL}))
+    c.panel_a = panel_headers(c)
     # the attacker logs in first (normal route, new network): not learned yet
     post_events(c, [make_event(id="e_login", session_id="s_atk", ip="203.0.113.9", method="POST", route="/login")])
     post_events(c, [attack()])
@@ -321,8 +343,8 @@ def test_403_events_never_trigger_a_decision(client):
 # --- activity (contract 5) -------------------------------------------------
 
 
-def activity(client, query="", headers=AUTH):
-    return client.get(f"/v1/activity{query}", headers=headers)
+def activity(client, query="", headers=None):
+    return client.get(f"/v1/activity{query}", headers=client.panel_a if headers is None else headers)
 
 
 def test_activity_requires_auth(client):
@@ -412,7 +434,7 @@ def test_activity_review_verdict_for_alert_and_step_up():
 
 def test_activity_clients_are_isolated(client):
     post_events(client, [make_event()])
-    assert activity(client, headers={"Authorization": "Bearer tok-b"}).json() == {"activity": []}
+    assert activity(client, headers=client.panel_b).json() == {"activity": []}
 
 
 def test_activity_idempotent_events_listed_once(client):
