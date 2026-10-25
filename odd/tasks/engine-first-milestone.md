@@ -35,7 +35,7 @@ This is the Dev 1 milestone in `docs/REPARTO.md`. It makes the demo work before 
 | T1 | Scaffold `engine/`; `POST /v1/events` (auth 401, validation 422, idempotent by `id`, `202 {"accepted": n}` counting new events only) | delegated (writer trigger: 2+ non-trivial files) | [x] |
 | T2 | `routes.yaml` classification; profile learning; `GET /v1/users/{user_id}/profile` | delegated | [x] |
 | T3 | Block rule; `GET /v1/decisions`; `GET /v1/blocklist` (304, full list); `POST /v1/decisions/{id}/normal` | delegated | [x] |
-| T4 | `engine/scripts/send_sample_events.py` (seeded history + attacker scenario); `engine/README.md` with run instructions | delegated | [ ] |
+| T4 | `engine/scripts/send_sample_events.py` (seeded history + attacker scenario); `engine/README.md` with run instructions | delegated | [x] |
 
 ## Acceptance criteria
 
@@ -57,3 +57,5 @@ This is the Dev 1 milestone in `docs/REPARTO.md`. It makes the demo work before 
 ## Progress
 
 - 2026-10-25: document created; T1-T4 delegated to one writer.
+- 2026-10-25: T1 `6bd22af`, T2 `06d2dcb` (most T2 files landed earlier in auto-sync commit `8cc9986`), T3 `9692138`, T4 in the commit that checks this line. Suite: 31 passed. Smoke: live uvicorn + `send_sample_events.py` produced one `block` (attacker session + IP), `since=1` -> 304.
+- Requirement change during T2: `routes.yaml` keys are `"METHOD /route"`; profile `routes` entries carry the method (`"GET /invoices"`), refining contract 4's example; REPARTO.md update pending (parent).
