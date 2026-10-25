@@ -45,16 +45,21 @@ USERS = {"users": [
      "last_seen": "2026-10-26T13:40:10Z", "open_blocks": 0}]}
 
 
+ROUTES = {"routes": [
+    {"method": "POST", "route": "/payouts/bank-account", "class": "critical"},
+    {"method": "GET", "route": "/invoices/export", "class": "sensitive"},
+    {"method": "GET", "route": "/payouts/bank-account", "class": "sensitive"}], "default": "normal"}
+
 ACTIVITY_DEFAULT = object()
 
 
 class Engine:
     """Canned engine. None for summary/users/activity means the endpoint answers 404."""
 
-    def __init__(self, decisions=None, activity=ACTIVITY_DEFAULT, summary_body=None, users=None, blocklist=None, down=False):
+    def __init__(self, decisions=None, activity=ACTIVITY_DEFAULT, summary_body=None, users=None, blocklist=None, down=False, routes=None):
         self.decisions = [dec()] if decisions is None else decisions
         self.activity = [act()] if activity is ACTIVITY_DEFAULT else activity
-        self.summary_body, self.users, self.down = summary_body, users, down
+        self.summary_body, self.users, self.down, self.routes = summary_body, users, down, routes
         self.blocklist = {"version": 1, "users": [], "sessions": ["s"], "ips": ["203.0.113.9"]} if blocklist is None else blocklist
         self.requests = []
         self.client = httpx.AsyncClient(transport=httpx.MockTransport(self.handle))
@@ -74,6 +79,8 @@ class Engine:
             return httpx.Response(200, json=self.summary_body)
         if path == "/v1/users" and self.users is not None:
             return httpx.Response(200, json=self.users)
+        if path == "/v1/routes" and self.routes is not None:
+            return httpx.Response(200, json=self.routes)
         if path.endswith("/profile"):
             return httpx.Response(200, json={"networks": [], "devices": [], "routes": [], "hours": [], "history_days": 14})
         return httpx.Response(404, json={"error": "not_found"})
@@ -87,7 +94,7 @@ class Engine:
 
 
 def full(**kw):
-    return Engine(summary_body=summary(), users=USERS, **kw)
+    return Engine(summary_body=summary(), users=USERS, routes=ROUTES, **kw)
 
 
 def text(html):
@@ -332,10 +339,54 @@ def test_usuarios_without_the_endpoint_says_so():
     assert "<table" not in html and "El motor todavía no entrega la lista de usuarios" in html
 
 
-def test_rutas_is_an_honest_empty_state():
-    html = full().panel().get("/rutas").text
-    assert "La clasificación de rutas vive en el motor (routes.yaml). Pronto aquí." in html
-    assert "<table" not in html and "/payouts" not in text(re.search(r'<main id="live".*?</main>', html, re.S).group(0))
+def rutas_main(engine):
+    return re.search(r'<main id="live".*?</main>', engine.panel().get("/rutas").text, re.S).group(0)
+
+
+def test_rutas_lists_the_engines_classification_grouped_by_class():
+    main = rutas_main(full())
+    crit, sens = main.split("Sensibles")
+    assert "Críticas" in crit and "POST /payouts/bank-account" in text(crit)
+    assert "GET /invoices/export" in text(sens) and "GET /payouts/bank-account" in text(sens)
+    assert "/invoices/export" not in crit and "POST /payouts" not in sens
+    assert "Todas las demás rutas se tratan como normales." in text(main)
+    assert "Pronto aquí" not in main
+
+
+def test_rutas_says_it_is_configured_in_the_engine_and_read_only():
+    t = text(rutas_main(full()))
+    assert "se configura en el motor" in t and "solo lectura" in t
+
+
+def test_rutas_skips_an_empty_class():
+    only = {"routes": [{"method": "GET", "route": "/a", "class": "sensitive"}], "default": "normal"}
+    t = text(rutas_main(Engine(summary_body=summary(), users=USERS, routes=only)))
+    assert "Sensibles" in t and "Críticas" not in t
+
+
+def test_rutas_with_no_classified_route_says_all_are_normal():
+    empty = {"routes": [], "default": "normal"}
+    t = text(rutas_main(Engine(summary_body=summary(), users=USERS, routes=empty)))
+    assert "Ninguna ruta está clasificada" in t and "normales" in t
+    assert "Críticas" not in t and "Sensibles" not in t
+
+
+def test_rutas_without_the_endpoint_says_so_and_invents_nothing():
+    main = rutas_main(Engine(summary_body=summary(), users=USERS, routes=None))
+    t = text(main)
+    assert "Este motor no expone su clasificación de rutas" in t
+    assert "/payouts" not in t and "Críticas" not in t and "Pronto aquí" not in t
+
+
+def test_rutas_with_the_engine_down_shows_the_engine_error_and_no_routes():
+    main = rutas_main(Engine(down=True))
+    t = text(main)
+    assert "No se pudo conectar con el motor" in t and "/payouts" not in t and "Críticas" not in t
+
+
+def test_rutas_ignores_a_malformed_body():
+    t = text(rutas_main(Engine(summary_body=summary(), users=USERS, routes={"routes": "x"})))
+    assert "Este motor no expone su clasificación de rutas" in t
 
 
 def test_actividad_is_the_old_live_view():

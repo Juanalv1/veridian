@@ -160,7 +160,8 @@ SECTIONS = (("resumen", "/", "Resumen"), ("actividad", "/actividad", "Actividad"
             ("usuarios", "/usuarios", "Usuarios"), ("rutas", "/rutas", "Rutas críticas"))
 DEFAULT_UTC_OFFSET_MIN = -240  # Caracas, until the browser tells its own (cookie `vtz`, minutes east of UTC)
 NO_USERS = "El motor todavía no entrega la lista de usuarios."
-ROUTES_EMPTY = "La clasificación de rutas vive en el motor (routes.yaml). Pronto aquí."
+NO_ROUTES_ENDPOINT = "Este motor no expone su clasificación de rutas."
+ROUTE_GROUPS = (("critical", "Críticas"), ("sensitive", "Sensibles"))
 
 
 def _utc_offset(request: Request) -> int:
@@ -258,6 +259,16 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             if r.status_code != 200:
                 return None
             return [u for u in r.json()["users"] if isinstance(u, dict)]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+
+    async def load_routes() -> list[dict] | None:
+        """Contract 8; None when the engine does not have it (or it is malformed)."""
+        try:
+            r = await engine_get("/v1/routes", LIVE_TTL)
+            if r.status_code != 200:
+                return None
+            return [x for x in r.json()["routes"] if isinstance(x, dict) and x.get("class") in dict(ROUTE_GROUPS)]
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
             return None
 
@@ -391,10 +402,14 @@ def create_app(engine_url: str | None = None, token: str | None = None,
 
     async def render_routes(request: Request):
         t0 = time.perf_counter()
-        decisions, engine_error, activity, blocklist, _ = await core()
+        decisions, engine_error, activity, blocklist, (routes,) = await core(load_routes())
         engine_ms = (time.perf_counter() - t0) * 1000
+        groups = None if routes is None else [
+            (label, [f"{x.get('method')} {x.get('route')}" for x in routes if x["class"] == cls])
+            for cls, label in ROUTE_GROUPS]
+        groups = None if groups is None else [(label, rows) for label, rows in groups if rows]
         return page(request, "rutas.html", "rutas", {
-            "empty": ROUTES_EMPTY, "engine_error": engine_error, "refresh_url": "/rutas",
+            "groups": groups, "no_endpoint": NO_ROUTES_ENDPOINT, "engine_error": engine_error, "refresh_url": "/rutas",
             **_shell(decisions, activity)}, engine_ms, time.perf_counter())
 
     @app.get("/", response_class=HTMLResponse)

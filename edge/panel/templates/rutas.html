@@ -7,6 +7,23 @@
     <h1 class="page-title">Rutas críticas</h1>
     {% if engine_error %}<div class="note warn">{{ engine_error }}</div>{% endif %}
   </div>
-  <div class="note calm">{{ empty }}</div>
+  {% if groups is none %}
+    {% if not engine_error %}<div class="note">{{ no_endpoint }}</div>{% endif %}
+  {% else %}
+    {% if not groups %}
+    <div class="note">Ninguna ruta está clasificada: todas se tratan como normales.</div>
+    {% else %}
+    {% for label, rows in groups %}
+    <section class="routes-group">
+      <h2>{{ label }}</h2>
+      <div class="box">
+        {% for r in rows %}<div class="route-row mono">{{ r }}</div>{% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+    <p class="muted-time">Todas las demás rutas se tratan como normales.</p>
+    {% endif %}
+    <p class="muted-time">La clasificación se configura en el motor y aquí es solo lectura.</p>
+  {% endif %}
 </main>
 {% endblock %}

@@ -444,6 +444,18 @@ def create_app(
     def get_users(st: State):
         return {"users": st.users()}
 
+    @app.get("/v1/routes")
+    def get_routes(st: State):
+        """Contract 8: classified routes only, critical first, then by route and method."""
+        rank = {"critical": 0, "sensitive": 1}
+        rows = []
+        for key, route_class in st.routes.items():
+            if route_class in rank:
+                method, route = key.split(" ", 1)
+                rows.append({"method": method, "route": route, "class": route_class})
+        rows.sort(key=lambda r: (rank[r["class"]], r["route"], r["method"]))
+        return {"routes": rows, "default": "normal"}
+
     @app.post("/v1/decisions/{decision_id}/normal")
     def post_normal(decision_id: str, st: State):
         decision = st.mark_normal(decision_id)

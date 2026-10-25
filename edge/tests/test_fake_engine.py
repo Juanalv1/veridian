@@ -674,3 +674,14 @@ def test_users_includes_seeded_users_without_events_and_drops_open_block_on_mark
     client.post(f"/v1/decisions/{did}/normal", headers=AUTH)
     u = client.get("/v1/users", headers=AUTH).json()["users"][0]
     assert u["state"] == "normal" and u["open_blocks"] == 0
+
+
+def test_routes_lists_the_classification_critical_first_and_needs_a_token(client):
+    assert client.get("/v1/routes").status_code == 401
+    body = client.get("/v1/routes", headers=AUTH).json()
+    assert body["default"] == "normal"
+    assert body["routes"] == [
+        {"method": "POST", "route": "/payouts/bank-account", "class": "critical"},
+        {"method": "GET", "route": "/invoices/export", "class": "sensitive"},
+        {"method": "GET", "route": "/payouts/bank-account", "class": "sensitive"},
+    ]
