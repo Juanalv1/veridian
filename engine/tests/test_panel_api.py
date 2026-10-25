@@ -287,28 +287,82 @@ def test_me_orgs_needs_a_known_actor(client):
     assert client.get("/v1/me/orgs").status_code == 401
 
 
-# --- POST /v1/orgs (allowlist) ---
+# --- POST /v1/orgs (open signup, decision 2 resolved 2026-10-25) ---
 
 
-def test_nobody_creates_orgs_unless_allowlisted(client, tmp_path, clock):
-    person = login(client, "s1", "ana@example.com")["person"]["id"]
-    response = client.post("/v1/orgs", json={"name": "Mine"}, headers=acting(person))
-    assert response.status_code == 403 and response.json() == {"error": "forbidden"}
-    with TestClient(create_app(make_settings(tmp_path / "empty", clock, db_path=str(tmp_path / "e.db")))) as empty:
-        creator = login(empty, "s-c", CREATOR)["person"]["id"]
-        assert empty.post("/v1/orgs", json={"name": "Mine"}, headers=acting(creator)).status_code == 403
+def create_org(client, person, name="Mine"):
+    return client.post("/v1/orgs", json={"name": name}, headers=acting(person))
 
 
-def test_an_allowlisted_person_creates_an_org_and_owns_it(client):
-    creator = login(client, "s-c", CREATOR)["person"]["id"]
-    response = client.post("/v1/orgs", json={"name": "Acme"}, headers=acting(creator))
-    assert response.status_code == 201
-    body = response.json()
-    assert body["name"] == "Acme" and body["role"] == "owner" and body["id"].startswith("org_")
-    assert body["projects"] == []
-    assert {"id": body["id"], "name": "Acme", "role": "owner", "projects": []} in client.get(
-        "/v1/me/orgs", headers=acting(creator)).json()["orgs"]
-    assert audit(client, "org.create")[-1]["org_id"] == body["id"]
+def test_anyone_signed_in_creates_an_org_without_an_invitation_and_owns_it(tmp_path, clock):
+    with TestClient(create_app(make_settings(tmp_path, clock))) as open_client:  # no VERIDIAN_ORG_CREATORS at all
+        person = login(open_client, "s1", "ana@example.com")["person"]["id"]
+        assert open_client.get("/v1/me/orgs", headers=acting(person)).json()["orgs"] == []
+        response = create_org(open_client, person, "Taller Torres")
+        assert response.status_code == 201
+        body = response.json()
+        assert body["name"] == "Taller Torres" and body["role"] == "owner" and body["id"].startswith("org_")
+        assert body["projects"] == []
+        assert {"id": body["id"], "name": "Taller Torres", "role": "owner", "projects": []} in open_client.get(
+            "/v1/me/orgs", headers=acting(person)).json()["orgs"]
+        assert audit(open_client, "org.create")[-1]["org_id"] == body["id"]
+
+
+def test_past_the_limit_a_person_gets_a_clear_error_and_nothing_is_created(tmp_path, clock):
+    with TestClient(create_app(make_settings(tmp_path, clock, max_orgs_per_person=2))) as limited:
+        person = login(limited, "s1", "ana@example.com")["person"]["id"]
+        assert create_org(limited, person, "One").status_code == 201
+        assert create_org(limited, person, "Two").status_code == 201
+        before = len(audit(limited, "org.create"))
+        response = create_org(limited, person, "Three")
+        assert response.status_code == 409
+        assert response.json() == {"error": "org_limit_reached", "limit": 2}
+        assert [o["name"] for o in limited.get("/v1/me/orgs", headers=acting(person)).json()["orgs"]] == ["One", "Two"]
+        assert len(audit(limited, "org.create")) == before
+
+
+def test_the_limit_is_per_person(tmp_path, clock):
+    with TestClient(create_app(make_settings(tmp_path, clock, max_orgs_per_person=1))) as limited:
+        ana = login(limited, "s1", "ana@example.com")["person"]["id"]
+        luis = login(limited, "s2", "luis@example.com")["person"]["id"]
+        assert create_org(limited, ana).status_code == 201
+        assert create_org(limited, ana).status_code == 409
+        assert create_org(limited, luis).status_code == 201
+
+
+def test_orgs_a_person_joined_but_did_not_create_do_not_count(tmp_path, clock):
+    with TestClient(create_app(make_settings(tmp_path, clock, max_orgs_per_person=1))) as limited:
+        owner_id = owner(limited)  # bootstrap owner of org Demo, which they did not create
+        assert create_org(limited, owner_id).status_code == 201
+        assert create_org(limited, owner_id).status_code == 409
+
+
+def test_a_deleted_org_frees_its_slot(tmp_path, clock):
+    with TestClient(create_app(make_settings(tmp_path, clock, max_orgs_per_person=1))) as limited:
+        person = login(limited, "s1", "ana@example.com")["person"]["id"]
+        org_id = create_org(limited, person).json()["id"]
+        with db.connect(limited.app.state.settings.db_path) as conn:
+            conn.execute("UPDATE organization SET deleted_at = ? WHERE id = ?", ("2026-10-25T00:00:00Z", org_id))
+        assert create_org(limited, person).status_code == 201
+
+
+def test_org_creators_have_no_limit(tmp_path, clock):
+    settings = make_settings(tmp_path, clock, max_orgs_per_person=1, org_creators=frozenset({CREATOR}))
+    with TestClient(create_app(settings)) as limited:
+        creator = login(limited, "s-c", CREATOR)["person"]["id"]
+        assert [create_org(limited, creator, f"Org {i}").status_code for i in range(3)] == [201, 201, 201]
+
+
+def test_the_default_limit_is_three(tmp_path, clock):
+    with TestClient(create_app(make_settings(tmp_path, clock))) as default:
+        person = login(default, "s1", "ana@example.com")["person"]["id"]
+        assert [create_org(default, person, f"Org {i}").status_code for i in range(4)] == [201, 201, 201, 409]
+
+
+def test_creating_an_org_still_needs_a_known_actor(client):
+    assert client.post("/v1/orgs", json={"name": "x"}, headers=PANEL_AUTH).status_code in (401, 403)
+    assert client.post("/v1/orgs", json={"name": "x"}, headers=AUTH_A).status_code == 403
+    assert client.post("/v1/orgs", json={"name": "x"}).status_code == 401
 
 
 @pytest.mark.parametrize("body", [{}, {"name": ""}, {"name": "x" * 81}])
@@ -853,3 +907,13 @@ def test_there_is_no_way_to_change_the_audit_log(client):
     owner_id = owner(client)
     for method in ("POST", "PUT", "PATCH", "DELETE"):
         assert client.request(method, audit_url(), headers=acting(owner_id)).status_code == 405
+
+
+def test_the_org_limit_comes_from_the_environment(monkeypatch):
+    from veridian_engine.settings import Settings
+
+    monkeypatch.setenv("VERIDIAN_TOKEN", "t")
+    monkeypatch.setenv("VERIDIAN_MAX_ORGS_PER_PERSON", "5")
+    assert Settings.from_env().max_orgs_per_person == 5
+    monkeypatch.delenv("VERIDIAN_MAX_ORGS_PER_PERSON")
+    assert Settings.from_env().max_orgs_per_person == 3
