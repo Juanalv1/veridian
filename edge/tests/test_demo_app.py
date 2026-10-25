@@ -1,0 +1,121 @@
+import httpx
+import pytest
+
+from demo_app.main import create_app, session_public_id
+from fake_engine import create_app as create_engine
+
+TOKEN = "tok-demo"
+PASSWORD = "s3cret-demo"
+EMAIL = "ana@facturas.demo"
+
+
+def make_demo(engine_client=None, trusted_proxies=0):
+    engine = create_engine(tokens={TOKEN}, seed=[{
+        "user_id": "u_42", "ips": ["190.202.14.7"],
+        "routes": ["GET /invoices", "GET /invoices/{id}", "GET /payouts/bank-account"],
+    }])
+    ec = engine_client or httpx.AsyncClient(transport=httpx.ASGITransport(app=engine), base_url="http://engine")
+    return create_app(
+        engine_url="http://engine", token=TOKEN, password=PASSWORD,
+        trusted_proxies=trusted_proxies, http_client=ec, background=False,
+    )
+
+
+def browser(app, peer="190.202.14.7", headers=None):
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=(peer, 4000)),
+        base_url="http://demo", headers=headers or {}, follow_redirects=False,
+    )
+
+
+async def login(c, password=PASSWORD):
+    return await c.post("/login", data={"email": EMAIL, "password": password})
+
+
+async def test_protected_pages_redirect_to_login():
+    async with browser(make_demo()) as c:
+        for path in ("/invoices", "/invoices/1", "/invoices/export", "/payouts/bank-account"):
+            r = await c.get(path)
+            assert r.status_code == 303 and r.headers["location"] == "/login"
+
+
+async def test_login_page_and_bad_password():
+    async with browser(make_demo()) as c:
+        assert (await c.get("/login")).status_code == 200
+        r = await login(c, "wrong")
+        assert r.status_code == 401
+        assert "sid" not in r.cookies
+        assert (await c.get("/invoices")).status_code == 303
+
+
+async def test_login_then_browse_invoices():
+    async with browser(make_demo()) as c:
+        r = await login(c)
+        assert r.status_code == 303 and r.headers["location"] == "/invoices"
+        r = await c.get("/invoices")
+        assert r.status_code == 200 and "Facturas" in r.text
+        r = await c.get("/invoices/1")
+        assert r.status_code == 200
+        assert (await c.get("/invoices/9999")).status_code == 404
+
+
+async def test_export_is_csv():
+    async with browser(make_demo()) as c:
+        await login(c)
+        r = await c.get("/invoices/export")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        assert r.text.splitlines()[0].startswith("id,")
+
+
+async def test_bank_account_view_and_change():
+    async with browser(make_demo()) as c:
+        await login(c)
+        assert (await c.get("/payouts/bank-account")).status_code == 200
+        r = await c.post("/payouts/bank-account", data={"bank": "Banco Nuevo", "account_number": "01340000009999999999"})
+        assert r.status_code == 200
+        r = await c.get("/payouts/bank-account")
+        assert "Banco Nuevo" in r.text
+
+
+async def test_logout_ends_session():
+    async with browser(make_demo()) as c:
+        await login(c)
+        r = await c.post("/logout")
+        assert r.status_code == 303
+        assert (await c.get("/invoices")).status_code == 303
+
+
+async def test_session_id_reported_is_not_the_cookie_secret():
+    app = make_demo()
+    async with browser(app) as c:
+        await login(c)
+        secret = c.cookies["sid"]
+        await c.get("/invoices")
+    events = list(app.queue)
+    assert events and all(secret not in str(e) for e in events)
+    assert {e["session_id"] for e in events} == {session_public_id(secret)}
+    assert {e["route"] for e in events} >= {"/login", "/invoices"}
+
+
+async def test_invoice_route_is_reported_as_template():
+    app = make_demo()
+    async with browser(app) as c:
+        await login(c)
+        await c.get("/invoices/3")
+    assert "/invoices/{id}" in {e["route"] for e in app.queue}
+
+
+async def test_end_to_end_attacker_blocked_owner_fine():
+    app = make_demo(trusted_proxies=1)
+    owner_h = {"X-Forwarded-For": "1.1.1.1, 190.202.14.7"}
+    atk_h = {"X-Forwarded-For": "190.202.14.7, 203.0.113.9"}  # forged first value
+    async with browser(app, headers=owner_h) as owner, browser(app, headers=atk_h) as atk:
+        await login(owner)
+        await login(atk)  # attacker has the owner's password
+        r = await atk.post("/payouts/bank-account", data={"bank": "Evil", "account_number": "1"})
+        assert r.status_code == 200
+        await app.flush()
+        await app.refresh_blocklist()
+        assert (await atk.get("/invoices")).status_code == 403
+        assert (await owner.get("/invoices")).status_code == 200
