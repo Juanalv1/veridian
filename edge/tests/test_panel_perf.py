@@ -241,3 +241,15 @@ def test_skeleton_css_respects_reduced_motion():
     assert ".sk-" in css and "@keyframes sk-shimmer" in css
     reduced = css[css.index("prefers-reduced-motion"):]
     assert "sk-" in reduced and "animation:none" in reduced.replace(" ", "")
+
+
+def test_new_feed_rows_never_shrink_in_the_full_feed():
+    """Seen live: when the feed was full, rows arriving with `is-new` (overflow:hidden) were squeezed
+    by the flex column and overlapped until the next poll. Rows keep their height."""
+    css = TestClient(panel_for(Engine()).app).get("/static/panel.css").text.replace(" ", "")
+    assert ".feed>*{flex-shrink:0;}" in css
+
+
+def test_new_row_class_is_dropped_when_its_animation_ends():
+    js = TestClient(panel_for(Engine()).app).get("/static/panel.js").text
+    assert "animationend" in js and 'classList.remove("is-new")' in js

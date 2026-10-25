@@ -68,6 +68,9 @@
   .item .what { grid-column:2; font-size:14px; color:var(--ink); overflow-wrap:anywhere; }
   .block { color:var(--state-block); } .alert { color:var(--state-review); } .allow { color:var(--state-normal); } .lifted { color:var(--muted); }
   .feed { min-width:0; display:flex; flex-direction:column; position:sticky; top:0; max-height:100vh; overflow-y:auto; padding:18px 4px 18px 0; margin-top:-18px; scrollbar-width:thin; }
+  /* The feed scrolls; its rows never shrink to fit it. A new row has overflow:hidden while it
+     animates, which drops its automatic min-height, so a full feed squeezed it until the next poll. */
+  .feed > * { flex-shrink:0; }
   /* One flat list: every row has the same shape, separated by 1px lines. Only the word
      (and its color) tells the verdicts apart. Columns: time | word | user · action | status. */
   .row { text-decoration:none; color:inherit; display:grid; grid-template-columns:64px minmax(0, 1fr); grid-template-areas:"t v" ". w" ". s"; gap:2px 12px; align-items:baseline; padding:10px 12px; border-bottom:1px solid var(--line); }

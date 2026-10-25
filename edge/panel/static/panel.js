@@ -96,6 +96,10 @@
       if (animate) el.classList.add("is-new");
     });
   }
+  // Drop `is-new` once its row has animated in, so its overflow:hidden never outlives the animation.
+  document.addEventListener("animationend", function (e) {
+    if (e.animationName === "row-in" && e.target.classList) e.target.classList.remove("is-new");
+  });
   document.addEventListener("htmx:afterSwap", function () {
     localize(document); renderConn(); markNew(true);
     // A poll that changed the detail of this page makes its cached copy stale.
