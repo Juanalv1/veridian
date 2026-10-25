@@ -84,6 +84,21 @@ def test_first_use_from_a_new_device_on_the_known_network_is_still_judged(check_
     assert len(judge.calls) == 1
 
 
+def test_owner_device_from_a_new_network_on_a_critical_route_is_blocked_even_if_the_ai_allows(check_client):
+    """Decision (2026-10-25, behavior evaluation L1b): the owner abroad changing the bank account with
+    their own device is blocked. An infostealer replaying the device cookie from its own network looks
+    the same, so the rule decides and the AI only explains; the way out is "esto era normal"."""
+    judge = FakeJudge(decision="allow", rationale="Parece el dueño de viaje.")
+    client = check_client(judge)
+    seed_owner_history(client)
+
+    response = check(client, make_event("c1", NOW, session_id="s_trip", ip="181.14.20.9", **CRITICAL))
+
+    assert response.json()["verdict"] == "block"
+    assert blocklist(client).json()["sessions"] == ["s_trip"]
+    assert blocklist(client).json()["ips"] == ["181.14.20.9"]
+
+
 def test_attacker_is_blocked_by_rule_and_ai_explains_afterwards(check_client):
     judge = FakeJudge(decision="block", rationale="La IA vio un atacante.")
     client = check_client(judge)

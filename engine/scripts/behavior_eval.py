@@ -48,6 +48,12 @@ HOME_IP, HOME_DEVICE = "190.202.14.7", "d_home"
 BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141.0"
 SEED_ROUTES = [("POST", "/login"), ("GET", "/invoices"), ("GET", "/invoices/{id}")]
 BANK = ("POST", "/payouts/bank-account")
+BANK_VIEW = ("GET", "/payouts/bank-account")
+# The demo app's classes (engine/routes.yaml). A new project starts with every route normal,
+# so the evaluation project gets them explicitly, as an admin would in /rutas.
+DEMO_ROUTES = [{"method": "POST", "route": "/payouts/bank-account", "class": "critical"},
+               {"method": "GET", "route": "/payouts/bank-account", "class": "sensitive"},
+               {"method": "GET", "route": "/invoices/export", "class": "sensitive"}]
 
 
 def iso(value: datetime) -> str:
@@ -106,6 +112,10 @@ def other_hours(now: datetime) -> list[int]:
     return sorted({(now.hour + d) % 24 for d in (-8, -7, -6)})
 
 
+def no_hours(now: datetime) -> list[int]:  # a user with no history at all
+    return []
+
+
 # --- the cases -------------------------------------------------------------------------------
 # Each returns (events to ingest, critical requests to check). `expect` is "pass" or "block".
 
@@ -154,6 +164,18 @@ def rotating_ip(r, now):  # CGNAT: the owner's IP rotates across three networks 
                                                        ("GET", "/invoices/{id}")]))], []
 
 
+def busy_page(r, now):  # owner at home, an app that fires many calls per page: 28 in under a minute
+    s = f"s_busy_{r.tag}"
+    return [r.event(now + timedelta(seconds=2 * i), ("GET", "/invoices/{id}") if i % 4 else ("GET", "/invoices"),
+                    session=s) for i in range(28)], []
+
+
+def travel_bank_view(r, now):  # owner abroad, own device, only looks at the payout account
+    s = f"s_tripv_{r.tag}"
+    return [r.event(now, ("POST", "/login"), ip=r.travel_ip, session=s),
+            r.event(now + timedelta(seconds=20), BANK_VIEW, ip=r.travel_ip, session=s)], []
+
+
 ATT_DEVICE = "d_attacker"
 
 
@@ -197,19 +219,50 @@ def stolen_session(r, now):  # the owner's live session replayed from another ne
     return owner + thief, [r.event(now + timedelta(seconds=20), BANK, ip=r.attacker_ip, device=ATT_DEVICE, session=s)]
 
 
+def same_block_attacker(r, now):  # someone on the owner's ISP block (same /24), own phone, to the bank account
+    s = f"s_blk_{r.tag}"
+    ip = HOME_IP.rsplit(".", 1)[0] + ".201"
+    return [r.event(now, ("POST", "/login"), ip=ip, device=ATT_DEVICE, session=s)], \
+        [r.event(now + timedelta(seconds=10), BANK, ip=ip, device=ATT_DEVICE, session=s)]
+
+
+def returning_attacker(r, now):  # blocked 15 min ago, back with the same phone from another IP
+    first, second = f"s_ret1_{r.tag}", f"s_ret2_{r.tag}"
+    earlier = now - timedelta(minutes=15)  # past the 10 min learn delay
+    other_ip = r.ip(203, 46, shift=1)
+    return [r.event(earlier, ("POST", "/login"), ip=r.attacker_ip, device=ATT_DEVICE, session=first),
+            r.event(earlier + timedelta(seconds=10), BANK, ip=r.attacker_ip, device=ATT_DEVICE, session=first),
+            r.event(now, ("POST", "/login"), ip=other_ip, device=ATT_DEVICE, session=second)], \
+        [r.event(now + timedelta(seconds=10), BANK, ip=other_ip, device=ATT_DEVICE, session=second)]
+
+
+def no_history_bank(r, now):  # a user with no history yet (first day of the integration) changes the account
+    s = f"s_new_{r.tag}"
+    return [r.event(now, ("POST", "/login"), session=s)], [r.event(now + timedelta(seconds=30), BANK, session=s)]
+
+
+# L1b and L2b expect a block by decision (2026-10-25, HALLAZGOS "Validación del motor real"): with the
+# signals Veridian sees, they are the same as an infostealer replaying the owner's device cookie from
+# its own network (A5) and someone else on the owner's network (A6). Reads in the same places pass.
 CASES = {
     "L1": ("Viaje: otra red, su dispositivo, mira facturas", "pass", travel, usual_hours),
-    "L1b": ("Viaje: cambia la cuenta bancaria (primera vez)", "pass", travel_bank, usual_hours),
+    "L1b": ("Viaje: cambia la cuenta bancaria (primera vez)", "block", travel_bank, usual_hours),
     "L2": ("Dispositivo nuevo en casa, mira facturas", "pass", new_device, usual_hours),
-    "L2b": ("Dispositivo nuevo en casa, cambia la cuenta", "pass", new_device_bank, usual_hours),
+    "L2b": ("Dispositivo nuevo en casa, cambia la cuenta", "block", new_device_bank, usual_hours),
     "L3": ("De noche: red y dispositivo de siempre, hora nunca vista", "pass", night, other_hours),
     "L4": ("VPN: IP de centro de datos, su dispositivo", "pass", vpn, usual_hours),
     "L5": ("IP que rota entre 3 redes en minutos", "pass", rotating_ip, usual_hours),
+    "L6": ("App con muchas llamadas por página (28 en 1 min), en casa", "pass", busy_page, usual_hours),
+    "L7": ("Viaje: solo mira la cuenta bancaria (ruta sensible)", "pass", travel_bank_view, usual_hours),
     "A1": ("Atacante: otra red y dispositivo, va a la cuenta bancaria", "block", attacker_bank, usual_hours),
     "A2": ("Atacante: descarga masiva (46 pedidos en 1 min)", "block", bulk_download, usual_hours),
     "A3": ("Atacante: robo lento (8 pedidos en 8 min, termina exportando)", "block", slow_theft, usual_hours),
     "A4": ("Script en la red y laptop del dueño (60 pedidos/min)", "block", owner_network_script, usual_hours),
     "A5": ("Sesión robada: la sesión viva del dueño desde otra red", "block", stolen_session, usual_hours),
+    "A6": ("Atacante en la misma /24 del dueño, otro dispositivo, a la cuenta", "block", same_block_attacker,
+           usual_hours),
+    "A7": ("Atacante que vuelve 15 min después, mismo teléfono, otra IP", "block", returning_attacker, usual_hours),
+    "N1": ("Usuario sin historial cambia la cuenta bancaria", "block", no_history_bank, no_hours),
 }
 
 
@@ -239,6 +292,8 @@ class Engine:
         assert status == 201, f"project {status}"
         self.project = project["id"]
         self.panel("PATCH", f"/v1/projects/{self.project}", {"enforcement": "enforce"})
+        status, body = self.panel("PUT", f"/v1/projects/{self.project}/routes", {"routes": DEMO_ROUTES})
+        assert status == 200, f"routes {status} {body}"
         status, key = self.panel("POST", f"/v1/projects/{self.project}/api-keys", {"name": "eval"})
         self.sdk = key["key"]
 
