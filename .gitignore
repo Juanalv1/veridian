@@ -9,3 +9,6 @@ __pycache__/
 dist/
 .DS_Store
 .wrangler/
+
+# prepare_demo.py --calibrar output (the presenter IPs and devices)
+engine/.demo-presenter.json

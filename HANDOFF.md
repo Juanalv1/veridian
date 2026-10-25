@@ -61,7 +61,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    - rotar el token del cliente `demo`, que quedó expuesto en una conversación (motor: `VERIDIAN_TOKENS`; app y panel: `VERIDIAN_TOKEN`);
    - poner `VERIDIAN_SECRET_KEY` (Fernet) para el webhook.
 4. **REPARTO.md:** documentar en neutral los contratos 13, 14 y 15 a medida que aterricen.
-5. **Preparar la demo en un solo paso** (pedido de Juan; hoy son 4 comandos con 3 secretos y las IPs copiadas a mano). Coordinar con Carlos, porque U13 reemplaza el reset por el borrado por proyecto.
+5. **Hecho (2026-10-25): `engine/scripts/prepare_demo.py`.** Una vez: en el panel, Miembros, invitar `ensayo@veridian.demo` como **owner** de la organización Demo (el script entra como esa persona con `VERIDIAN_PANEL_TOKEN`). En `engine/.env`: `VERIDIAN_BASE_URL`, `VERIDIAN_TOKEN` (clave `demo`), `VERIDIAN_PANEL_TOKEN` y, opcional, `DEMO_USER_ID`, `RENDER_API_KEY` + `DEMO_RENDER_SERVICE_ID` para reiniciar la app al final. Uso: el presentador navega la app unos minutos en el wifi del evento, `prepare_demo.py --calibrar`, y antes de cada ensayo `prepare_demo.py` (borra con `DELETE /v1/projects/{id}/data`, ya no usa el reset). Imprime `listo: N redes, N dispositivo, 14 días` o qué falló. Lo que se pedía: (pedido de Juan; hoy son 4 comandos con 3 secretos y las IPs copiadas a mano). Coordinar con Carlos, porque U13 reemplaza el reset por el borrado por proyecto.
    - **Script:** `engine/scripts/prepare_demo.py`, sin argumentos en el uso normal.
      - **Configuración:** lee la URL, el token `demo`, el secreto de reset (o lo que lo reemplace con U13) y el usuario del presentador de `engine/.env` (por ejemplo `DEMO_USER_ID=u_42`).
      - **Modo `--calibrar`:** el presentador navega unos minutos y el script toma de `GET /v1/activity` (con el acceso del panel) **todas** las IPs y `device_id` de ese usuario en los últimos N minutos. Así se resuelve lo del CGNAT sin copiar IPs a mano. Las guarda en `engine/.demo-presenter.json`, ignorado por git.
@@ -244,6 +244,10 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 - **Comparar redes por `/16` o por proveedor** para evitar las alertas por CGNAT. En el ensayo, el teléfono del atacante salió del mismo rango grande que la laptop del dueño: con `/16` el ataque no se habría visto como red nueva.
 - **Clasificar con el clasificador OpenAPI sin revisión.** Marcó `POST /login` como `critical`, lo que bloquearía el primer login desde una red nueva. Su salida es un borrador que revisa una persona.
 - **Límite de fallos por `request.client.host`.** Detrás del proxy de Render todos comparten esa dirección, así que 30 claves malas de cualquiera dejaban a todos los SDK en `429`. Ahora se usa `client_ip()` con `VERIDIAN_TRUSTED_PROXIES`.
+
+## Render: el motor solo se redespliega con su código (2026-10-25)
+
+El servicio `veridian-engine` tiene filtro de build: `engine/**` y `render.yaml`, sin `engine/tests/**`, `engine/scripts/**` ni `engine/README.md`. Antes, cualquier push (también de documentación o del panel) reiniciaba el motor con unos segundos de `502`, y un login en el panel durante ese corte falla con "Veridian no pudo confirmar tu cuenta". El filtro está en la configuración del servicio en Render, no en `render.yaml`.
 
 ## Hallazgo del testing en producción (2026-10-25)
 
