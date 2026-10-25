@@ -1,7 +1,10 @@
-// Live refresh, the mark-normal swap and navigation are done by htmx (see the
-// hx-* attributes in the templates). This file only guards the polling and shows
-// times in the viewer's local time zone (the engine sends UTC), gives the mark-normal
-// button its in-flight state, and shows how long the engine has been unreachable.
+// Live refresh and the mark-normal swap are done by htmx (see the hx-* attributes in the
+// templates). This file guards the polling, shows times in the viewer's local time zone (the
+// engine sends UTC), gives the mark-normal button its in-flight state, shows how long the
+// engine has been unreachable, and makes decision navigation instant: a click swaps only the
+// detail region, from a small client cache when it has the page (filled by the htmx `preload`
+// extension on hover/focus/press, and by pages already visited) or behind a skeleton when not.
+// Without JS the links are plain links.
 (function () {
   function pad(n) { return String(n).padStart(2, "0"); }
   function localize(root) {
@@ -30,7 +33,7 @@
   // has keyboard focus in a form, or the tab is hidden.
   window.refreshAllowed = function () {
     var active = document.activeElement;
-    return !(pointerDown || document.hidden || (active && active.closest && active.closest("form")));
+    return !(navigating || pointerDown || document.hidden || (active && active.closest && active.closest("form")));
   };
   // New rows: remember the row ids on screen; after a swap, rows with an unseen id get
   // `is-new` (CSS animates them). The first page load only records, nothing animates.
@@ -45,21 +48,170 @@
       if (animate) el.classList.add("is-new");
     });
   }
-  document.addEventListener("htmx:afterSwap", function () { localize(document); renderConn(); markNew(true); });
+  document.addEventListener("htmx:afterSwap", function () {
+    localize(document); renderConn(); markNew(true);
+    // A poll that changed the detail of this page makes its cached copy stale.
+    var sig = detailSig();
+    if (lastSig !== null && sig !== lastSig) cache.delete(currentKey);
+    lastSig = sig;
+  });
   localize(document);
   markNew(false);
+
+  // ---- Instant navigation ----
+  var FRESH_MS = 5000;      // a cached page is reused for clicks for this long
+  var HISTORY_MS = 60000;   // back/forward accept older copies: the next poll refreshes them within 2 s
+  var MAX_ENTRIES = 30;
+  var ROW_LINKS = "#live nav a[data-row][href]";
+  var cache = new Map();    // "/path?query" -> record, or {promise} while a prefetch is in flight
+  var generation = 0;       // bumped to drop everything (mark-normal): older answers are never stored
+  var navToken = 0, navigating = false, navAbort = null;
+  var currentKey = keyOf(location.href);
+  var lastSig = null;
+
+  function keyOf(url) { var u = new URL(url, location.href); return u.pathname + u.search; }
+  function detail() { return document.getElementById("detalle"); }
+  function live() { return document.getElementById("live"); }
+  function detailSig() { var d = detail(); return d ? d.innerHTML : ""; }
+  lastSig = detailSig();
+  function selectedRows(root) {
+    var rows = [];
+    root.querySelectorAll("[data-row][aria-current]").forEach(function (el) { rows.push(el.dataset.row); });
+    return rows;
+  }
+  function record(detailHtml, rows, hxGet, gen) { return { t: Date.now(), gen: gen, detail: detailHtml, current: rows, hxGet: hxGet }; }
+  function snapshot() {
+    var d = detail(), l = live();
+    if (!d || !l || d.getAttribute("aria-busy") === "true") return null;
+    return record(d.innerHTML, selectedRows(document), l.getAttribute("hx-get"), generation);
+  }
+  function parse(html, gen) {
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var d = doc.getElementById("detalle"), l = doc.getElementById("live");
+    return d && l ? record(d.innerHTML, selectedRows(doc), l.getAttribute("hx-get"), gen) : null;
+  }
+  function store(key, rec) {
+    if (!rec || rec.gen !== generation) return;
+    cache.delete(key);
+    cache.set(key, rec);
+    while (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value);
+  }
+  function lookup(key, ttl) {
+    var e = cache.get(key);
+    if (!e || e.gen !== generation) return null;
+    return e.promise || Date.now() - e.t <= ttl ? e : null;
+  }
+  function clearCache() { generation++; cache.clear(); }
+
+  // The preload extension sends the real request through htmx but swaps nothing; keep its answer.
+  function tapPreload(e) {
+    var xhr = e.detail.xhr, gen = generation;
+    var key = keyOf(e.detail.pathInfo.finalRequestPath || e.detail.pathInfo.requestPath);
+    var have = lookup(key, FRESH_MS);
+    var entry = { gen: gen, t: Date.now() };
+    entry.promise = new Promise(function (resolve, reject) {
+      xhr.addEventListener("load", function () {
+        var rec = xhr.status === 200 ? parse(xhr.responseText, gen) : null;
+        rec ? resolve(rec) : reject();
+      });
+      ["error", "abort", "timeout"].forEach(function (n) { xhr.addEventListener(n, reject); });
+    });
+    entry.promise.then(function (rec) { store(key, rec); }, function () { if (cache.get(key) === entry) cache.delete(key); });
+    if (!have) cache.set(key, entry);
+  }
+  function prefetch(e) {
+    var a = e.target.closest && e.target.closest(ROW_LINKS);
+    if (a) a.dispatchEvent(new Event("mouseenter"));  // the extension listens for it on each link
+  }
+  document.addEventListener("pointerdown", prefetch, true);
+  document.addEventListener("focusin", prefetch);
+
+  function showSkeleton() {
+    var d = detail(), t = document.getElementById("detalle-skeleton");
+    if (!d || !t) return;
+    d.replaceChildren(t.content.cloneNode(true));
+    d.setAttribute("aria-busy", "true");
+  }
+  function apply(rec) {
+    var d = detail(), l = live();
+    d.innerHTML = rec.detail;
+    d.removeAttribute("aria-busy");
+    if (rec.hxGet) l.setAttribute("hx-get", rec.hxGet);  // the poll follows the selected decision
+    document.querySelectorAll(ROW_LINKS).forEach(function (el) {
+      if (rec.current.indexOf(el.dataset.row) >= 0) el.setAttribute("aria-current", "true");
+      else el.removeAttribute("aria-current");
+    });
+    htmx.process(l);  // wires the new mark-normal button and re-reads hx-get
+    localize(d);
+    lastSig = detailSig();
+    navigating = false;
+  }
+  function fetchPage(key) {
+    if (navAbort) navAbort.abort();
+    navAbort = new AbortController();
+    var gen = generation;
+    return fetch(key, { credentials: "same-origin", signal: navAbort.signal }).then(function (r) {
+      if (!r.ok) throw new Error(String(r.status));
+      return r.text();
+    }).then(function (html) {
+      var rec = parse(html, gen);
+      if (!rec) throw new Error("unexpected page");
+      return rec;
+    });
+  }
+  function navigate(href, opts) {
+    var key = keyOf(href), token = ++navToken;
+    if (navAbort) { navAbort.abort(); navAbort = null; }
+    // A poll in flight would swap the page we are leaving over the one we are going to.
+    htmx.trigger(live(), "htmx:abort");
+    store(currentKey, snapshot());  // so coming back is instant
+    if (opts.push && key !== currentKey) history.pushState({ veridian: 1 }, "", href);
+    currentKey = key;
+    if (opts.link) {
+      document.querySelectorAll(ROW_LINKS).forEach(function (el) { el.removeAttribute("aria-current"); });
+      opts.link.setAttribute("aria-current", "true");
+    }
+    var hit = lookup(key, opts.ttl);
+    if (hit && !hit.promise) return apply(hit);
+    navigating = true;
+    showSkeleton();
+    (hit ? hit.promise.catch(function () { return fetchPage(key); }) : fetchPage(key)).then(function (rec) {
+      if (token !== navToken) return;
+      store(key, rec);
+      apply(rec);
+    }, function () {
+      if (token === navToken && !(navAbort && navAbort.signal.aborted)) location.assign(href);
+    });
+  }
+  // Capture phase: runs before htmx's boosted-link handler, which stays as the fallback.
+  document.addEventListener("click", function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest && e.target.closest(ROW_LINKS);
+    if (!a || a.target) return;
+    e.preventDefault();
+    e.stopPropagation();
+    navigate(a.getAttribute("href"), { push: true, ttl: FRESH_MS, link: a });
+  }, true);
+  window.addEventListener("popstate", function (e) {
+    e.stopImmediatePropagation();
+    navigate(location.pathname + location.search, { push: false, ttl: HISTORY_MS });
+  }, true);
 
   // In-flight state of the mark-normal button (htmx disables it via hx-disabled-elt).
   function isMark(el) { return el && el.matches && el.matches("button.btn[hx-post]"); }
   document.addEventListener("htmx:beforeRequest", function (e) {
+    var cfg = e.detail.requestConfig;
+    if (cfg && cfg.headers && cfg.headers["HX-Preloaded"] === "true") return tapPreload(e);
     var btn = e.detail.elt;
     if (!isMark(btn)) return;
+    clearCache();
     btn.dataset.label = btn.textContent;
     btn.textContent = "Marcando…";
     btn.setAttribute("aria-busy", "true");
   });
   document.addEventListener("htmx:afterRequest", function (e) {
     var btn = e.detail.elt;
+    if (isMark(btn)) clearCache();  // also drops prefetches that started while the request was in flight
     if (!isMark(btn) || !btn.isConnected) return;
     btn.textContent = btn.dataset.label || "Esto era normal";
     btn.removeAttribute("aria-busy");
