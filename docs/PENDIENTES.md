@@ -62,16 +62,15 @@ Referencia reutilizable en el repo de Centinela:
     - **Por eso la consulta síncrona usa Haiku** (`VERIDIAN_SYNC_MODEL`), y el juicio en segundo plano sigue con Opus.
     - **En rutas críticas, la IA bloquea todo desvío,** incluido el dueño en otra red con su propio dispositivo.
 - **Tiempo de instalación** del middleware en una app nueva.
+- **Validación del comportamiento** (tarea 7, 2026-10-25): 17 de 17 casos sintéticos como se esperaba, 3 corridas cada uno (`HALLAZGOS.md`). Falta repetirla con personas y redes reales: `docs/PRUEBAS-MANUALES.md`.
 - **Robo lento real,** repartido en horas o días: la evaluación solo cubrió 8 minutos. Pasada la espera de aprendizaje (10 min), lo que no tuvo una decisión abierta se aprende.
 
 ## Riesgos
 
 - **La IA no es determinista:** puede bloquear un uso legítimo en vivo.
-- **El dueño cambiando la cuenta bancaria fuera de lo habitual queda bloqueado** (medido el 2026-10-25, 3 de 3 en cada caso, ver `HALLAZGOS.md`):
-  - de viaje (otra red, su dispositivo): lo bloquea la regla crítica;
-  - con un dispositivo nuevo en su red: lo bloquea la IA.
-
-  Cada caso se parece a un ataque real: el dispositivo es una cookie que un ladrón de sesión también puede llevarse, y alguien en la misma red del dueño (oficina, casa) usaría un dispositivo nuevo. Hace falta una decisión de producto, y una vía para que el dueño se desbloquee (hoy, un admin marca "esto era normal").
+- **El dueño cambiando la cuenta bancaria fuera de lo habitual queda bloqueado, por decisión** (2026-10-25, ver `HALLAZGOS.md`, "Validación del motor real"): de viaje con su dispositivo o con un dispositivo nuevo en su red. No se distingue de un infostealer ni de otra persona en su red. El costo es un falso positivo en el caso más caro; la salida es "Esto era normal" y el autodesbloqueo por correo.
+- **Usuarios sin historial:** el primer cambio de cuenta de un usuario que Veridian todavía no conoce se bloquea por regla (caso N1). El día que un cliente instala Veridian, **todos** sus usuarios están así. Hace falta decidir un periodo de solo observar por usuario, o confiar en el autodesbloqueo.
+- **Umbral de ritmo sin medir con personas reales:** 28 accesos por minuto no lo disparan (L6), pero una SPA con muchas llamadas por pantalla puede pasar de 30 por minuto (`VERIDIAN_RATE_FLOOR`). Probarlo con la app de un cliente real.
 - **Token del cliente `demo` expuesto** en una conversación de trabajo: rotarlo antes de la demo (Render: `VERIDIAN_TOKENS` del motor y `VERIDIAN_TOKEN` de la app y el panel).
 - **Si la IA no le gana a un puntaje sin IA,** el mensaje se limita a "entiende tu sistema y explica".
 - **Datos personales:** las IPs cuentan como datos personales en muchas leyes. Hay que cuidar la retención y el cifrado.

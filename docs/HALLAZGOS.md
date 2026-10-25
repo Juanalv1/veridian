@@ -69,30 +69,42 @@ Evaluación offline en el repo de Centinela (`evals/key_judgment/`, resultados e
 
 ## Validación del motor real (2026-10-25)
 
-Medido con `engine/scripts/behavior_eval.py`: el motor de `main` corriendo en local con la misma IA que producción (Opus en segundo plano, Haiku en la consulta síncrona), un proyecto de prueba, 3 corridas por caso, cada una con un usuario nuevo y 14 días de historial (red, dispositivo y horario fijos). "Bloqueado" quiere decir que la sesión o la IP terminaron en la blocklist, o que `POST /v1/check` respondió `block`.
+Medido con `engine/scripts/behavior_eval.py`: el motor de `main` corriendo en local con la misma IA que producción (Opus en segundo plano, Haiku en la consulta síncrona), un proyecto de prueba con las rutas de la app de demo, 3 corridas por caso, cada una con un usuario nuevo y 14 días de historial (red, dispositivo y horario fijos). "Bloqueado" quiere decir que la sesión o la IP terminaron en la blocklist, o que `POST /v1/check` respondió `block`.
+
+Medición final, con las correcciones de abajo (commit `eb6585d`): **17 de 17 casos como se esperaba, con la misma decisión en las 3 corridas.**
 
 | Caso | Esperado | Bloqueado | Decisión | Tiempo |
 |---|---|---|---|---|
-| L1 Viaje: otra red, su dispositivo, mira facturas | no | 0/3 | `alert` 3/3 | IA: 6–9 s |
-| L1b Viaje: cambia la cuenta bancaria por primera vez | no | **3/3** | regla crítica | 0,0 s |
-| L2 Dispositivo nuevo en casa, mira facturas | no | 0/3 | `alert` 3/3 | IA: 6–9 s |
-| L2b Dispositivo nuevo en casa, cambia la cuenta | no | **3/3** | IA `block` 3/3 | síncrona: 1,5–1,8 s |
+| L1 Viaje: otra red, su dispositivo, mira facturas | no | 0/3 | `alert` | IA: 6 s |
+| L1b Viaje: cambia la cuenta bancaria por primera vez | sí, por decisión | 3/3 | regla crítica | 0,0 s |
+| L2 Dispositivo nuevo en casa, mira facturas | no | 0/3 | `alert` | IA: 3–6 s |
+| L2b Dispositivo nuevo en casa, cambia la cuenta | sí, por decisión | 3/3 | IA `block` | síncrona: 1,6–2,3 s |
 | L3 De noche, red y dispositivo de siempre | no | 0/3 | sin desvío | — |
-| L4 VPN (IP de centro de datos), su dispositivo | no | 0/3 | `alert` 3/3 | IA: 3–9 s |
-| L5 IP que rota entre 3 redes en minutos | no | 0/3 | `alert` 3/3 | IA: 6 s |
+| L4 VPN (IP de centro de datos), su dispositivo | no | 0/3 | `alert` | IA: 3–6 s |
+| L5 IP que rota entre 3 redes en minutos | no | 0/3 | `alert` | IA: 3–9 s |
+| L6 App con muchas llamadas por página (28 en 1 min) | no | 0/3 | sin desvío | — |
+| L7 Viaje: solo mira la cuenta bancaria (ruta sensible) | no | 3/3 → **0/3** | `alert` | IA: 6 s |
 | A1 Otra red y dispositivo, a la cuenta bancaria | sí | 3/3 | regla crítica | 0,0 s |
-| A2 Descarga masiva (46 pedidos en 1 min) | sí | 3/3 | regla de ritmo | 0,0–0,2 s |
-| A3 Robo lento (8 pedidos en 8 min, termina exportando) | sí | 0/3 → **3/3** | IA `step_up` 3/3 | IA: 6–9 s |
-| A4 Script en la red y laptop del dueño (60/min) | sí | 3/3 | regla de ritmo (solo sesión) | 0,0–0,2 s |
+| A2 Descarga masiva (46 pedidos en 1 min) | sí | 3/3 | regla de ritmo | 0,0 s |
+| A3 Robo lento (8 pedidos en 8 min, termina exportando) | sí | 3/3 | IA (`step_up` se aplica como bloqueo) | IA: 3–6 s |
+| A4 Script en la red y laptop del dueño (60/min) | sí | 3/3 | regla de ritmo (solo sesión) | 0,0 s |
 | A5 Sesión viva del dueño usada desde otra red | sí | 3/3 | regla crítica | 0,0 s |
+| A6 Atacante en la misma /24 del dueño, otro dispositivo | sí | 3/3 | IA `block` | síncrona: 2,1–2,5 s |
+| A7 Atacante que vuelve 15 min después, mismo teléfono, otra IP | sí | 3/3 | IA → **regla crítica** | 1,6–2 s → 0,0 s |
+| N1 Usuario sin historial cambia la cuenta | sí, por diseño | 3/3 | regla crítica | 0,0 s |
+
+**Correcciones (cada una con un test):**
+- **Robo lento (A3):** recibía `step_up` 3 de 3 veces y nada lo aplicaba. Ahora un `step_up` en segundo plano se aplica como bloqueo (`d20663e`, `test_a_background_step_up_is_enforced_as_a_block`).
+- **El dueño desde su red y su dispositivo cambiando la cuenta por primera vez** quedaba bloqueado 3 de 3; ya no es un desvío (`test_owner_first_use_of_a_critical_route_from_known_network_and_device_is_allowed_without_ai`).
+- **Eventos atrasados (A7):** los eventos que llegan con más de 10 min de atraso (el SDK vaciando su cola después de una caída del motor, en la que dejó pasar todo) se aprendían a sí mismos antes de juzgarse, y la red y el dispositivo del atacante parecían conocidos. Ahora los eventos de la misma sesión a menos de 10 min del evento juzgado no lo avalan (`eb6585d`, `test_an_attack_delivered_late_is_judged_against_the_profile_of_its_own_time`). En tiempo real no cambia nada.
+- **Lectura sensible (L7):** el dueño de viaje que solo **miraba** la cuenta bancaria quedaba bloqueado 3 de 3. La IA no recibía el método HTTP y tomaba el `GET` como el cambio crítico. Ahora las señales llevan `method` y el prompt separa leer de cambiar (`eb6585d`, `test_the_prompt_keeps_reads_of_sensitive_routes_apart_from_changes`).
+
+**Decisión (L1b y L2b):** el dueño que cambia la cuenta bancaria desde otra red con su dispositivo, o desde un dispositivo nuevo en su red, **se bloquea**. Con las señales que ve Veridian es igual a un infostealer que se llevó la cookie del dispositivo (A5) y a otra persona en la red del dueño (A6). Leer desde esos lugares sí pasa (L1, L2, L7). La salida es "Esto era normal" en el panel y el autodesbloqueo por correo (`docs/DESBLOQUEO-POR-CORREO.md`). Fijado con `test_owner_device_from_a_new_network_on_a_critical_route_is_blocked_even_if_the_ai_allows`.
 
 **Lectura:**
-- Los usos raros pero legítimos que solo leen (viaje, dispositivo nuevo, VPN, IP que rota) nunca se bloquearon: la IA respondió `alert` las 15 veces, con una explicación que nombra lo que coincide con el dueño.
+- Los usos raros pero legítimos que solo leen (viaje, dispositivo nuevo, VPN, IP que rota, ruta sensible) nunca se bloquearon: la IA respondió `alert` las 18 veces, con una explicación que nombra lo que coincide con el dueño.
 - Las decisiones fueron iguales en las 3 corridas de cada caso.
-- **Corregido:** el robo lento recibía `step_up` 3 de 3 veces y nada lo aplicaba (el middleware no pide segundo factor). Ahora un `step_up` en segundo plano se aplica como bloqueo, como ya hacía la consulta síncrona (test `test_a_background_step_up_is_enforced_as_a_block`).
-- **Corregido antes, en producción:** el dueño desde su red y su dispositivo cambiando la cuenta por primera vez quedaba bloqueado 3 de 3; ya no es un desvío (test `test_owner_first_use_of_a_critical_route_from_known_network_and_device_is_allowed_without_ai`).
-- **Sin resolver, por decisión de producto:** L1b y L2b se bloquean (ver `PENDIENTES.md`, Riesgos).
-- **Límites del método:** casos sintéticos, historial perfecto de 14 días y una sola app. El robo lento se probó en 8 minutos, no en días.
+- **Límites del método:** casos sintéticos, historial perfecto de 14 días y una sola app. El robo lento se probó en 8 minutos, no en días. 3 corridas por caso, no 20. El motor corrió en local, no en Render.
 
 ## Señales de comportamiento
 
