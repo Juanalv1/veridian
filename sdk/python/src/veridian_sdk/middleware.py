@@ -264,6 +264,7 @@ class VeridianMiddleware:
         self.blocked = {"users": set(), "sessions": set(), "ips": set()}
         self.critical: set[tuple[str, str]] = set()  # (METHOD, route template); last known
         self._tasks: list[asyncio.Task] = []
+        self._failing: dict[str, int | None] = {}  # last refused status per engine call, for _note_status
 
     # --- ASGI --------------------------------------------------------------
 
@@ -378,6 +379,7 @@ class VeridianMiddleware:
             r = await self.client.get(
                 f"{self.base_url}/v1/blocklist", params=params, headers=self._auth()
             )
+            self._note_status("blocklist", r.status_code, ok=(200, 304))
             if r.status_code == 304:
                 return
             if r.status_code != 200:
@@ -527,6 +529,7 @@ class VeridianMiddleware:
             r = await self.client.post(
                 f"{self.base_url}/v1/events", json={"events": batch}, headers=self._auth()
             )
+            self._note_status("events", r.status_code, ok=(202,))
             if r.status_code != 202:
                 return
         except Exception as exc:
@@ -536,6 +539,21 @@ class VeridianMiddleware:
         remaining = [e for e in self.queue if e["id"] not in sent]
         self.queue.clear()
         self.queue.extend(remaining)
+
+    def _note_status(self, what: str, status: int, ok: tuple[int, ...]) -> None:
+        """Log when the engine starts or stops refusing `what`, once per change, not on every poll.
+
+        A refused blocklist poll keeps the last known list (fail-open), so without this line a
+        middleware stuck on a stale list (401 revoked key, 429, 5xx) is invisible."""
+        failing = status not in ok
+        previous = self._failing.get(what)
+        if failing and previous != status:
+            hint = {401: " (API key unknown or revoked)", 429: " (rate limited)"}.get(status, "")
+            stale = "; keeping the last blocklist" if what == "blocklist" else "; events stay queued"
+            log.warning("veridian: engine answered %s to %s%s%s", status, what, hint, stale)
+        elif not failing and previous is not None:
+            log.warning("veridian: %s works again (engine answered %s)", what, status)
+        self._failing[what] = status if failing else None
 
     # --- background --------------------------------------------------------
 

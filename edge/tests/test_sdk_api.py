@@ -359,3 +359,29 @@ def test_the_panel_template_shows_the_quickstart_exactly():
     page = (REPO / "edge" / "panel" / "templates" / "partials" / "snippet.html").read_text(encoding="utf-8")
     block = re.search(r'<code id="snippet-python"[^>]*>(.*?)</code>', page, flags=re.S)
     assert block and code_lines(visible_text(block.group(1))) == code_lines(snippet_code())
+
+
+# --- a refused blocklist poll is visible ---------------------------------------------------------
+
+
+async def test_a_refused_blocklist_poll_is_logged_once_and_its_recovery_too(caplog):
+    statuses = [429, 429, 429, 200]
+
+    def handler(request):
+        status = statuses.pop(0)
+        if status != 200:
+            return httpx.Response(status, json={"error": "rate_limited"})
+        return httpx.Response(200, json={"version": 2, "users": [], "sessions": [], "ips": []})
+
+    mw = VeridianMiddleware(an_app(), api_key=KEY, base_url=ENGINE_URL, user=lambda r: None,
+                            http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), background=False)
+    mw.blocked["sessions"].add("s_old")
+    with caplog.at_level(logging.WARNING, logger="veridian"):
+        for _ in range(3):
+            await mw.refresh_blocklist()
+        assert mw.blocked["sessions"] == {"s_old"}  # fail-open keeps the last list
+        refused = [r for r in caplog.records if "429" in r.getMessage()]
+        assert len(refused) == 1 and "keeping the last blocklist" in refused[0].getMessage()
+        await mw.refresh_blocklist()
+    assert mw.blocked["sessions"] == set()
+    assert any("works again" in r.getMessage() for r in caplog.records)
