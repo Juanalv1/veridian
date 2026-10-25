@@ -376,8 +376,11 @@ def test_logout_clears_the_session():
     assert panel.get("/").headers["location"] == "/login"
 
 
-def test_logout_is_a_post_only():
-    assert Engine().panel().get("/logout").status_code == 405
+def test_opening_logout_as_an_address_signs_out_instead_of_a_405():
+    panel = Engine().panel()
+    r = panel.get("/logout")
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert panel.get("/").headers["location"] == "/login"
 
 
 # --- CSRF --------------------------------------------------------------------------------------------

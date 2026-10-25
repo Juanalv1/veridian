@@ -112,6 +112,7 @@ def create_app(
         resp.set_cookie(COOKIE, cookie_value, httponly=True, samesite="lax")
         return resp
 
+    @app.get("/logout")  # opening /logout as an address signs out too, instead of a 405
     @app.post("/logout")
     async def logout(request: Request):
         sessions.pop(request.cookies.get(COOKIE, ""), None)

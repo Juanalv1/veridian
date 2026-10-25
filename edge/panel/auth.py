@@ -319,6 +319,13 @@ class Auth:
                 return auth.login_error("github_email")
             return await auth.start_session(request, profile)
 
+        @router.get("/logout")
+        async def logout_link(request: Request):
+            """Opening /logout as an address (reload, back button, a typed URL) signs out too, instead of a 405.
+            The button keeps posting; signing someone out is the worst a forged link can do."""
+            request.session.clear()
+            return RedirectResponse("/login", status_code=303)
+
         return router
 
     def session_router(self) -> APIRouter:

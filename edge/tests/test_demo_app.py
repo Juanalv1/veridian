@@ -86,6 +86,14 @@ async def test_logout_ends_session():
         assert (await c.get("/invoices")).status_code == 303
 
 
+async def test_opening_logout_as_an_address_ends_the_session_too():
+    async with browser(make_demo()) as c:
+        await login(c)
+        r = await c.get("/logout")
+        assert r.status_code == 303 and r.headers["location"] == "/login"
+        assert (await c.get("/invoices")).status_code == 303
+
+
 async def test_session_id_reported_is_not_the_cookie_secret():
     app = make_demo()
     async with browser(app) as c:
