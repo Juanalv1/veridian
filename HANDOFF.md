@@ -57,7 +57,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    - Falta encolar `kind='email'` en el mismo outbox del webhook, para los owners y admins con `notify_email`.
    - No hay proveedor real todavía (decisión 4 abierta); usa `NullMailer` en producción hasta que se elija.
 3. **Operación en Render:**
-   - medir cuántos proxies agregan `X-Forwarded-For` delante del motor (hoy `VERIDIAN_TRUSTED_PROXIES=3`, copiado de la medición de la app; ver "Advertencias");
+   - **Hecho (2026-10-25):** medidos los proxies delante del motor: son 2 (`VERIDIAN_TRUSTED_PROXIES=2`, ver "Advertencias");
    - rotar el token del cliente `demo`, que quedó expuesto en una conversación (motor: `VERIDIAN_TOKENS`; app y panel: `VERIDIAN_TOKEN`);
    - poner `VERIDIAN_SECRET_KEY` (Fernet) para el webhook.
 4. **REPARTO.md:** documentar en neutral los contratos 13, 14 y 15 a medida que aterricen.
@@ -370,7 +370,10 @@ Anota los resultados en `docs/PENDIENTES.md` (sección "Por medir"), con fecha, 
 - **Los scripts de ensayo** (`seed_demo_history.py`, `send_sample_events.py`) siguen enviando bien. Pero al final, cuando leen el perfil y las decisiones, ahora muestran `403`: hay que pasarlos al acceso del panel.
 - **Cada push a `main` despliega el motor en Render,** con unos segundos de `502`: el disco impide desplegar sin corte.
 - **No hay vuelta atrás automática de las migraciones.** Volver a código viejo exige restaurar la copia `.pre-NNNN` del disco.
-- **`VERIDIAN_TRUSTED_PROXIES=3` no está medido para el motor.** Si en realidad hay menos proxies, la IP del límite de fallos sale del valor de la conexión (compartido). Si hay más, sale de una entrada que el cliente controla.
+- **`VERIDIAN_TRUSTED_PROXIES=2` en el motor (medido el 2026-10-25).**
+  - Cómo se midió: 31 claves malas con un `X-Forwarded-For` falso y fijo de tres valores.
+  - Con `3`, el motor tomaba el valor falso: esa IP inventada quedaba en `429` y con otra IP inventada se volvía a entrar. Cualquiera podía esquivar el límite de fallos rotando el encabezado.
+  - Render agrega dos entradas delante del motor. La app de demo mide 3 (con navegadores, `edge/README.md`); no se volvió a medir.
 - **Quitar un token de `VERIDIAN_TOKENS` ya no lo revoca:** queda importado como clave. Para revocarlo hay que usar el contrato 12 (U6) o poner `revoked_at` en `api_key`.
 - **`docs/PENDIENTES.md` tiene los hallazgos del ensayo real:**
   - la IP del dueño rota por CGNAT;
