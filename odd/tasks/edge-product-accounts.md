@@ -56,4 +56,4 @@ Mode: on. Source: `INIT.md` ("test first when there is clear behavior"). Runner:
 
 ## Next step
 
-T4 (project selector, creation, retire `VERIDIAN_TOKEN`); needs decisions 1-2.
+T4 (org/project selector, creation, retire `VERIDIAN_TOKEN`); needs decision 2.
