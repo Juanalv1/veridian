@@ -28,8 +28,6 @@ Lo que Maikol cerró en el motor queda en `main`, con tests y documentado en `RE
 - U13 parte 1: los endpoints del contrato 14 y el hilo de retención (`8ad03cb`).
 
 Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Suite: 665 passed.
-3. **SDK de npm (`sdk/node/`, plan `odd/tasks/sdk-node.md`):** T1 hecho (`264e741`): paquete `veridian-sdk` (JavaScript ESM sin dependencias), configuración, errores al arrancar, IP del cliente, cookie `vrd_did` y sesión detectada.
-4. **SDK de npm, T2 hecho (`a79ac65`):** núcleo con lotes cada ~2 s en segundo plano (timers `unref`), consulta de `/v1/blocklist` con `since`, `403` a lo bloqueado y pasar ante `401`/`429`; 54 tests.
 
 ### Carlos Navas: motor (acceso, rutas y datos)
 
@@ -120,6 +118,10 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
    - **Tests:** una persona nueva entra con Google o GitHub, crea su organización y su clave sin que nadie la invite; una persona con organización no vuelve a ver el paso 2; la misma persona con los dos proveedores es una sola cuenta.
    - **Avance de José (2026-10-25):** hecho el punto 2 completo en el panel y el motor falso (T1-T4 de `odd/tasks/backoffice-self-signup.md`, 747 tests pasan): login con GitHub, misma persona por correo verificado, paso de «nombre de la empresa» que crea organización y primer proyecto, y la página de claves con el estado «Esperando el primer evento» / «Conectado». Falta: crear la OAuth App de GitHub (callback `<PUBLIC_URL>/auth/github/callback`) y poner `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`; y que el motor real identifique a las personas por correo verificado entre proveedores (`docs/REPARTO.md`, «Login»).
+- **Avance de José en el SDK de npm (`sdk/node/`, plan `odd/tasks/sdk-node.md`):**
+  - T1 hecho (`a10c038`): paquete `veridian-sdk` (JavaScript ESM sin dependencias), configuración, errores al arrancar, IP del cliente, cookie `vrd_did` y sesión detectada.
+  - T2 hecho (`54e8daa`): núcleo con lotes cada ~2 s en segundo plano (timers `unref`), consulta de `/v1/blocklist` con `since`, `403` a lo bloqueado y pasar ante `401`/`429`.
+  - T3 hecho (`4eb2d29`, subido por la sincronización automática): rutas críticas y `POST /v1/check` (12 s, fail-open), reporte de rutas al arrancar (se lee del router de Express; en Express 5 los routers montados en una ruta hay que pasarlos con `routes`), adaptadores de Express 4/5 y de Next.js (route handlers, runtime Node); 128 tests.
 
 ### Carlos Navas: SDK, middleware y app de demo (lo que era del Dev 2)
 
