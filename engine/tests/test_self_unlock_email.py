@@ -70,6 +70,11 @@ def run_sender(client):
     return client.app.state.email_sender.run_once()
 
 
+def sent(client):
+    """What went to the end user. The owner also gets the admin alert (U17) on every block."""
+    return [m for m in client.app.state.settings.mailer.sent if m.to == USER_EMAIL]
+
+
 def blocked(client, **overrides):
     seed_owner_history(client)
     assert attack(client, user_email=USER_EMAIL, **overrides).status_code == 202
@@ -92,9 +97,9 @@ def test_a_block_with_user_email_and_the_feature_on_queues_one_branded_email(app
     [row] = rows(client)
     assert row["status"] == PENDING and row["kind"] == "email" and row["project_id"] == "client_a"
     assert row["recipient"] is None  # the address is read from user_contact when sending, never copied
-    assert run_sender(client) == 1
+    run_sender(client)
 
-    [message] = client.app.state.settings.mailer.sent
+    [message] = sent(client)
     assert message.to == USER_EMAIL and message.from_name == "Acme Pay"
     assert "Detectamos un acceso sospechoso a tu cuenta" in message.subject
     assert "Fui yo, desbloquear" in message.html and "Fui yo, desbloquear" in message.text
@@ -109,7 +114,7 @@ def test_the_link_points_to_the_panel_and_only_the_token_hash_is_stored(app_fact
     blocked(client)
     run_sender(client)
 
-    [message] = client.app.state.settings.mailer.sent
+    [message] = sent(client)
     token = link_token(message)
     assert f"{PANEL}/desbloquear/{token}" in message.html
     [stored] = tokens(client)
@@ -129,7 +134,7 @@ def test_the_default_panel_url_is_used_when_none_is_configured(app_factory):
     configure(client)
     blocked(client)
     run_sender(client)
-    [message] = client.app.state.settings.mailer.sent
+    [message] = sent(client)
     assert "https://veridian-panel.onrender.com/desbloquear/" in message.text
 
 
@@ -159,12 +164,11 @@ def test_no_email_when_the_project_only_observes(app_factory):
 def test_a_block_decided_by_check_also_queues_the_email(app_factory):
     client = app_factory()
     configure(client)
-    seed_owner_history(client, method="POST", route="/payouts/bank-account")
-    event = make_event("c1", NOW, method="POST", route="/payouts/bank-account", user_email=USER_EMAIL,
-                       **{**ATTACKER, "device_id": "d_evil"})
-    # Same user, new network and device on a critical route that the owner never used: rule block.
-    seed = client.post("/v1/check", json={"event": {**event, "route": "/payouts/other"}}, headers=AUTH_A)
-    assert seed.json()["verdict"] == "block"
+    seed_owner_history(client)
+    # New network and device on a critical route that the owner never used: rule block.
+    event = make_event("c1", NOW, user_email=USER_EMAIL, method="POST", route="/payouts/bank-account", **ATTACKER)
+    response = client.post("/v1/check", json={"event": event}, headers=AUTH_A)
+    assert response.json()["verdict"] == "block" and response.json()["self_unlock"] is True
     assert len(rows(client)) == 1
 
 
@@ -175,16 +179,18 @@ def test_two_blocks_of_the_same_user_within_15_minutes_send_one_email(app_factor
     attack(client, prefix="b", session_id="s_evil2", ip="203.0.113.10", user_email=USER_EMAIL)
     assert len(rows(client)) == 1
     run_sender(client)
-    assert len(client.app.state.settings.mailer.sent) == 1
+    assert len(sent(client)) == 1
 
 
 def test_a_block_after_the_interval_sends_another_email(app_factory):
     client = app_factory()
     configure(client)
     blocked(client)
-    later = NOW + timedelta(minutes=16)
-    post_events(client, [make_event("late1", later, session_id="s_evil3", ip="203.0.113.11", device_id="d_evil",
-                                    method="POST", route="/payouts/bank-account", user_email=USER_EMAIL)])
+    attack(client, prefix="late", session_id="s_evil3", ip="203.0.113.11", user_email=USER_EMAIL)
+    assert len(rows(client)) == 1
+    with db.connect(client.app.state.settings.db_path) as conn:  # the first mail was 16 minutes ago
+        conn.execute("UPDATE user_contact SET last_mail_at = ?", ((NOW - timedelta(minutes=16)).strftime("%Y-%m-%dT%H:%M:%SZ"),))
+    attack(client, prefix="later", session_id="s_evil4", ip="203.0.113.12", user_email=USER_EMAIL)
     assert len(rows(client)) == 2
 
 
@@ -207,7 +213,7 @@ def test_neither_the_email_nor_its_subject_carry_a_full_ip(app_factory):
     configure(client)
     blocked(client)
     run_sender(client)
-    [message] = client.app.state.settings.mailer.sent
+    [message] = sent(client)
     everything = message.subject + message.text + message.html
     for ip in ("203.0.113.9", "190.202.14.7", "203.0.113"):
         assert ip not in everything
@@ -219,7 +225,7 @@ def test_the_email_shows_when_and_from_which_device(app_factory):
     seed_owner_history(client)
     attack(client, user_email=USER_EMAIL, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141.0 Safari/537")
     run_sender(client)
-    [message] = client.app.state.settings.mailer.sent
+    [message] = sent(client)
     assert "26 de octubre de 2026" in message.text and "12:00 UTC" in message.text
     assert "Chrome en Windows" in message.text and "Chrome en Windows" in message.html
 
@@ -229,7 +235,7 @@ def test_brand_values_are_escaped_in_the_html(app_factory):
     configure(client, brand_name="<script>alert(1)</script> & Co", brand_support_url="https://acme.example/a?x=1&y=2")
     blocked(client)
     run_sender(client)
-    [message] = client.app.state.settings.mailer.sent
+    [message] = sent(client)
     assert "<script>" not in message.html
     assert "&lt;script&gt;alert(1)&lt;/script&gt; &amp; Co" in message.html
     assert "x=1&amp;y=2" in message.html
@@ -240,7 +246,7 @@ def test_without_a_brand_name_the_project_name_is_used(app_factory):
     configure(client, brand_name=None, brand_logo_url=None, brand_color=None, brand_support_email=None)
     blocked(client)
     run_sender(client)
-    [message] = client.app.state.settings.mailer.sent
+    [message] = sent(client)
     assert message.from_name == "client_a"
     assert "<img" not in message.html
 
@@ -267,7 +273,7 @@ def test_a_decision_marked_normal_before_sending_is_not_mailed(app_factory):
     run_sender(client)
     [row] = rows(client)
     assert row["status"] == FAILED and row["last_error"] == "decision no longer open"
-    assert client.app.state.settings.mailer.sent == [] and tokens(client) == []
+    assert sent(client) == [] and tokens(client) == []
 
 
 def test_turning_the_feature_off_before_sending_cancels_the_email(app_factory):
@@ -277,7 +283,7 @@ def test_turning_the_feature_off_before_sending_cancels_the_email(app_factory):
     configure(client, self_unlock_enabled=False)
     run_sender(client)
     assert rows(client)[0]["last_error"] == "self-unlock is off"
-    assert client.app.state.settings.mailer.sent == []
+    assert sent(client) == []
 
 
 def test_an_erased_address_is_not_mailed(app_factory):
@@ -288,7 +294,7 @@ def test_an_erased_address_is_not_mailed(app_factory):
         conn.execute("DELETE FROM user_contact")
     run_sender(client)
     assert rows(client)[0]["last_error"] == "no user email"
-    assert client.app.state.settings.mailer.sent == []
+    assert sent(client) == []
 
 
 def test_a_retry_replaces_the_unused_token_of_the_failed_attempt(app_factory, clock):
@@ -306,7 +312,7 @@ def test_a_retry_replaces_the_unused_token_of_the_failed_attempt(app_factory, cl
 
     [second] = tokens(client)
     assert second["token_hash"] != first["token_hash"]
-    assert link_token(mailer.sent[0]) and hashlib.sha256(link_token(mailer.sent[0]).encode()).hexdigest() == second["token_hash"]
+    assert link_token(sent(client)[0]) and hashlib.sha256(link_token(sent(client)[0]).encode()).hexdigest() == second["token_hash"]
 
 
 def test_erasing_the_user_deletes_their_tokens(app_factory):
