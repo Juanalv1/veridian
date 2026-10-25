@@ -29,6 +29,7 @@ Mode: on. Source: `INIT.md` ("test first when there is clear behavior"). Runner:
 - [x] T4 Panel: lists `GET /v1/decisions` with signals and rationale, auto-refresh. Route: delegated. Evidence: 34bd444; `uv run pytest -q` 65 passed.
 - [x] T5 Run instructions (`edge/README.md`, Spanish) and a local end-to-end check of the demo path. Route: delegated. Evidence: 1f56bf4; `uv run pytest -q` 65 passed; local smoke (3 uvicorn processes): owner login 303, invoices 200; attacker (XFF 9.9.9.9, 203.0.113.9, trusted_proxies=1) bank POST 200, ~5 s later 403 blocked; owner 200; panel shows block + rationale.
 - [x] T6 Panel: port approved design (users, decision status, mark normal, profile). Route: delegated (writer trigger: panel code, template, tests, fake engine). Evidence: 1b021ea; `uv run pytest -q` 77 passed; smoke (3 uvicorn processes): attacker blocked 403, panel showed BLOQUEADO + "Esto era normal"; POST mark-normal via panel 303; panel then showed BLOQUEO LEVANTADO. Also fixed fake engine profile `routes` to include the method (contract section 4).
+- [x] T7 Panel v2: verdict + profile vs access comparison. Route: delegated (writer trigger: panel code, template, tests, fake engine). Evidence: COMMIT; `uv run pytest -q` 91 passed; smoke (3 uvicorn processes, VERIDIAN_SEED=demo): attacker blocked 403, panel showed "Bloqueado" with 127.0.0.0/24 vs 203.0.113.9 "nueva"; POST mark-normal via panel 303, panel then showed "Bloqueo levantado" and no button. Fake engine decisions now carry `access`.
 
 ## Acceptance
 
