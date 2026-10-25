@@ -58,8 +58,8 @@ def _decorate(d: dict) -> dict:
 
 def _hours(hours: list) -> str:
     if len(hours) == 2:
-        return f"{int(hours[0]):02d}:00 – {int(hours[1]):02d}:00"
-    return ", ".join(f"{int(h):02d}:00" for h in hours)
+        return f"{int(hours[0]):02d}:00 – {int(hours[1]):02d}:00 UTC"
+    return ", ".join(f"{int(h):02d}:00" for h in hours) + " UTC"
 
 
 def create_app(engine_url: str | None = None, token: str | None = None,
@@ -110,7 +110,9 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         selected = user if user in profiles else (user_ids[0] if user_ids else None)
         profile = profiles.get(selected) if selected else None
         if profile is not None:
-            profile = {**profile, "hours_text": _hours(profile.get("hours") or [])}
+            hours = profile.get("hours") or []
+            profile = {**profile, "hours_text": _hours(hours) if hours else "",
+                       "hours_utc": ",".join(str(int(h)) for h in hours)}
         return templates.TemplateResponse(request, "index.html", {
             "decisions": decisions, "engine_error": engine_error, "refresh": REFRESH_SECONDS,
             "users": users, "selected": selected, "profile": profile,

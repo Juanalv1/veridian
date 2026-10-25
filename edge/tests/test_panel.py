@@ -1,3 +1,4 @@
+import re
 import httpx
 from fastapi.testclient import TestClient
 
@@ -138,7 +139,9 @@ def test_profile_hours_range_formatted():
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/")
-    assert "09:00 – 13:00" in r.text and "NORMAL" in r.text and "PERMITIDO" in r.text
+    assert "09:00 – 13:00 UTC" in r.text and "NORMAL" in r.text and "PERMITIDO" in r.text
+    # the browser rewrites UTC hours to the viewer's local time
+    assert 'data-utc-hours="9,13"' in r.text
 
 
 def test_profile_missing_shows_placeholder():
@@ -213,3 +216,17 @@ def test_user_url_escapes_ids_with_slashes_and_spaces():
     assert 'href="/users/acme%2Fana%20torres"' in panel.get("/").text
     r = panel.get("/users/acme%2Fana%20torres")
     assert r.status_code == 200 and 'aria-current="true"' in r.text
+
+
+def test_decision_time_is_machine_readable_for_local_conversion():
+    _, panel = blocked_setup()
+    r = panel.get("/")
+    assert re.search(r'<time class="ts" datetime="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z">\d{2}:\d{2}:\d{2} UTC</time>', r.text)
+
+
+def test_live_refresh_swaps_data_and_keeps_meta_refresh_only_without_js():
+    _, panel = blocked_setup()
+    r = panel.get("/")
+    assert '<noscript><meta http-equiv="refresh"' in r.text
+    assert r.text.count('http-equiv="refresh"') == 1
+    assert 'id="live-refresh"' in r.text
