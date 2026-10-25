@@ -125,12 +125,32 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
   - deja pasar las peticiones ante `401` o `429`.
 
   Mismos contratos (1, 2, 8 y 9 de `REPARTO.md`) y tests equivalentes a los del SDK de Python. Documentarlo junto al de Python en el panel, la landing y los READMEs.
-- **Mejorar el snippet de instalación,** que hoy se ve feo. Está en `edge/panel/templates/claves.html` (página de claves), `landing/index.html`, `README.md` y `sdk/python/README.md`. Que tenga:
-  - pestañas Python / Node;
-  - resaltado de sintaxis;
-  - botón de copiar;
-  - en el panel, la clave recién creada ya puesta en el snippet (se muestra una sola vez);
-  - el mismo estilo que los mockups aprobados.
+- **Mejorar la integración del SDK: el código mismo, no solo cómo se muestra.** Hoy:
+  - hay dos formas distintas de instalarlo: `sdk/python/README.md` envuelve la app (`app = VeridianMiddleware(app, ...)`) y el panel (`edge/panel/templates/claves.html`) muestra `app.add_middleware(...)`;
+  - el snippet del panel no tiene `base_url`, que es obligatorio, así que **copiado tal cual no funciona**;
+  - identificar al usuario se escribe `lambda request: request.state.user_id if hasattr(request.state, "user_id") else None`;
+  - nada explica qué hace cada parámetro.
+
+  Lo que hace falta:
+  1. **API más simple en el SDK** (`sdk/python/src/veridian_sdk/`; lo mismo en el de npm).
+     - **Valores por defecto:** la clave sale de `VERIDIAN_API_KEY` y la URL de `VERIDIAN_URL`, y si no hay URL se usa la del motor en producción. Así el caso mínimo es una línea más la función que identifica al usuario.
+     - **Identificar al usuario:** un parámetro claro, por ejemplo `user=lambda request: request.state.user.id`, con `None` sin errores cuando no hay sesión.
+     - **La sesión:** que se detecte sola cuando se pueda.
+     - **Una sola forma de instalarlo:** `app.add_middleware(VeridianMiddleware, ...)` en Python y `app.use(veridian({...}))` en Node.
+     - **Errores claros al arrancar** si falta la clave o la URL; hoy falla con `KeyError`.
+
+     Mantener la API actual funcionando, porque la usa la app de la demo.
+  2. **Un snippet completo y explicativo,** igual en el panel, la landing, `README.md` y los READMEs de los SDK. Que sea código que funcione copiado tal cual, comentado línea por línea, con:
+     - cómo instalar (`pip install veridian-sdk` / `npm install ...`);
+     - dónde poner la clave;
+     - cómo identificar al usuario según el framework;
+     - qué es `trusted_proxies` y cuándo cambiarlo;
+     - qué pasa si Veridian no responde (la app sigue funcionando);
+     - cómo comprobar que quedó conectado (qué aparece en el panel).
+  3. **Presentación:** pestañas Python / Node, resaltado de sintaxis, botón de copiar y, en el panel, la clave recién creada ya puesta en el snippet (se muestra una sola vez), con el estilo de los mockups aprobados.
+  4. **Tests:**
+     - el snippet publicado, ejecutado tal cual contra el motor falso, autentica y envía eventos;
+     - la API vieja sigue funcionando.
 
 **Ojo:** el último push del Dev 2 fue a las 06:02. Si dejó cambios sin commit en su laptop después de esa hora, no están en el repo.
 
