@@ -44,7 +44,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 4. **U13.** La parte 1 está hecha (`8ad03cb`): el hilo de purga y los endpoints del contrato 14.
    - El borrado por usuario es para admin+ y el borrado del proyecto, solo para owner. Así lo dice `DISENO-PRODUCTO.md` (contrato 14); este handoff decía "solo owner" para los dos.
    - **Falta:** eliminar `POST /v1/admin/reset` y `test_reset.py`, y cambiar los scripts de ensayo (`reset_client.py`, `test_rehearsal_scripts.py`) para que usen `DELETE /v1/projects/{id}/data` con el acceso del panel. Coordinarlo con la tarea 5 de Christian (preparar la demo).
-5. **Hecho en el motor real (2026-10-25): registro abierto.** `POST /v1/orgs` acepta a cualquier actor conocido; límite `VERIDIAN_MAX_ORGS_PER_PERSON` (3) de organizaciones vivas creadas por la persona, `409 {"error": "org_limit_reached", "limit"}`; `VERIDIAN_ORG_CREATORS` = sin límite. Contrato 10 actualizado. **Falta el mismo cambio en el motor falso (Maikol).** Lo que se pedía: (decisión 2, resuelta por Juan el 2026-10-25): `POST /v1/orgs` lo puede usar cualquier persona autenticada, no solo los correos de `VERIDIAN_ORG_CREATORS`. Lo necesita el registro en un paso de Maikol.
+5. **Hecho en el motor real (2026-10-25): registro abierto.** `POST /v1/orgs` acepta a cualquier actor conocido; límite `VERIDIAN_MAX_ORGS_PER_PERSON` (3) de organizaciones vivas creadas por la persona, `409 {"error": "org_limit_reached", "limit"}`; `VERIDIAN_ORG_CREATORS` = sin límite. Contrato 10 actualizado. **Falta el mismo cambio en el motor falso (José).** Lo que se pedía: (decisión 2, resuelta por Juan el 2026-10-25): `POST /v1/orgs` lo puede usar cualquier persona autenticada, no solo los correos de `VERIDIAN_ORG_CREATORS`. Lo necesita el registro en un paso de Maikol.
    - Poner un límite de organizaciones por persona para evitar abusos (decidir el número).
    - Actualizar el contrato 10 en `REPARTO.md` y los READMEs que describen `VERIDIAN_ORG_CREATORS`.
    - **Tests:** una persona sin invitación crea su organización y queda `owner`; pasado el límite recibe un error claro.
@@ -113,7 +113,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    1. **Entrar con Google o con GitHub** (OAuth). Google ya existe desde T3; falta GitHub. Sin formulario de registro aparte.
       - GitHub puede ocultar el correo del perfil: pedir el permiso `user:email` y usar el correo principal verificado.
       - La misma persona entrando con Google y con GitHub (mismo correo verificado) es una sola cuenta, no dos.
-   2. **Primera vez, sin organización:** el panel pide solo el nombre de la empresa y crea la organización (con la persona como `owner`) y su primer proyecto. Hoy eso está cerrado a los correos de `VERIDIAN_ORG_CREATORS`; el motor real lo abre Carlos (su tarea 5) y el motor falso, José.
+   2. **Primera vez, sin organización:** el panel pide solo el nombre de la empresa y crea la organización (con la persona como `owner`) y su primer proyecto. En el motor real ya está abierto (`7e18a33`, tarea 5 de Carlos): cualquier actor conocido, hasta `VERIDIAN_MAX_ORGS_PER_PERSON` (3) organizaciones creadas por persona; pasado el límite, `409 {"error": "org_limit_reached", "limit"}`, y el panel debe mostrar ese caso. Falta el mismo cambio en el motor falso (José), con esas formas exactas (contrato 10 de `REPARTO.md`).
    3. **Crear la clave de API** (la página de claves ya existe, contrato 12) y mostrar el snippet con esa clave ya puesta, listo para copiar. El snippet lo diseña Maikol; usar el mismo componente.
    4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
    - **Tests:** una persona nueva entra con Google o GitHub, crea su organización y su clave sin que nadie la invite; una persona con organización no vuelve a ver el paso 2; la misma persona con los dos proveedores es una sola cuenta.
@@ -141,7 +141,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 - **El middleware no tomó la lista nueva después de un reset.** En el ensayo hubo que reiniciar `veridian-demo` en Render. No está investigado; ver la tarea 5 de Christian.
 
 **Para coordinar con el motor real:**
-- El motor real tiene los contratos 10, 11, 12 y 13 y el acceso del panel (U6), con las mismas formas que el motor falso. **Le falta el 15** (auditoría), asignado a Carlos.
+- El motor real tiene los contratos 10 a 15 y el acceso del panel (U6), con las mismas formas que el motor falso (el 15 es `b637776`).
 - Diferencias conocidas con el motor falso:
   - todos los proyectos legacy quedan en una sola organización, "Demo";
   - los ids son `prj_` y `org_`;
