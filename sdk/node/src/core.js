@@ -2,9 +2,12 @@
 // describe each request as a plain object and call before() and finish().
 import { randomUUID } from 'node:crypto';
 import { detectSession, parseCookies, newDeviceId, DEVICE_COOKIE } from './identity.js';
+import { REPORTED_METHODS, normalizeTemplate } from './routes.js';
 
 export const MAX_BATCH = 200;
 export const BLOCKED_BODY = '{"error":"blocked"}';
+export const MAX_REPORTED_ROUTES = 1000;
+export const MAX_ROUTE_TEXT = 2000;
 
 export class Veridian {
   /** @param {ReturnType<import('./config.js').resolveConfig>} config */
@@ -15,6 +18,9 @@ export class Veridian {
     this.blocked = { users: new Set(), sessions: new Set(), ips: new Set() };
     this.timers = [];
     this.flushing = false;
+    this.critical = new Set(); // "METHOD route template"; last known
+    this.routesSource = typeof config.routes === 'function' ? config.routes : Array.isArray(config.routes) ? () => config.routes : null;
+    this.reporting = false;
   }
 
   // --- HTTP to the engine (never throws out of the background tasks) -----------------
@@ -86,12 +92,18 @@ export class Veridian {
       return { blocked: true, deviceId: cookieDevice, newDevice: false };
     }
     const newDevice = cookieDevice === null;
-    return {
-      blocked: false,
-      deviceId: cookieDevice ?? newDeviceId(),
-      newDevice,
-      eventId: 'e_' + randomUUID().replaceAll('-', ''),
-    };
+    const deviceId = cookieDevice ?? newDeviceId();
+    const eventId = 'e_' + randomUUID().replaceAll('-', '');
+    if (this.critical.size) {
+      const route = info.routeBeforeRun();
+      if (this.critical.has(`${info.method.toUpperCase()} ${route}`) && await this.checkBlocks(info, deviceId, route, eventId)) {
+        // Same id as the pre-check. The engine keeps the first write of an id, so the 403
+        // only reaches it when the pre-check never got through; no cookie either.
+        await this.record(info, deviceId, 403, BLOCKED_BODY.length, { route, eventId });
+        return { blocked: true, deviceId, newDevice: false };
+      }
+    }
+    return { blocked: false, deviceId, newDevice, eventId };
   }
 
   /** The app has answered: report the request. */
@@ -173,6 +185,99 @@ export class Veridian {
     }
   }
 
+  // --- critical routes (contract 8) and the pre-check (contract 9) ---------------------
+
+  /** Read the route classification once. Any failure keeps the last known set. */
+  async refreshRoutes() {
+    try {
+      const { status, body } = await this.http('GET', '/v1/routes');
+      if (status !== 200 || !body || !Array.isArray(body.routes)) return;
+      const critical = new Set();
+      for (const row of body.routes) {
+        if (typeof row?.method !== 'string' || typeof row.route !== 'string') throw new TypeError('bad route row');
+        if (row.class === 'critical') critical.add(`${row.method.toUpperCase()} ${row.route}`);
+      }
+      this.critical = critical;
+    } catch (err) {
+      this.config.logger.warn(`veridian: routes refresh failed: ${err?.message ?? err}`);
+    }
+  }
+
+  /**
+   * Ask the engine whether this critical request must be refused. True only on an explicit
+   * `block`; every failure answers false (fail-open).
+   *
+   * The engine stores the first event it sees for an id, so the pre-check carries the id the
+   * batched event will have, status 200 (the engine accepts 100-599 only; the app has not run)
+   * and bytes 0. The engine needs a user and a session to judge, so without them, or without
+   * an IP, the check is skipped.
+   */
+  async checkBlocks(info, deviceId, route, eventId) {
+    try {
+      const event = await this.buildEvent(info, deviceId, 200, 0, { route, eventId });
+      if (!event || !event.session_id || !event.ip) return false;
+      const { status, body } = await this.http('POST', '/v1/check', { json: { event }, timeout: this.config.checkTimeout });
+      return status === 200 && body !== null && typeof body === 'object' && body.verdict === 'block';
+    } catch (err) {
+      this.config.logger.warn(`veridian: check failed, letting the request through: ${err?.message ?? err}`);
+      return false;
+    }
+  }
+
+  // --- route report (contract 16) ------------------------------------------------------
+
+  /** Where the app's routes come from (the Express adapter plugs its router in here). */
+  setRoutesSource(source) {
+    if (this.routesSource) return; // an explicit `routes` option wins
+    this.routesSource = source;
+    this.startReport();
+  }
+
+  /** Method, route and text of every route; only what the contract accepts. */
+  async reportedRoutes() {
+    const raw = this.routesSource ? await this.routesSource() : null;
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const routes = [];
+    for (const r of raw) {
+      const method = String(r?.method ?? '').toUpperCase();
+      const route = r?.route === undefined ? '' : normalizeTemplate(r.route);
+      if (!REPORTED_METHODS.includes(method) || !route.startsWith('/') || this.isExcluded(route)) continue;
+      if (seen.has(method + ' ' + route)) continue;
+      seen.add(method + ' ' + route);
+      routes.push({
+        method, route,
+        summary: String(r.summary ?? '').slice(0, MAX_ROUTE_TEXT),
+        description: String(r.description ?? '').slice(0, MAX_ROUTE_TEXT),
+      });
+    }
+    return routes.slice(0, MAX_REPORTED_ROUTES);
+  }
+
+  /** Send the app's routes once. True when done (or nothing to send); never throws. */
+  async reportRoutes() {
+    try {
+      const routes = await this.reportedRoutes();
+      if (routes.length === 0) return true;
+      const { status } = await this.http('PUT', '/v1/routes/catalog', { json: { routes } });
+      return status === 200;
+    } catch (err) {
+      this.config.logger.warn(`veridian: route report failed: ${err?.message ?? err}`);
+      return false;
+    }
+  }
+
+  startReport() {
+    if (!this.config.background || !this.config.reportRoutes || !this.routesSource || this.reporting || !this.timers.length) return;
+    this.reporting = true;
+    const timer = setInterval(async () => {
+      if (await this.reportRoutes()) clearInterval(timer);
+    }, this.config.routesPollInterval);
+    timer.unref();
+    this.timers.push(timer);
+    this.reportRoutes().then((done) => { if (done) clearInterval(timer); });
+  }
+
   // --- background ----------------------------------------------------------------------
 
   /** Run `fn` now and every `ms`, never overlapping itself; the timer does not keep the process alive. */
@@ -193,10 +298,13 @@ export class Veridian {
     if (!this.config.background || this.timers.length) return;
     this.loop(() => this.flush(), this.config.flushInterval);
     this.loop(() => this.refreshBlocklist(), this.config.pollInterval);
+    this.loop(() => this.refreshRoutes(), this.config.routesPollInterval);
+    this.startReport();
   }
 
   close() {
     for (const t of this.timers) clearInterval(t);
     this.timers = [];
+    this.reporting = false;
   }
 }

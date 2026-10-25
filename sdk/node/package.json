@@ -10,13 +10,35 @@
     "./express": "./src/index.js",
     "./next": "./src/next.js"
   },
-  "files": ["src", "README.md", "LICENSE"],
-  "engines": { "node": ">=18" },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node --test"
   },
-  "repository": { "type": "git", "url": "git+https://github.com/Juanalv1/veridian.git", "directory": "sdk/node" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Juanalv1/veridian.git",
+    "directory": "sdk/node"
+  },
   "homepage": "https://github.com/Juanalv1/veridian",
-  "bugs": { "url": "https://github.com/Juanalv1/veridian/issues" },
-  "keywords": ["security", "middleware", "express", "nextjs", "credentials"]
+  "bugs": {
+    "url": "https://github.com/Juanalv1/veridian/issues"
+  },
+  "keywords": [
+    "security",
+    "middleware",
+    "express",
+    "nextjs",
+    "credentials"
+  ],
+  "devDependencies": {
+    "express": "^5.3.0",
+    "express4": "npm:express@^4.22.3"
+  }
 }
