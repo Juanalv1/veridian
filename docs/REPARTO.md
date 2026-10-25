@@ -156,10 +156,12 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
   "networks": ["190.202.14.0/24"],
   "devices": ["d_9f3"],
   "hours": [9, 13],
-  "routes": ["/invoices", "/invoices/{id}"],
+  "routes": ["GET /invoices", "GET /invoices/{id}"],
   "state": "blocked"
 }
 ```
+
+- **`routes` incluye el método** (`"GET /invoices"`), igual que la clasificación de rutas: `GET` y `POST` sobre la misma ruta son usos distintos.
 
 ## Primer hito de cada dev
 
