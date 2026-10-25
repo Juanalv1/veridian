@@ -49,6 +49,31 @@
     });
   }
   wireCopy();
+  // Tabs of the SDK snippet (WAI-ARIA tabs: click, arrows, Home/End). Without JS the Python tab stays open.
+  function wireTabs() {
+    document.querySelectorAll('[role="tablist"]').forEach(function (list) {
+      var tabs = Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+      function select(tab) {
+        tabs.forEach(function (t) {
+          var on = t === tab;
+          t.setAttribute("aria-selected", on ? "true" : "false");
+          t.tabIndex = on ? 0 : -1;
+          document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+        });
+        tab.focus();
+      }
+      tabs.forEach(function (tab, i) {
+        tab.addEventListener("click", function () { select(tab); });
+        tab.addEventListener("keydown", function (e) {
+          var j = { ArrowRight: (i + 1) % tabs.length, ArrowLeft: (i - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 }[e.key];
+          if (j === undefined) return;
+          e.preventDefault();
+          select(tabs[j]);
+        });
+      });
+    });
+  }
+  wireTabs();
   var pointerDown = false;
   document.addEventListener("pointerdown", function () { pointerDown = true; }, true);
   document.addEventListener("pointerup", function () { setTimeout(function () { pointerDown = false; }, 0); }, true);

@@ -115,6 +115,7 @@
         <div class="codecard-head">
           <div role="tablist" aria-label="Lenguaje" class="tabs">
             <button type="button" role="tab" id="tab-python" aria-selected="true" aria-controls="panel-python" tabindex="0">Python</button>
+            <button type="button" role="tab" id="tab-node" aria-selected="false" aria-controls="panel-node" tabindex="-1">Node</button>
           </div>
           <a class="ver" href="https://pypi.org/project/veridian-sdk/" rel="noopener">v0.2.0</a>
         </div>
@@ -156,6 +157,11 @@ app.add_middleware(
 <span class="c"># Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</span>
 <span class="c"># Para comprobar la conexión: entra a tu app con un usuario y, en unos segundos,</span>
 <span class="c"># ese acceso aparece en Actividad, en el panel de Veridian.</span></code></pre>
+          </div>
+        </div>
+        <div role="tabpanel" id="panel-node" aria-labelledby="tab-node" class="panel" hidden>
+          <div class="codestep">
+            <p class="lead">El SDK de Node (Express y Next.js) está en preparación. Mientras tanto, usa el de Python.</p>
           </div>
         </div>
         <div class="codecard-foot">

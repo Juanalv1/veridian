@@ -1,0 +1,64 @@
+{# The SDK snippet: keys page and signup. `key` is the key just created (shown once) or None for a placeholder.
+   The Python code must match sdk/python/examples/quickstart.py exactly (tests/test_sdk_api.py checks it). #}
+{% macro sdk_snippet(key=None) -%}
+<div class="sn">
+  <div class="sn-head">
+    <div role="tablist" aria-label="Lenguaje" class="sn-tabs">
+      <button type="button" role="tab" id="snippet-tab-python" aria-selected="true" aria-controls="snippet-panel-python" tabindex="0">Python</button>
+      <button type="button" role="tab" id="snippet-tab-node" aria-selected="false" aria-controls="snippet-panel-node" tabindex="-1">Node</button>
+    </div>
+  </div>
+  <div class="sn-step">
+    <div class="sn-step-head">
+      <span class="sn-name"><b>1</b> Pon la clave en el entorno de tu app, nunca en el código</span>
+      <button class="btn btn-secondary" type="button" data-copy-from="snippet-env" hidden>Copiar</button>
+    </div>
+    <pre class="tm-snippet"><code id="snippet-env">VERIDIAN_API_KEY={{ key or 'vrd_...' }}</code></pre>
+  </div>
+  <div role="tabpanel" id="snippet-panel-python" aria-labelledby="snippet-tab-python" class="sn-panel">
+    <div class="sn-step">
+      <div class="sn-step-head">
+        <span class="sn-name"><b>2</b> Instala el SDK</span>
+        <button class="btn btn-secondary" type="button" data-copy="pip install veridian-sdk" hidden>Copiar</button>
+      </div>
+      <pre class="tm-snippet"><code><span class="c">$</span> pip install veridian-sdk</code></pre>
+    </div>
+    <div class="sn-step">
+      <div class="sn-step-head">
+        <span class="sn-name"><b>3</b> Agrega el middleware (FastAPI, Starlette o cualquier app ASGI)</span>
+        <button class="btn btn-secondary" type="button" data-copy-from="snippet-python" hidden>Copiar código</button>
+      </div>
+      <pre class="tm-snippet"><code id="snippet-python"><span class="c"># 1. Instala el SDK:            pip install veridian-sdk</span>
+<span class="c"># 2. Pon tu clave en el entorno (nunca en el código), la que creaste en el panel:</span>
+<span class="c">#                               VERIDIAN_API_KEY=vrd_...</span>
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> veridian_sdk <span class="k">import</span> VeridianMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    VeridianMiddleware,
+    <span class="c"># Quién hace la petición: el id de tu usuario, o None si nadie inició sesión.</span>
+    <span class="c"># Si nadie inició sesión y request.state.user no existe, cuenta como None, sin errores.</span>
+    <span class="c"># Corre antes de tus rutas: si tu login pone el usuario en request.state desde</span>
+    <span class="c"># otro middleware, agrega ese middleware después de este, así corre primero.</span>
+    user=<span class="k">lambda</span> request: request.state.user.id,
+    <span class="c"># Cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1).</span>
+    <span class="c"># Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.</span>
+    trusted_proxies=0,
+)
+
+<span class="c"># La sesión se detecta sola: cookie sessionid, connect.sid, sid, session_id, PHPSESSID</span>
+<span class="c"># o JSESSIONID, o el token Bearer. Veridian solo recibe un hash, nunca el valor.</span>
+<span class="c"># Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</span>
+<span class="c"># Para comprobar la conexión: entra a tu app con un usuario y, en unos segundos,</span>
+<span class="c"># ese acceso aparece en Actividad, en el panel de Veridian.</span></code></pre>
+    </div>
+  </div>
+  <div role="tabpanel" id="snippet-panel-node" aria-labelledby="snippet-tab-node" class="sn-panel" hidden>
+    <div class="sn-step">
+      <p class="tm-reveal-text">El SDK de Node (Express y Next.js) está en preparación. Cuando se publique, este paso mostrará cómo instalarlo y conectarlo con la misma clave.</p>
+    </div>
+  </div>
+</div>
+{%- endmacro %}

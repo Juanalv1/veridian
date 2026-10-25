@@ -356,6 +356,6 @@ def test_the_landing_shows_the_quickstart_exactly():
 
 
 def test_the_panel_template_shows_the_quickstart_exactly():
-    page = (REPO / "edge" / "panel" / "templates" / "claves.html").read_text(encoding="utf-8")
+    page = (REPO / "edge" / "panel" / "templates" / "partials" / "snippet.html").read_text(encoding="utf-8")
     block = re.search(r'<code id="snippet-python"[^>]*>(.*?)</code>', page, flags=re.S)
     assert block and code_lines(visible_text(block.group(1))) == code_lines(snippet_code())
