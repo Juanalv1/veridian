@@ -476,9 +476,19 @@ def test_actividad_collapses_the_sidebar_to_an_icon_rail_on_desktop():
     # The list-detail view needs the width; the rail keeps icons, the badge and the live dot.
     css = full().panel().get("/static/panel.css").text
     desktop = css[css.index("@media (min-width:901px)"):]
-    assert re.search(r"\.shell:has\(\.view-actividad\) \.side \{[^}]*width:72px", desktop)
+    assert re.search(r'\.shell:is\(\[data-rail="on"\], :not\(\[data-rail="off"\]\):has\(\.view-actividad\)\) \.side \{[^}]*width:72px', desktop)
     # Labels are hidden visually but stay in the accessible name.
-    assert re.search(r"\.shell:has\(\.view-actividad\) \.nav-label[^{]*\{[^}]*clip", desktop)
+    assert re.search(r'\.shell:is\(\[data-rail="on"\], :not\(\[data-rail="off"\]\):has\(\.view-actividad\)\) \.nav-label[^{]*\{[^}]*clip', desktop)
     html = full().panel().get("/actividad").text
     nav = re.search(r'<nav[^>]*aria-label="Secciones"[^>]*>(.*?)</nav>', html, re.S).group(1)
     assert re.findall(r'<a [^>]*title="([^"]+)"', nav) == ["Resumen", "Actividad", "Usuarios", "Rutas críticas", "Proyectos", "Miembros"]
+
+
+def test_the_sidebar_has_a_rail_toggle_that_remembers_the_choice():
+    # The button ships hidden and panel.js reveals it, so without JS nothing dead is shown.
+    html = full().panel().get("/").text
+    assert re.search(r'<button class="rail-btn"[^>]*aria-controls="side"[^>]*hidden', html)
+    # The saved choice is applied before the sidebar paints, so it never flashes open then closed.
+    assert html.index('localStorage.getItem("vrd-rail")') < html.index('<aside id="side"')
+    css = full().panel().get("/static/panel.css").text
+    assert '.shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .side' in css

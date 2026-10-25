@@ -248,6 +248,7 @@
       opts.link.setAttribute("aria-current", "true");
     }
     setNav(view);
+    if (railBtn) syncRail();
     var hit = lookup(key, opts.ttl);
     if (hit && !hit.promise) return apply(hit);
     navigating = true;
@@ -296,7 +297,7 @@
   var railBtn = document.querySelector(".rail-btn"), shell = document.querySelector(".shell");
   function railOn() {
     var r = shell.getAttribute("data-rail");
-    return r ? r === "on" : !!document.querySelector(".view-actividad");
+    return r ? r === "on" : !!document.querySelector('.nav-link[data-nav="actividad"][aria-current]');
   }
   function syncRail() {
     var label = railOn() ? "Expandir menú" : "Colapsar menú";
@@ -313,7 +314,6 @@
       try { localStorage.setItem("vrd-rail", next); } catch (e) {}
       syncRail();
     });
-    document.body.addEventListener("htmx:afterSettle", syncRail);
   }
 
   // The panel shows "today" in the viewer's time zone: tell the server the offset (minutes east of UTC).
