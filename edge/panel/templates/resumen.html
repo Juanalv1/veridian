@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block head_extra %}<noscript><meta http-equiv="refresh" content="{{ refresh }};url={{ refresh_url }}"></noscript>{% endblock %}
+{% block content %}
+{% from "partials/macros.html" import live_attrs %}
+<main {{ live_attrs(refresh_url, "resumen", refresh) }}>
+  <div class="page-head">
+    <span class="eyebrow">HOY</span>
+    {% if engine_error %}
+      <h1 class="page-title">Resumen</h1>
+      <div class="note warn">{{ engine_error }}</div>
+    {% else %}
+      <h1 class="page-title">{{ overview.headline }}</h1>
+    {% endif %}
+  </div>
+
+  {% if overview.tiles %}
+  <div class="kpis">
+    {% for t in overview.tiles %}
+    <div class="kpi">
+      <span class="kpi-label">{{ t.label }}</span>
+      <span class="kpi-value{% if t.tone %} {{ t.tone }}{% endif %}">{{ t.value }}</span>
+      {% if t.sub %}<span class="kpi-sub">{{ t.sub }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if overview.chart %}
+  <section class="panel-box" aria-labelledby="chart-title">
+    <div class="panel-box-head">
+      <h2 id="chart-title">Accesos por hora</h2>
+      {% if not overview.chart.empty %}<span class="legend"><span class="legend-dot" aria-hidden="true"></span>Hora con un bloqueo</span>{% endif %}
+    </div>
+    {% if overview.chart.empty %}
+      <p class="muted-line">Sin accesos {{ overview.chart.window }}.</p>
+    {% else %}
+      {% set c = overview.chart %}
+      <div class="chart" role="img" aria-label="{{ c.aria }}" style="--cols:{{ c.bars | length }}">
+        <div class="axis" aria-hidden="true">{% for v in c.axis %}<span>{{ v }}</span>{% endfor %}</div>
+        {% for b in c.bars %}
+        <div class="bar{% if b.blocks %} has-block{% endif %}" style="--h:{{ b.pct }}%"><span class="tip">{{ b.tip }}</span>{% if b.blocks %}<span class="marker"></span>{% endif %}<div class="fill" style="height:{{ b.pct }}%"></div></div>
+        {% endfor %}
+      </div>
+      <div class="chart-labels" aria-hidden="true" style="--cols:{{ c.bars | length }}"><span></span>{% for b in c.bars %}<span>{{ b.label }}</span>{% endfor %}</div>
+      <p class="chart-window">{{ c.window | capitalize }}</p>
+      <table class="vh">
+        <caption>Accesos por hora, {{ c.window }}</caption>
+        <thead><tr><th scope="col">Hora</th><th scope="col">Accesos</th><th scope="col">Bloqueos</th></tr></thead>
+        <tbody>{% for b in c.bars %}<tr><th scope="row">{{ b.label }} h</th><td>{{ b.accesses }}</td><td>{{ b.blocks }}</td></tr>{% endfor %}</tbody>
+      </table>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if not engine_error %}
+  <div class="two-up">
+    <section class="flat" aria-labelledby="blocks-title">
+      <h2 id="blocks-title">Bloqueos activos</h2>
+      {% for d in overview.blocks %}
+        <a class="flat-row blocks-row" href="{{ d.href }}">
+          <span class="state block"><span class="state-dot" aria-hidden="true"></span>Bloqueado</span>
+          <span class="mono clip">{{ d.user_id }}{% if d.action %} · {{ d.action }}{% endif %}</span>
+          <time class="ts mono muted-time" data-hm datetime="{{ d.ts }}">{{ d.time[:5] }} UTC</time>
+        </a>
+      {% else %}
+        <p class="muted-line">Ningún bloqueo activo.</p>
+      {% endfor %}
+    </section>
+
+    <section class="flat" aria-labelledby="users-title">
+      <h2 id="users-title">Usuarios</h2>
+      {% if overview.users is none %}
+        <p class="muted-line">{{ "Sin lista de usuarios todavía." }}</p>
+      {% endif %}
+      {% for u in overview.users or [] %}
+        {% if u.href %}<a class="flat-row users-row" href="{{ u.href }}">{% else %}<div class="flat-row users-row">{% endif %}
+          <span class="mono clip">{{ u.user_id }}</span>
+          <span class="muted-time">{{ u.detail }}</span>
+          <span class="state {{ u.kind }}"><span class="state-dot" aria-hidden="true"></span>{{ u.word }}</span>
+        {% if u.href %}</a>{% else %}</div>{% endif %}
+      {% endfor %}
+      {% if overview.more_users %}<a class="more-link" href="/usuarios">Ver todos ({{ overview.users | length + overview.more_users }})</a>{% endif %}
+    </section>
+  </div>
+  {% endif %}
+</main>
+{% endblock %}

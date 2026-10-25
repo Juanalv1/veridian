@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block head_extra %}<noscript><meta http-equiv="refresh" content="{{ refresh }};url={{ refresh_url }}"></noscript>{% endblock %}
+{% block content %}
+{% from "partials/macros.html" import live_attrs %}
+<main {{ live_attrs(refresh_url, "usuarios", refresh) }}>
+  <div class="page-head">
+    <h1 class="page-title">Usuarios</h1>
+    {% if engine_error %}<div class="note warn">{{ engine_error }}</div>{% endif %}
+  </div>
+  {% if rows is none %}
+    {% if not engine_error %}<div class="note">{{ no_users }}</div>{% endif %}
+  {% elif not rows %}
+    <div class="note">Todavía no hay usuarios.</div>
+  {% else %}
+  <div class="box">
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th scope="col">Usuario</th><th scope="col">Estado</th><th scope="col">Historial</th>
+          <th scope="col">Redes</th><th scope="col">Dispositivos</th><th scope="col">Último acceso</th><th scope="col">Bloqueos abiertos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in rows %}
+        <tr>
+          <th scope="row">{% if u.href %}<a class="mono" href="{{ u.href }}">{{ u.user_id }}</a>{% else %}<span class="mono">{{ u.user_id }}</span>{% endif %}</th>
+          <td><span class="state {{ u.kind }}"><span class="state-dot" aria-hidden="true"></span>{{ u.word }}</span></td>
+          <td>{% if u.history is not none %}{{ u.history }} {{ 'día' if u.history == 1 else 'días' }}{% else %}—{% endif %}</td>
+          <td>{{ u.networks if u.networks is not none else '—' }}</td>
+          <td>{{ u.devices if u.devices is not none else '—' }}</td>
+          <td>{% if u.last_seen %}<time class="ts" data-day datetime="{{ u.last_seen }}">{{ u.last_seen[11:19] }} UTC</time>{% else %}—{% endif %}</td>
+          <td>{{ u.open_blocks }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</main>
+{% endblock %}

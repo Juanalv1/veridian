@@ -45,12 +45,15 @@ USERS = {"users": [
      "last_seen": "2026-10-26T13:40:10Z", "open_blocks": 0}]}
 
 
+ACTIVITY_DEFAULT = object()
+
+
 class Engine:
     """Canned engine. None for summary/users/activity means the endpoint answers 404."""
 
-    def __init__(self, decisions=None, activity=None, summary_body=None, users=None, blocklist=None, down=False):
+    def __init__(self, decisions=None, activity=ACTIVITY_DEFAULT, summary_body=None, users=None, blocklist=None, down=False):
         self.decisions = [dec()] if decisions is None else decisions
-        self.activity = [act()] if activity is None else activity
+        self.activity = [act()] if activity is ACTIVITY_DEFAULT else activity
         self.summary_body, self.users, self.down = summary_body, users, down
         self.blocklist = {"version": 1, "users": [], "sessions": ["s"], "ips": ["203.0.113.9"]} if blocklist is None else blocklist
         self.requests = []
@@ -208,7 +211,7 @@ def test_tiles_show_the_engine_numbers_and_nothing_hardcoded():
     assert tile(html, "Accesos vigilados") == "137 de 9 usuarios"
     assert tile(html, "Bloqueos activos") == "1 3 sesiones y 1 IP"
     ai = tile(html, "Consultas a la IA")
-    assert ai == "5 por 137 accesos vigilados" and "%" not in html
+    assert ai == "5 por 137 accesos vigilados" and "% de los accesos" not in html
     assert "Revisados por la IA" not in html
     assert 'class="kpi-value block"' in html  # active blocks use the block color
 
@@ -336,3 +339,62 @@ def test_poll_response_of_each_page_carries_the_sidebar_status_for_oob_swap():
     live = re.search(r'<main id="live"[^>]*>', html).group(0)
     assert 'hx-select-oob="#conn,#nav-badge"' in live
     assert 'id="nav-badge"' in html and 'id="conn"' in html
+
+
+# -- selection follows the clicked row ---------------------------------------------------------------
+
+def two_rows_one_decision():
+    acts = [act("e_403", ts="2026-10-26T14:20:00Z", status=403, decision_id="d_1", verdict="block"),
+            act("e_trigger", ts="2026-10-26T14:14:03Z", method="POST", route="/payouts/bank-account", status=200,
+                decision_id="d_1", verdict="block"),
+            act("e_ok", ts="2026-10-26T14:00:00Z", verdict="normal", decision_id=None, user="u_9", status=200, ip="9.9.9.9")]
+    return Engine(decisions=[dec(event_ids=["e_trigger"])], activity=acts, summary_body=summary(), users=USERS)
+
+
+def selected_rows(html):
+    return re.findall(r'<a data-row="(ev-[^"]+)"[^>]*aria-current="true"', html)
+
+
+def test_clicked_row_is_the_selected_one_and_its_url_is_the_events():
+    html = two_rows_one_decision().panel().get("/actividad/e_403").text
+    assert selected_rows(html) == ["ev-e_403"]
+    assert 'hx-get="/actividad/e_403"' in html  # the poll keeps the selection
+    assert "Bloqueado" in re.search(r"<h1.*?</h1>", html, re.S).group(0)
+
+
+def test_other_row_of_the_same_decision_selects_only_itself_and_explains_the_detail():
+    e = two_rows_one_decision()
+    html = e.panel().get("/actividad/e_403").text
+    note = re.search(r'<span class="selected-note">(.*?)</span>', html, re.S)
+    assert note and "Este acceso: detenido (403) · parte del bloqueo de las" in text(note.group(1))
+    assert 'datetime="2026-10-26T14:14:05Z"' in note.group(1)  # the decision's time
+    html = e.panel().get("/actividad/e_trigger").text
+    assert selected_rows(html) == ["ev-e_trigger"] and "selected-note" not in html
+
+
+def test_decision_url_still_selects_the_triggering_row():
+    html = two_rows_one_decision().panel().get("/users/u_1/decisions/d_1").text
+    assert selected_rows(html) == ["ev-e_trigger"] and "selected-note" not in html
+
+
+def test_detail_header_shows_the_triggering_access_time_not_the_decision_time():
+    html = two_rows_one_decision().panel().get("/users/u_1/decisions/d_1").text
+    meta = re.search(r'<span class="meta">(.*?)</span>\s*<h1', html, re.S).group(1)
+    assert 'datetime="2026-10-26T14:14:03Z"' in meta and "14:14:03 UTC" in meta and "14:14:05" not in meta
+
+
+def test_normal_row_shows_a_compact_access_detail_without_verdict():
+    html = two_rows_one_decision().panel().get("/actividad/e_ok").text
+    assert selected_rows(html) == ["ev-e_ok"]
+    detail = re.search(r'<section id="detalle".*?</section>', html, re.S).group(0)
+    assert "Acceso normal" in detail and "<h1" not in detail and "Esto era normal" not in detail
+    t = text(detail)
+    for part in ("u_9", "GET /invoices", "200", "9.9.9.9"):
+        assert part in t
+    assert 'datetime="2026-10-26T14:00:00Z"' in detail
+
+
+def test_unknown_event_falls_back_to_the_default_selection():
+    html = two_rows_one_decision().panel().get("/actividad/e_nope").text
+    assert selected_rows(html) == ["ev-e_403"] or len(selected_rows(html)) == 1
+    assert "<h1" in html

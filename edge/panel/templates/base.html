@@ -1,3 +1,4 @@
+{% from "partials/macros.html" import nav_icon %}
 <!doctype html>
 <html lang="es">
 <head>
@@ -6,26 +7,43 @@
 <meta name="htmx-config" content='{"historyCacheSize":0,"includeIndicatorStyles":false}'>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Veridian · Panel</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v={{ asset_version }}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&amp;family=IBM+Plex+Sans:wght@400;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
 <link rel="stylesheet" href="/static/tokens.css?v={{ asset_version }}">
 <link rel="stylesheet" href="/static/panel.css?v={{ asset_version }}">
+<noscript><style>.side { display:flex !important; } .menu-btn { display:none !important; }</style></noscript>
 </head>
 <body hx-ext="preload">
-<header>
-  <div class="wrap">
+<div class="shell">
+  <header class="topbar">
+    <a class="wordmark-link" href="/"><img src="/static/mark.svg?v={{ asset_version }}" alt="" width="26" height="26"><span class="wordmark">Veridian</span></a>
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="side">Menú</button>
+  </header>
+  <aside id="side" class="side">
     <div class="brand">
-      <span class="wordmark">Veridian</span>
+      <a class="wordmark-link" href="/"><img src="/static/mark.svg?v={{ asset_version }}" alt="" width="26" height="26"><span class="wordmark">Veridian</span></a>
       <span class="app">Panel</span>
     </div>
-    <div id="conn" class="conn{% if engine_error %} down{% endif %}" role="status">
-      <span class="dot" aria-hidden="true"></span>
-      <span>{% if engine_error %}Motor sin conexión{% else %}En vivo{% endif %}</span>
+    <nav aria-label="Secciones" class="sections" hx-boost="true" hx-target="#live" hx-select="#live" hx-swap="outerHTML"
+         hx-sync="closest a:replace" preload="mouseenter">
+      {% for key, href, label in sections %}
+        <a class="nav-link" data-nav="{{ key }}" href="{{ href }}"{% if key == section %} aria-current="page"{% endif %}>
+          {{ nav_icon(key) }}
+          <span class="nav-label">{{ label }}</span>
+          {% if key == 'actividad' %}<span id="nav-badge">{% if nav_blocks %}<span class="badge" aria-hidden="true">{{ nav_blocks }}</span><span class="vh">{{ nav_blocks_text }}</span>{% endif %}</span>{% endif %}
+        </a>
+      {% endfor %}
+    </nav>
+    <div id="conn" class="conn-card conn{% if engine_error %} down{% endif %}" role="status"{% if last_access and not engine_error %} data-last-access="{{ last_access }}"{% endif %}>
+      <span class="conn-line"><span class="dot" aria-hidden="true"></span><span class="conn-label">{% if engine_error %}Motor sin conexión{% else %}En vivo{% endif %}</span></span>
+      {% if last_access and not engine_error %}<span class="last-access">último acceso hace <span class="ago">…</span></span>{% endif %}
     </div>
-  </div>
-</header>
-
+  </aside>
+  <div class="content">
 {% block content %}{% endblock %}
+  </div>
+</div>
 <script src="/static/htmx.min.js?v={{ asset_version }}"></script>
 <script src="/static/preload.js?v={{ asset_version }}"></script>
 <script src="/static/panel.js?v={{ asset_version }}"></script>

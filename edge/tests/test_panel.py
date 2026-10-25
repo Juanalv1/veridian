@@ -148,7 +148,7 @@ def test_marked_normal_block_shows_lifted_muted_line_and_no_button():
     assert "Bloqueo levantado" in r.text
     assert "Marcado como normal. Veridian lo suma al perfil de u_42." in r.text
     assert "Esto era normal" not in r.text
-    assert "<button" not in r.text
+    assert 'class="btn' not in r.text
 
 
 def test_post_mark_normal_calls_engine_and_redirects():
@@ -234,7 +234,7 @@ def test_nav_verdict_words():
     ds = [dec(id="d_1", decision="block"), dec(id="d_2", decision="alert"),
           dec(id="d_3", decision="allow"), dec(id="d_4", decision="step_up"),
           dec(id="d_5", decision="block", status="marked_normal")]
-    nav = stub_panel(ds).get("/actividad").text.split("</nav>")[0]
+    nav = re.search(r'<nav aria-label="Decisiones recientes".*?</nav>', stub_panel(ds).get("/actividad").text, re.S).group(0)
     for word in ("Bloqueado", "Alerta", "Permitido", "Segundo factor", "Levantado"):
         assert word in nav
 
@@ -363,7 +363,7 @@ def test_live_region_polls_with_htmx_and_swaps_region_and_status():
     did = re.search(r'hx-get="([^"]+)"', live).group(1)
     assert did.startswith("/users/u_42/decisions/")
     assert 'hx-trigger="every 2s [refreshAllowed()]"' in live
-    assert 'hx-select="#live"' in live and 'hx-select-oob="#conn"' in live
+    assert 'hx-select="#live"' in live and 'hx-select-oob="#conn,#nav-badge"' in live
     assert 'hx-swap="outerHTML' in live
     assert 'id="conn"' in r.text and 'role="status"' in r.text
     # the polled URL is the canonical page
@@ -515,12 +515,13 @@ def test_feed_replaces_the_decisions_nav_when_the_engine_has_activity():
     assert 'aria-label="Actividad"' in html and "Actividad</span>" in html
 
 
-def test_rows_with_a_decision_link_to_its_detail_and_others_do_not():
-    acts = [act("e_2", user="u 1", verdict="block", decision_id="d_1"), act("e_1")]
+def test_every_row_links_to_its_own_event_url():
+    acts = [act("e_2", user="u 1", verdict="block", decision_id="d_1"), act("e_1"), act("e/3 x", decision_id=None, verdict="normal")]
     html = stub_panel([dec(user="u 1", event_ids=["e_2"])], activity=acts).get("/actividad").text
     r = rows(html)
-    assert r[0].startswith("<a") and 'href="/users/u%201/decisions/d_1"' in r[0]
-    assert r[1].startswith("<div") and "href" not in r[1]
+    assert r[0].startswith("<a") and 'href="/actividad/e_2"' in r[0]
+    assert all(x.startswith("<a") for x in r)
+    assert 'href="/actividad/e_1"' in r[1] and 'href="/actividad/e%2F3%20x"' in r[2]
     assert 'hx-boost="true"' in re.search(r"<nav[^>]*>", feed(html)).group(0)
 
 

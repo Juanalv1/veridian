@@ -1,0 +1,18 @@
+  {# A row without a decision: the access as it is, no verdict. #}
+  {% set a = access %}
+  <div class="head">
+    <span class="meta">{{ a.user_id }} · <time class="ts" data-day datetime="{{ a.ts }}">{{ a.time }} UTC</time>{% if a.action %} · <span class="mono">{{ a.action }}</span>{% endif %}</span>
+    <h2 class="access-title {{ a.verdict_kind }}">Acceso {{ a.verdict_word | lower }}</h2>
+  </div>
+  <div class="box">
+    <table class="facts">
+      <tbody>
+        <tr><th scope="row">Hora</th><td><time class="ts" datetime="{{ a.ts }}">{{ a.time }} UTC</time></td></tr>
+        <tr><th scope="row">Usuario</th><td><span class="mono">{{ a.user_id }}</span></td></tr>
+        <tr><th scope="row">Qué hizo</th><td><span class="mono">{{ a.action or '—' }}</span></td></tr>
+        <tr><th scope="row">Respuesta</th><td><span class="mono">{{ a.status if a.status is not none else '—' }}</span></td></tr>
+        <tr><th scope="row">Red</th><td>{% if a.ip %}<span class="mono">{{ a.ip }}</span>{% else %}—{% endif %}</td></tr>
+        <tr><th scope="row">Dispositivo</th><td>{% if a.device_id %}<span class="mono">{{ a.device_id }}</span>{% else %}—{% endif %}</td></tr>
+      </tbody>
+    </table>
+  </div>

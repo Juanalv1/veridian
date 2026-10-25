@@ -1,7 +1,8 @@
   {% set d = current %}
   {% set a = d.access %}
   <div class="head">
-    <span class="meta">{{ d.user_id }} · <time class="ts" data-day datetime="{{ d.ts }}">{{ d.time }} UTC</time>{% if d.action %} · <span class="mono">{{ d.action }}</span>{% endif %}</span>
+    {% if d.selected_note %}<span class="selected-note">{{ d.selected_note.text }} <time class="ts" datetime="{{ d.selected_note.ts }}">{{ d.time }} UTC</time></span>{% endif %}
+    <span class="meta">{{ d.user_id }} · <time class="ts" data-day datetime="{{ d.access_ts }}">{{ d.access_time }} UTC</time>{% if d.action %} · <span class="mono">{{ d.action }}</span>{% endif %}</span>
     <h1 class="{{ d.verdict_kind }}">{{ d.verdict_long }}</h1>
     {% if d.detected %}<span class="detected">{{ d.detected }}</span>{% endif %}
     {% if d.rationale %}<p class="rationale">{{ d.rationale }}</p>{% endif %}

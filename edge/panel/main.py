@@ -7,7 +7,7 @@ import asyncio
 import os
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -18,12 +18,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .cache import TTLCache
+from .fmt import count as _count
+from .fmt import seconds_text
+from .overview import build_overview, iso_z, local_day_window, user_rows
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "11"
+ASSET_VERSION = "12"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -55,6 +58,8 @@ def _decorate(d: dict) -> dict:
     d["access"] = access
     d["verdict_short"], d["verdict_long"], d["verdict_kind"], d["lifted"] = short, long, kind, lifted
     d["time"] = str(d.get("ts", ""))[11:19]
+    d["access_ts"] = access.get("ts") or d.get("ts", "")
+    d["access_time"] = str(d["access_ts"])[11:19]
     d["action"] = f"{method} {route}" if method and route else route
     d["marked_normal"] = d.get("status") == "marked_normal"
     # Compared against the profile: flags the engine derived from the access.
@@ -108,13 +113,9 @@ def _decorate_activity(a: dict) -> dict:
     a["action"] = f"{method} {route}" if method and route else route
     # The request's HTTP status says what the block did to it: stopped (403) or it passed first.
     a["status_note"] = _status_note(a.get("status")) if kind == "block" else ""
-    a["href"] = (f"/users/{quote(str(a.get('user_id') or ''), safe='')}/decisions/{quote(str(a['decision_id']), safe='')}"
-                 if a.get("decision_id") and a.get("user_id") else None)
+    # Every row has its own URL, keyed by event: the row you click is the row that stays selected.
+    a["href"] = f"/actividad/{quote(str(a['event_id']), safe='')}" if a.get("event_id") else None
     return a
-
-
-def _count(n: int, one: str, many: str) -> str:
-    return f"{n} {one if n == 1 else many}"
 
 
 def _watching(activity: list[dict]) -> str:
@@ -139,14 +140,7 @@ def _detected_in(decision_ts, access_ts) -> str:
         return ""
     if secs < 0:
         return ""
-    if secs < 10 and round(secs, 1) < 10:
-        text = f"{secs:.1f}".replace(".", ",")
-        return text.removesuffix(",0") + " s"
-    whole = round(secs)
-    if whole < 60:
-        return f"{whole} s"
-    minutes, rest = divmod(whole, 60)
-    return f"{minutes} min {rest} s" if rest else f"{minutes} min"
+    return seconds_text(secs)
 
 
 def _hours(hours: list) -> str:
@@ -161,9 +155,33 @@ def _days(n) -> str:
     return f"{n} día de historial" if n == 1 else f"{n} días de historial"
 
 
+SECTIONS = (("resumen", "/", "Resumen"), ("actividad", "/actividad", "Actividad"),
+            ("usuarios", "/usuarios", "Usuarios"), ("rutas", "/rutas", "Rutas críticas"))
+DEFAULT_UTC_OFFSET_MIN = -240  # Caracas, until the browser tells its own (cookie `vtz`, minutes east of UTC)
+NO_USERS = "El motor todavía no entrega la lista de usuarios."
+ROUTES_EMPTY = "La clasificación de rutas vive en el motor (routes.yaml). Pronto aquí."
+
+
+def _utc_offset(request: Request) -> int:
+    try:
+        minutes = int(request.cookies.get("vtz", ""))
+    except ValueError:
+        return DEFAULT_UTC_OFFSET_MIN
+    return minutes if -14 * 60 <= minutes <= 14 * 60 else DEFAULT_UTC_OFFSET_MIN
+
+
+def _shell(decisions: list[dict], activity: list[dict] | None) -> dict:
+    """What the sidebar shows on every page: open blocks and the newest access."""
+    opened = sum(1 for d in decisions if d.get("decision") == "block" and not d.get("marked_normal"))
+    return {"nav_blocks": opened,
+            "nav_blocks_text": f"{_count(opened, 'bloqueo abierto', 'bloqueos abiertos')}" if opened else "",
+            "last_access": activity[0].get("ts") if activity else None}
+
+
 def create_app(engine_url: str | None = None, token: str | None = None,
                http_client: httpx.AsyncClient | None = None,
-               clock: Callable[[], float] = time.monotonic) -> FastAPI:
+               clock: Callable[[], float] = time.monotonic,
+               now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> FastAPI:
     base = (engine_url or os.environ.get("VERIDIAN_URL", "http://localhost:8000")).rstrip("/")
     bearer = token if token is not None else os.environ.get("VERIDIAN_TOKEN", "")
     client = http_client or httpx.AsyncClient(timeout=3.0)
@@ -204,14 +222,42 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             return None
         return [_decorate_activity(a) for a in items]
 
-    async def load_blocked_ips() -> set[str] | None:
-        """IPs on the engine's blocklist, or None if it cannot be read."""
+    async def load_blocklist() -> dict | None:
+        """The engine's blocklist ({sessions, ips, ...}), or None if it cannot be read."""
         try:
             r = await engine_get("/v1/blocklist", LIVE_TTL)
             if r.status_code != 200:
                 return None
-            return {str(ip) for ip in r.json()["ips"]}
-        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            body = r.json()
+            return {"sessions": list(body.get("sessions") or []), "ips": [str(ip) for ip in body["ips"]]}
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+
+    async def load_summary(since: datetime, until: datetime) -> dict | None:
+        """Contract 6 for the given range; None when the engine does not have it (yet) or it is malformed."""
+        try:
+            r = await engine_get("/v1/summary", LIVE_TTL, {"since": iso_z(since), "until": iso_z(until)})
+            if r.status_code != 200:
+                return None
+            body = r.json()
+            ints = ("accesses", "users", "reviewed_by_ai")
+            ba = body["blocks_active"]
+            if not all(isinstance(body[k], int) and not isinstance(body[k], bool) for k in ints):
+                return None
+            if not all(isinstance(ba[k], int) for k in ("decisions", "sessions", "ips")) or not isinstance(body["by_hour"], list):
+                return None
+            return body
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+            return None
+
+    async def load_users() -> list[dict] | None:
+        """Contract 7; None when the engine does not have it (yet)."""
+        try:
+            r = await engine_get("/v1/users", LIVE_TTL)
+            if r.status_code != 200:
+                return None
+            return [u for u in r.json()["users"] if isinstance(u, dict)]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
             return None
 
     async def load_profile(user_id: str) -> dict | None:
@@ -226,33 +272,63 @@ def create_app(engine_url: str | None = None, token: str | None = None,
 
     def user_url(user_id: str | None) -> str:
         # user_id is opaque and comes from the customer's app: escape it fully.
-        return f"/users/{quote(user_id, safe='')}" if user_id else "/"
+        return f"/users/{quote(user_id, safe='')}" if user_id else "/actividad"
 
     def decision_url(d: dict) -> str:
         return f"{user_url(d.get('user_id'))}/decisions/{quote(str(d.get('id', '')), safe='')}"
 
-    # Decorators register bottom-up: the more specific route must come first.
-    async def render(request: Request, user: str | None, decision_id: str | None, error: bool):
-        # Independent engine calls run together. The profile of the user in the URL starts with them
-        # too; on `/` the selected user is only known once the decisions are in.
-        t0 = time.perf_counter()
-        guess = asyncio.ensure_future(load_profile(user)) if user else None
-        (decisions, engine_error), activity, blocked_ips = await asyncio.gather(
-            load_decisions(), load_activity(), load_blocked_ips())
+    def page(request: Request, template: str, section: str, ctx: dict, engine_ms: float, t0_render: float):
+        response = templates.TemplateResponse(request, template, {
+            "refresh": REFRESH_SECONDS, "asset_version": ASSET_VERSION, "sections": SECTIONS, "section": section, **ctx})
+        response.headers["Server-Timing"] = (
+            f"engine;dur={engine_ms:.1f}, render;dur={(time.perf_counter() - t0_render) * 1000:.1f}")
+        return response
+
+    async def core(*extra):
+        """Decisions, activity and blocklist, plus any extra awaitables, all at once."""
+        (decisions, engine_error), activity, blocklist, *rest = await asyncio.gather(
+            load_decisions(), load_activity(), load_blocklist(), *extra)
         for d in decisions:
             d["href"] = decision_url(d)
         if engine_error is not None:
             activity = None
-        by_user = [d for d in decisions if d.get("user_id") == user]
-        current = (next((d for d in by_user if d.get("id") == decision_id), None)
-                   or (by_user[0] if by_user else None)
-                   or (decisions[0] if decisions else None))
-        if activity is not None and current is not None:
-            # One selected row: the access that triggered the decision (else the newest row of it).
+        return decisions, engine_error, activity, blocklist, rest
+
+    async def render_activity(request: Request, user: str | None, decision_id: str | None, event_id: str | None,
+                              error: bool):
+        # Independent engine calls run together. The profile of the user in the URL starts with them
+        # too; on `/actividad` the selected user is only known once the decisions are in.
+        t0 = time.perf_counter()
+        guess = asyncio.ensure_future(load_profile(user)) if user else None
+        decisions, engine_error, activity, blocklist, _ = await core()
+        blocked_ips = set(blocklist["ips"]) if blocklist is not None else None
+        row = next((a for a in activity or [] if a.get("event_id") == event_id), None) if event_id else None
+        if row is not None and row.get("decision_id"):
+            decision_id = row["decision_id"]
+            by_user = [d for d in decisions if d.get("id") == decision_id]
+            current = by_user[0] if by_user else None
+        elif row is not None:
+            current = None  # a normal access: shown as the access it is, no verdict
+        else:
+            row = None
+            by_user = [d for d in decisions if d.get("user_id") == user]
+            current = (next((d for d in by_user if d.get("id") == decision_id), None)
+                       or (by_user[0] if by_user else None)
+                       or (decisions[0] if decisions else None))
+        if activity is not None and row is not None:
+            row["selected"] = True  # exactly the row that was clicked
+        elif activity is not None and current is not None:
+            # By decision URL: the access that triggered it (else the newest row of it).
             mine = [a for a in activity if a.get("decision_id") == current.get("id")]
             trigger = [a for a in mine if a.get("event_id") in (current.get("event_ids") or [])] or mine[:1]
             for a in trigger:
                 a["selected"] = True
+        if current is not None and row is not None and row.get("event_id") not in (current.get("event_ids") or []):
+            # The detail describes another request than the row that was clicked: say so.
+            note = row.get("status_note")
+            what = "del bloqueo" if row.get("verdict_kind") == "block" else "de la decisión"
+            lead = f"Este acceso: {note} · parte" if note else "Este acceso: parte"
+            current["selected_note"] = {"text": f"{lead} {what} de las", "ts": current.get("ts")}
         profile = None
         if current is not None and current.get("decision") == "block" and not current["marked_normal"]:
             current["block_effect"] = _block_effect((current.get("access") or {}).get("ip"), blocked_ips)
@@ -275,24 +351,73 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                            "days_text": _days(raw.get("history_days")),
                            "routes_shown": routes[:MAX_PROFILE_ROUTES],
                            "routes_more": max(0, len(routes) - MAX_PROFILE_ROUTES)}
-        response = templates.TemplateResponse(request, "index.html", {
-            "decisions": decisions, "activity": activity,
-            "watching": _watching(activity) if activity is not None else "", "engine_error": engine_error, "refresh": REFRESH_SECONDS,
-            "asset_version": ASSET_VERSION,
-            "current": current, "profile": profile,
-            "notice": MARK_ERROR if error else None,
-            "refresh_url": decision_url(current) if current else "/",
-        })
-        response.headers["Server-Timing"] = (
-            f"engine;dur={engine_ms:.1f}, render;dur={(time.perf_counter() - t1) * 1000:.1f}")
-        return response
+        if row is not None:
+            refresh_url = row["href"]
+        else:
+            refresh_url = decision_url(current) if current else "/actividad"
+        return page(request, "actividad.html", "actividad", {
+            "decisions": decisions, "activity": activity, "access": row if current is None else None,
+            "watching": _watching(activity) if activity is not None else "", "engine_error": engine_error,
+            "current": current, "profile": profile, "notice": MARK_ERROR if error else None,
+            "refresh_url": refresh_url, **_shell(decisions, activity),
+        }, engine_ms, t1)
+
+    async def render_overview(request: Request):
+        t0 = time.perf_counter()
+        offset = _utc_offset(request)
+        since, until = local_day_window(now(), offset)
+        decisions, engine_error, activity, blocklist, (summary, users) = await core(
+            load_summary(since, until), load_users())
+        engine_ms = (time.perf_counter() - t0) * 1000
+        t1 = time.perf_counter()
+        overview = build_overview(summary=summary, users=users, activity=activity, decisions=decisions,
+                                  blocklist=blocklist, since=since, until=until, offset_min=offset,
+                                  engine_error=engine_error)
+        return page(request, "resumen.html", "resumen", {
+            "overview": overview, "engine_error": engine_error, "refresh_url": "/",
+            **_shell(decisions, activity)}, engine_ms, t1)
+
+    async def render_users(request: Request):
+        t0 = time.perf_counter()
+        decisions, engine_error, activity, blocklist, (users,) = await core(load_users())
+        engine_ms = (time.perf_counter() - t0) * 1000
+        t1 = time.perf_counter()
+        open_blocks = [d for d in decisions if d.get("decision") == "block" and not d.get("marked_normal")]
+        rows = user_rows(users, decisions, activity, open_blocks) if users is not None else None
+        return page(request, "usuarios.html", "usuarios", {
+            "rows": rows, "no_users": NO_USERS, "engine_error": engine_error, "refresh_url": "/usuarios",
+            **_shell(decisions, activity)}, engine_ms, t1)
+
+    async def render_routes(request: Request):
+        t0 = time.perf_counter()
+        decisions, engine_error, activity, blocklist, _ = await core()
+        engine_ms = (time.perf_counter() - t0) * 1000
+        return page(request, "rutas.html", "rutas", {
+            "empty": ROUTES_EMPTY, "engine_error": engine_error, "refresh_url": "/rutas",
+            **_shell(decisions, activity)}, engine_ms, time.perf_counter())
 
     @app.get("/", response_class=HTMLResponse)
+    async def resumen(request: Request):
+        return await render_overview(request)
+
+    @app.get("/usuarios", response_class=HTMLResponse)
+    async def usuarios(request: Request):
+        return await render_users(request)
+
+    @app.get("/rutas", response_class=HTMLResponse)
+    async def rutas(request: Request):
+        return await render_routes(request)
+
+    # Decorators register bottom-up: the more specific route must come first.
+    @app.get("/actividad", response_class=HTMLResponse)
+    @app.get("/actividad/{event_id:path}", response_class=HTMLResponse)
+    async def actividad(request: Request, event_id: str | None = None, error: str | None = None):
+        return await render_activity(request, None, None, event_id or None, bool(error))
+
     @app.get("/users/{user:path}", response_class=HTMLResponse)
     @app.get("/users/{user:path}/decisions/{decision_id}", response_class=HTMLResponse)
-    async def index(request: Request, user: str | None = None, decision_id: str | None = None,
-                    error: str | None = None):
-        return await render(request, user, decision_id, bool(error))
+    async def by_user(request: Request, user: str, decision_id: str | None = None, error: str | None = None):
+        return await render_activity(request, user, decision_id, None, bool(error))
 
     @app.post("/decisions/{decision_id}/normal")
     async def mark_normal(request: Request, decision_id: str, user: str | None = Form(None)):
@@ -305,7 +430,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         cache.invalidate()  # whatever the engine answered, what was cached may no longer be true
         if request.headers.get("HX-Request") == "true":
             # htmx swaps the returned page in place: same selected decision, same error text.
-            return await render(request, user, decision_id, not ok)
+            return await render_activity(request, user, decision_id, None, not ok)
         url = user_url(user)
         if not ok:
             url += "?" + urlencode({"error": "mark"})

@@ -33,7 +33,7 @@
   // has keyboard focus in a form, or the tab is hidden.
   window.refreshAllowed = function () {
     var active = document.activeElement;
-    return !(navigating || pointerDown || document.hidden || (active && active.closest && active.closest("form")));
+    return !(navigating || pointerDown || document.hidden || document.querySelector(".chart .bar:hover") || (active && active.closest && active.closest("form")));
   };
   // New rows: remember the row ids on screen; after a swap, rows with an unseen id get
   // `is-new` (CSS animates them). The first page load only records, nothing animates.
@@ -59,10 +59,13 @@
   markNew(false);
 
   // ---- Instant navigation ----
+  // Pages: resumen, actividad, usuarios, rutas (data-view of #live). Inside Actividad a click swaps only
+  // the detail region (the feed stays live); any other change swaps the whole #live region.
   var FRESH_MS = 5000;      // a cached page is reused for clicks for this long
   var HISTORY_MS = 60000;   // back/forward accept older copies: the next poll refreshes them within 2 s
   var MAX_ENTRIES = 30;
   var ROW_LINKS = "#live nav a[data-row][href]";
+  var SECTION_LINKS = "#side nav a[href]";
   var cache = new Map();    // "/path?query" -> record, or {promise} while a prefetch is in flight
   var generation = 0;       // bumped to drop everything (mark-normal): older answers are never stored
   var navToken = 0, navigating = false, navAbort = null;
@@ -70,25 +73,32 @@
   var lastSig = null;
 
   function keyOf(url) { var u = new URL(url, location.href); return u.pathname + u.search; }
+  function viewOf(key) {
+    var p = key.split("?")[0];
+    return p === "/" ? "resumen" : p === "/usuarios" ? "usuarios" : p === "/rutas" ? "rutas" : "actividad";
+  }
   function detail() { return document.getElementById("detalle"); }
   function live() { return document.getElementById("live"); }
-  function detailSig() { var d = detail(); return d ? d.innerHTML : ""; }
+  function detailSig() { var d = detail(), l = live(); return d ? d.innerHTML : l ? l.innerHTML : ""; }
   lastSig = detailSig();
   function selectedRows(root) {
     var rows = [];
     root.querySelectorAll("[data-row][aria-current]").forEach(function (el) { rows.push(el.dataset.row); });
     return rows;
   }
-  function record(detailHtml, rows, hxGet, gen) { return { t: Date.now(), gen: gen, detail: detailHtml, current: rows, hxGet: hxGet }; }
+  function record(l, d, rows, gen) {
+    return { t: Date.now(), gen: gen, view: l.dataset.view, live: l.outerHTML.replace(/\bis-new\b/g, ""),
+             detail: d ? d.innerHTML : null, current: rows, hxGet: l.getAttribute("hx-get") };
+  }
   function snapshot() {
-    var d = detail(), l = live();
-    if (!d || !l || d.getAttribute("aria-busy") === "true") return null;
-    return record(d.innerHTML, selectedRows(document), l.getAttribute("hx-get"), generation);
+    var l = live(), d = detail();
+    if (!l || l.getAttribute("aria-busy") === "true" || (d && d.getAttribute("aria-busy") === "true")) return null;
+    return record(l, d, selectedRows(document), generation);
   }
   function parse(html, gen) {
     var doc = new DOMParser().parseFromString(html, "text/html");
-    var d = doc.getElementById("detalle"), l = doc.getElementById("live");
-    return d && l ? record(d.innerHTML, selectedRows(doc), l.getAttribute("hx-get"), gen) : null;
+    var l = doc.getElementById("live");
+    return l ? record(l, doc.getElementById("detalle"), selectedRows(doc), gen) : null;
   }
   function store(key, rec) {
     if (!rec || rec.gen !== generation) return;
@@ -120,29 +130,49 @@
     if (!have) cache.set(key, entry);
   }
   function prefetch(e) {
-    var a = e.target.closest && e.target.closest(ROW_LINKS);
+    var a = e.target.closest && e.target.closest(ROW_LINKS + ", " + SECTION_LINKS);
     if (a) a.dispatchEvent(new Event("mouseenter"));  // the extension listens for it on each link
   }
   document.addEventListener("pointerdown", prefetch, true);
   document.addEventListener("focusin", prefetch);
 
+  function setNav(view) {
+    document.querySelectorAll("#side nav a[data-nav]").forEach(function (a) {
+      if (a.dataset.nav === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+  }
   function showSkeleton() {
     var d = detail(), t = document.getElementById("detalle-skeleton");
     if (!d || !t) return;
     d.replaceChildren(t.content.cloneNode(true));
     d.setAttribute("aria-busy", "true");
   }
+  function markBusy() {
+    var l = live();
+    if (l) { l.setAttribute("aria-busy", "true"); l.classList.add("is-loading"); }
+  }
   function apply(rec) {
-    var d = detail(), l = live();
-    d.innerHTML = rec.detail;
-    d.removeAttribute("aria-busy");
-    if (rec.hxGet) l.setAttribute("hx-get", rec.hxGet);  // the poll follows the selected decision
-    document.querySelectorAll(ROW_LINKS).forEach(function (el) {
-      if (rec.current.indexOf(el.dataset.row) >= 0) el.setAttribute("aria-current", "true");
-      else el.removeAttribute("aria-current");
-    });
-    htmx.process(l);  // wires the new mark-normal button and re-reads hx-get
-    localize(d);
+    var l = live(), d = detail();
+    if (d && rec.detail !== null && l.dataset.view === rec.view) {
+      d.innerHTML = rec.detail;
+      d.removeAttribute("aria-busy");
+      if (rec.hxGet) l.setAttribute("hx-get", rec.hxGet);  // the poll follows the selected row
+      document.querySelectorAll(ROW_LINKS).forEach(function (el) {
+        if (rec.current.indexOf(el.dataset.row) >= 0) el.setAttribute("aria-current", "true");
+        else el.removeAttribute("aria-current");
+      });
+      htmx.process(l);  // wires the new mark-normal button and re-reads hx-get
+      localize(d);
+    } else {
+      var t = document.createElement("template");
+      t.innerHTML = rec.live;
+      var nl = t.content.firstElementChild;
+      l.replaceWith(nl);
+      htmx.process(nl);
+      localize(nl);
+      markNew(false);
+    }
+    setNav(rec.view);
     lastSig = detailSig();
     navigating = false;
   }
@@ -160,19 +190,20 @@
     });
   }
   function navigate(href, opts) {
-    var key = keyOf(href), token = ++navToken;
+    var key = keyOf(href), token = ++navToken, view = viewOf(key);
     if (navAbort) { navAbort.abort(); navAbort = null; }
     store(currentKey, snapshot());  // so coming back is instant
     if (opts.push && key !== currentKey) history.pushState({ veridian: 1 }, "", href);
     currentKey = key;
-    if (opts.link) {
+    if (opts.link && opts.link.closest("#live")) {
       document.querySelectorAll(ROW_LINKS).forEach(function (el) { el.removeAttribute("aria-current"); });
       opts.link.setAttribute("aria-current", "true");
     }
+    setNav(view);
     var hit = lookup(key, opts.ttl);
     if (hit && !hit.promise) return apply(hit);
     navigating = true;
-    showSkeleton();
+    if (view === "actividad" && live().dataset.view === "actividad") showSkeleton(); else markBusy();
     (hit ? hit.promise.catch(function () { return fetchPage(key); }) : fetchPage(key)).then(function (rec) {
       if (token !== navToken) return;
       store(key, rec);
@@ -184,16 +215,35 @@
   // Capture phase: runs before htmx's boosted-link handler, which stays as the fallback.
   document.addEventListener("click", function (e) {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    var a = e.target.closest && e.target.closest(ROW_LINKS);
+    var a = e.target.closest && e.target.closest(ROW_LINKS + ", " + SECTION_LINKS);
     if (!a || a.target) return;
     e.preventDefault();
     e.stopPropagation();
+    closeMenu();
     navigate(a.getAttribute("href"), { push: true, ttl: FRESH_MS, link: a });
   }, true);
   window.addEventListener("popstate", function (e) {
     e.stopImmediatePropagation();
     navigate(location.pathname + location.search, { push: false, ttl: HISTORY_MS });
   }, true);
+
+  // Menu button (narrow screens: the sidebar becomes a top bar).
+  var menuBtn = document.querySelector(".menu-btn"), side = document.getElementById("side");
+  function closeMenu() {
+    if (!menuBtn || !side) return;
+    side.removeAttribute("data-open");
+    menuBtn.setAttribute("aria-expanded", "false");
+  }
+  if (menuBtn && side) {
+    menuBtn.addEventListener("click", function () {
+      var open = side.hasAttribute("data-open");
+      if (open) closeMenu(); else { side.setAttribute("data-open", ""); menuBtn.setAttribute("aria-expanded", "true"); }
+    });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMenu(); });
+  }
+
+  // The panel shows "today" in the viewer's time zone: tell the server the offset (minutes east of UTC).
+  document.cookie = "vtz=" + (-new Date().getTimezoneOffset()) + "; path=/; max-age=31536000; samesite=lax";
 
   // In-flight state of the mark-normal button (htmx disables it via hx-disabled-elt).
   function isMark(el) { return el && el.matches && el.matches("button.btn[hx-post]"); }
@@ -224,12 +274,20 @@
 
   // Engine connection: when it is down, say how long since the last good update.
   var lastOk = null;
-  function ago(s) { return s < 60 ? s + " s" : s < 3600 ? Math.floor(s / 60) + " min" : Math.floor(s / 3600) + " h"; }
+  function ago(s) {
+    return s < 60 ? s + " s" : s < 3600 ? Math.floor(s / 60) + " min" : s < 86400 ? Math.floor(s / 3600) + " h" : Math.floor(s / 86400) + " d";
+  }
   function renderConn() {
     var conn = document.getElementById("conn");
     if (!conn) return;
-    if (!conn.classList.contains("down")) { lastOk = Date.now(); return; }
-    var label = conn.querySelector("span:last-child");
+    var label = conn.querySelector(".conn-label");
+    if (!conn.classList.contains("down")) {
+      lastOk = Date.now();
+      // "último acceso hace N s" from the newest activity row the server reported.
+      var ts = Date.parse(conn.getAttribute("data-last-access") || ""), span = conn.querySelector(".ago");
+      if (span && !isNaN(ts)) span.textContent = ago(Math.max(0, Math.round((Date.now() - ts) / 1000)));
+      return;
+    }
     if (!label || lastOk === null) return;
     label.textContent = "Motor sin conexión · último dato hace " + ago(Math.max(0, Math.round((Date.now() - lastOk) / 1000)));
   }

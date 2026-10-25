@@ -3,10 +3,8 @@
 {% block content %}
 {# Live region: polls its own URL and swaps itself plus the connection badge; nav links and the
    mark-normal form swap the same region in place. Without JS the form posts and the meta refresh reloads. #}
-<main id="live" class="wrap"
-      hx-get="{{ refresh_url }}" hx-trigger="every {{ refresh }}s [refreshAllowed()]"
-      hx-select="#live" hx-select-oob="#conn" hx-target="this" hx-swap="outerHTML settle:0ms"
-      hx-sync="this:replace">
+{% from "partials/macros.html" import live_attrs %}
+<main {{ live_attrs(refresh_url, "actividad", refresh) }}>
   {% if activity is not none %}
     {% include "partials/activity_feed.html" %}
   {% else %}
@@ -17,13 +15,15 @@
     {% if notice %}<div class="note err" role="alert">{{ notice }}</div>{% endif %}
     {% if engine_error %}
       <div class="note warn">{{ engine_error }}</div>
-    {% elif not current and activity is not none %}
+    {% elif not current and not access and activity is not none %}
       <div class="note calm">{{ watching }}</div>
-    {% elif not current %}
+    {% elif not current and not access %}
       <div class="note">Sin decisiones por ahora. Todo normal.</div>
     {% endif %}
     {% if current %}
       {% include "partials/decision_detail.html" %}
+    {% elif access %}
+      {% include "partials/access_detail.html" %}
     {% endif %}
   </section>
 </main>
