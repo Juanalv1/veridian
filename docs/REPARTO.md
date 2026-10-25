@@ -111,7 +111,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 - **Si `since` es la versión actual:** `304` sin cuerpo.
 - **Un bloqueo frena al atacante, no al dueño:** el motor bloquea la `session_id` y la `ip` del acceso sospechoso. Si el acceso viene de una red conocida del dueño (`new_network` en `false`), solo bloquea la `session_id`: esa IP la comparte el dueño. `users` queda en el contrato para bloqueos de cuenta completa, pero el primer hito lo deja vacío, porque bloquear el `user_id` también deja afuera a la víctima.
 - **Antes de pasar cada petición a la app,** el middleware revisa la lista y responde `403 {"error": "blocked"}` si hay coincidencia.
-- **Se bloquea la siguiente petición, no la sospechosa:** por los ciclos de ~2 s, la petición que dispara el bloqueo ya pasó. Una consulta síncrona para rutas `critical` queda como mejora, fuera del primer hito.
+- **En rutas normales y sensibles se bloquea la siguiente petición, no la sospechosa:** por los ciclos de ~2 s, la petición que dispara el bloqueo ya pasó. Las rutas `critical` se consultan antes de ejecutarse (contrato 9).
 - **Si el motor no responde,** el middleware sigue con la última lista conocida y nunca frena la app.
 
 ### 3. Decisiones: motor → panel
@@ -307,6 +307,30 @@ La clasificación de rutas que el motor está usando, para que el panel la muest
 - **Orden:** primero `critical`, después `sensitive`; dentro de cada clase, por ruta y luego por método.
 - **Solo lo clasificado:** las rutas `normal` no se listan. Cualquier ruta que no aparezca recibe la clase `default`.
 - **`route`:** la plantilla, igual que en el contrato 1. El panel no puede editar la clasificación.
+
+### 9. Consulta previa: middleware → motor (rutas críticas)
+
+`POST /v1/check`, **síncrono**, solo para rutas `critical` según `GET /v1/routes` (contrato 8). El middleware lo llama **antes** de pasar la petición a la app y espera la respuesta.
+
+```json
+{"event": { ...mismo objeto que un evento del contrato 1... }}
+```
+
+Respuesta `200`:
+
+```json
+{"verdict": "block", "decision_id": "d_311"}
+```
+
+- **`verdict`:** `allow` (la app atiende la petición) o `block` (el middleware responde `403 {"error": "blocked"}` y la petición **nunca llega a la app**).
+- **Cómo decide el motor:**
+  1. Sin desvío (el dueño desde su red y su dispositivo): `allow` de inmediato, sin IA.
+  2. Desvío obvio (ruta crítica nunca usada + red nueva): `block` de inmediato por regla. La IA escribe la explicación después.
+  3. Desvío gris (por ejemplo red conocida con dispositivo nuevo): **la IA decide en ese momento**, con un tope de ~10 s. `block` o `step_up` → `block` (el middleware no pide segundo factor); `allow` o `alert` → `allow`. Si la IA falla o pasa el tope, decide la regla de respaldo del juez.
+- **El evento queda registrado:** el motor lo guarda como si hubiera llegado por el contrato 1. El middleware lo vuelve a enviar en su lote normal sin problema: es idempotente por `id`.
+- **Un `block` también entra en la lista** (contrato 2): sesión e IP, o solo sesión si la red es conocida.
+- **Timeout del middleware:** 12 s. Si el motor no responde, falla o da timeout, la petición **pasa** (*fail-open*): si Veridian se cae, la app sigue funcionando; esas rutas quedan sin protección mientras tanto.
+- **Latencia:** el dueño legítimo casi nunca espera (sin desvío no hay IA). Solo espera lo sospechoso y crítico.
 
 ### Solo para ensayos: reinicio
 
