@@ -68,7 +68,7 @@ def test_index_needs_two_round_trips_not_four():
     engine = Engine(delay=0.2)
     panel = panel_for(engine)
     start = time.perf_counter()
-    assert panel.get("/").status_code == 200
+    assert panel.get("/actividad").status_code == 200
     took = time.perf_counter() - start
     assert took < 0.6, f"took {took:.2f} s: expected about two round trips (decisions+activity+blocklist, then profile)"
 
@@ -123,8 +123,8 @@ def test_failed_engine_answers_are_not_cached():
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     panel = TestClient(create_app("http://engine", TOKEN, http_client=client, clock=Clock()))
-    panel.get("/")
-    panel.get("/")
+    panel.get("/actividad")
+    panel.get("/actividad")
     assert calls.count("/v1/decisions") == 2
 
 
@@ -193,7 +193,7 @@ def test_cache_invalidate_drops_entries_and_late_results():
 
 def test_server_timing_reports_engine_and_render_time():
     panel = panel_for(Engine(delay=0.05))
-    h = panel.get("/").headers["server-timing"]
+    h = panel.get("/actividad").headers["server-timing"]
     m = re.fullmatch(r"engine;dur=(\d+(?:\.\d+)?), render;dur=(\d+(?:\.\d+)?)", h)
     assert m, h
     assert float(m.group(1)) >= 50  # at least one engine round trip
