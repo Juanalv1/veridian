@@ -40,11 +40,10 @@ app.add_middleware(
 
 ## Impacto
 
-Los robos digitales empiezan por contraseñas descuidadas, tardan meses en descubrirse y terminan costando millones.
+Los robos digitales empiezan por contraseñas descuidadas y tardan meses en descubrirse.
 
 - **22 %** de los robos empiezan con credenciales robadas: la causa número uno ([Verizon DBIR 2025](https://www.verizon.com/business/resources/articles/credential-stuffing-attacks-2025-dbir-research/)).
 - **241 días** tarda en promedio detectarlos y contenerlos ([IBM 2025](https://newsroom.ibm.com/2025-07-30-ibm-report-13-of-organizations-reported-breaches-of-ai-models-or-applications,-97-of-which-reported-lacking-proper-ai-access-controls)).
-- **USD 4,99 M** cuesta cada uno en promedio ([IBM 2026](https://www.ibm.com/reports/data-breach)).
 
 Veridian corta el acceso en segundos.
 
