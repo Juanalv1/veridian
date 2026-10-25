@@ -16,15 +16,15 @@
 
 > Veridian sí lo comprueba, en cada acceso. Antes de empezar, una IA recorre las rutas de tu API y entiende qué hace cada una para clasificarlas según su impacto: cambiar la cuenta bancaria no es lo mismo que ver una factura. Y Veridian aprende cómo trabajas tú: desde dónde entras, a qué hora y qué rutas usas.
 >
-> Si alguien entra desde una red nueva y va directo a cambiar la cuenta donde cobras, algo que tú nunca haces, la IA decide si eres tú en un día distinto o es otra persona.
+> Si un acceso encaja con tu forma de trabajar, pasa sin más. Si no, la IA decide si eres tú en un día distinto o es otra persona: por ejemplo, alguien que entra desde una red nueva y va directo a cambiar la cuenta donde cobras, algo que tú nunca haces.
 >
 > En una ruta crítica, el bloqueo llega antes de que la acción se ejecute.
 
 **[Slide 4: Instalación]**
 
-> Instalarlo es una llamada en tu app: tu clave y cómo identificas al usuario.
+> Instalarlo es una llamada en tu app: solo le dices cómo identificas al usuario.
 >
-> Desde ahí, una IA lee tu API y clasifica cada ruta: crítica si mueve dinero, sensible si expone datos, normal el resto. Es lo que van a ver ahora.
+> Al arrancar, tu app le envía sus rutas a Veridian y se clasifican solas. Es lo que van a ver ahora.
 
 **[Demo: app y panel lado a lado]**
 
