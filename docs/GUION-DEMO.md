@@ -65,7 +65,8 @@ Estructura: una sola persona, la dueña de la cuenta.
 ## Antes de subir
 
 - Espejar el teléfono en el proyector.
-- Precargar el historial de la dueña con la IP del wifi del evento y la cookie de dispositivo (`device_id`) del teléfono; si falta la cookie, el teléfono también se ve nuevo.
+- Antes de cada corrida, abrir `https://veridian-demo.onrender.com/preparar` desde el teléfono, con el wifi del evento, y tocar «Preparar demo» (la primera vez pide el PIN). Borra los datos y precarga 14 días de historial con la red y el dispositivo del teléfono. Nunca abrirla desde la PC: la PC quedaría como conocida y no habría bloqueo.
+- En Render (servicio de la demo): `DEMO_PREPARE_PIN` y `VERIDIAN_PANEL_TOKEN`; `ensayo@veridian.demo` debe ser owner de la organización Demo.
 - Ensayar el bloqueo sin VPN unas 20 veces en el lugar: con un dispositivo nuevo en la misma red, lo decide la IA (3 de 3 medido el 2026-10-25). Si falla una vez, agregar la VPN: con una red nueva bloquea la regla fija.
 - Medir cuánto tarda el correo en llegar con la red del evento.
 - Tener grabado el video de respaldo de una corrida buena.
