@@ -11,6 +11,7 @@ from . import db
 from .ai.judge import _critical_rule_applies, _fallback
 from .events import Event, insert_events
 from .judging import apply_judgment, needs_judgment, reserve_judgment
+from .project_settings import ProjectFlags, get_project_flags
 from .route_classes import RouteClasses
 from .rules import Deviation, evaluate_event
 from .settings import Settings
@@ -42,9 +43,15 @@ ALLOW = CheckResult("allow")
 def check_event(
     settings: Settings, route_classes: RouteClasses, write_lock: threading.Lock, project_id: str, event: Event
 ) -> CheckResult:
-    """Decide one critical request now. Never raises: any internal error allows it (fail-open)."""
+    """Decide one critical request now. Never raises: any internal error allows it (fail-open).
+
+    A project in `observe` mode is decided and recorded the same way, but always allowed: the
+    answer keeps the id of the decision it would have enforced.
+    """
     try:
-        result = _check(settings, route_classes, write_lock, project_id, event)
+        flags, result = _check(settings, route_classes, write_lock, project_id, event)
+        if result.verdict == "block" and not flags.enforce:
+            return CheckResult("allow", result.decision_id, explain_later=result.explain_later)
         if result.verdict == "block":
             # The middleware reported the request before running it; a block means the app never
             # did, so the stored event says 403, as the panel and the activity feed should show.
@@ -58,18 +65,21 @@ def check_event(
 
 def _check(
     settings: Settings, route_classes: RouteClasses, write_lock: threading.Lock, project_id: str, event: Event
-) -> CheckResult:
+) -> tuple[ProjectFlags, CheckResult]:
     with write_lock, db.connect(settings.db_path) as conn:
+        flags = get_project_flags(conn, project_id)
+        # A project with the AI switched off is rule-only, like an engine without a judge.
+        judge_on = settings.judge is not None and flags.ai_enabled
         if not insert_events(conn, project_id, [event]):
-            return current_verdict(conn, project_id, event)  # already seen: never evaluated twice
+            return flags, current_verdict(conn, project_id, event)  # already seen: never evaluated twice
         deviation = evaluate_event(conn, settings, route_classes, project_id, event)
         if deviation is None:
-            return current_verdict(conn, project_id, event)
+            return flags, current_verdict(conn, project_id, event)
         if deviation.block_id is not None:
-            explain = deviation if settings.judge is not None else None
-            return CheckResult("block", deviation.block_id, explain_later=explain)
-        if settings.judge is None or not needs_judgment(conn, deviation):
-            return current_verdict(conn, project_id, event)
+            explain = deviation if judge_on else None
+            return flags, CheckResult("block", deviation.block_id, explain_later=explain)
+        if not judge_on or not needs_judgment(conn, deviation):
+            return flags, current_verdict(conn, project_id, event)
         reserve_judgment(conn, deviation)
 
     # Outside the lock: ingestion and other checks keep running while the judge thinks.
@@ -78,10 +88,10 @@ def _check(
     with write_lock, db.connect(settings.db_path) as conn:
         decision_id = apply_judgment(conn, settings, deviation, decision, judgment.rationale)
         if decision == "block" and decision_id is not None:
-            return CheckResult("block", decision_id)
+            return flags, CheckResult("block", decision_id)
         # An existing block on the session or IP still wins over the judge's allow.
         listed = current_verdict(conn, project_id, event)
-    return listed if listed.verdict == "block" else CheckResult("allow", decision_id)
+    return flags, listed if listed.verdict == "block" else CheckResult("allow", decision_id)
 
 
 def judge_within_budget(settings: Settings, deviation: Deviation):

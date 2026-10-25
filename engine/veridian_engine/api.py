@@ -14,6 +14,7 @@ from .control_plane.legacy import seed_legacy
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
+from .project_settings import get_project_flags
 from .profile import build_profile, is_blocked
 from .route_classes import RouteClasses
 from .rules import evaluate_event
@@ -58,12 +59,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict:
         deviations = []
         with write_lock, db.connect(settings.db_path) as conn:
+            ai_enabled = get_project_flags(conn, project_id).ai_enabled
             inserted = insert_events(conn, project_id, batch.events)
             for event in sorted(inserted, key=lambda e: e.ts):
                 deviation = evaluate_event(conn, settings, route_classes, project_id, event)
                 if deviation is not None:
                     deviations.append(deviation)
-        if settings.judge is not None and deviations:
+        if settings.judge is not None and ai_enabled and deviations:
             # Runs after the 202 is sent: ingestion never waits for the AI.
             background_tasks.add_task(judge_deviations, settings, write_lock, latest_per_session(deviations))
         return {"accepted": len(inserted)}
@@ -147,6 +149,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.connect(settings.db_path) as conn:
             if since is not None and since == current_version(conn, project_id):
                 return Response(status_code=304)
+            if not get_project_flags(conn, project_id).enforce:
+                # observe (decision 6): decisions are recorded, nothing is published to enforce.
+                return {"version": current_version(conn, project_id), "users": [], "sessions": [], "ips": []}
             return blocklist(conn, project_id)
 
     return app

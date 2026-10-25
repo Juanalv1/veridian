@@ -7,6 +7,7 @@ import threading
 from . import db
 from .decisions import bump_version, create_decision, session_has_block
 from .events import format_ts
+from .project_settings import get_project_flags
 from .rules import Deviation
 from .settings import Settings
 
@@ -26,6 +27,9 @@ def judge_deviations(settings: Settings, write_lock: threading.Lock, deviations:
     for deviation in deviations:
         try:
             with write_lock, db.connect(settings.db_path) as conn:
+                # Checked again here: the switch may have changed since the task was scheduled.
+                if not get_project_flags(conn, deviation.project_id).ai_enabled:
+                    continue
                 if not needs_judgment(conn, deviation):
                     continue
                 reserve_judgment(conn, deviation)

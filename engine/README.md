@@ -49,6 +49,13 @@ A deviation is an event with a new network, a new device (non-empty `device_id` 
 
 `POST /v1/check` with `{"event": <contract-1 event>}` decides a `critical` request before the app executes it (contract 9) and answers `{"verdict": "allow"|"block", "decision_id": ...}`. The event is stored as if it came through `/v1/events`, so the middleware's later batch resend is ignored by id and never judged twice; re-checking a known id answers from the current blocklist. No deviation → `allow` without AI. A rule block → `block` at once, and the judge rewrites the rationale afterwards. A gray deviation → the judge decides in a worker thread, waiting at most `VERIDIAN_SYNC_JUDGE_TIMEOUT_S`; past it, or on error, the judge's deterministic fallback (`alert`) applies. `block`/`step_up` → `block` (stored as a block: session, plus IP only on a new network); `allow`/`alert` → `allow`. Without a judge, only the rules block. Any internal error answers `allow` (fail-open).
 
+## Observe mode and per-project AI
+
+Each `project` row carries `enforcement` (`observe` | `enforce`) and `ai_enabled` (decisions 6 and 10 of `docs/DISENO-PRODUCTO.md`); a project without a row behaves as `enforce` with AI. They are read on every request and changed with `project_settings.set_project_flags` (no HTTP endpoint yet).
+
+- `observe`: detection, decisions, activity and the panel stay exactly as in `enforce`; only enforcement is suppressed. `GET /v1/blocklist` returns empty `users`/`sessions`/`ips` with the current version, and `POST /v1/check` answers `allow` with the `decision_id` of the decision it would have enforced (the stored status is not rewritten to 403). Activity still shows accesses after a recorded block as `block`: it reflects decisions, not enforcement. Changing `enforcement` bumps the blocklist version, so middlewares polling with `since` refresh.
+- `ai_enabled = 0`: rule-only for that project, as without `ANTHROPIC_API_KEY`: neither the background nor the synchronous judge is called (no `ai_judgments` rows); rule blocks still apply, subject to enforcement.
+
 ## Activity feed
 
 `GET /v1/activity?limit=50` (1–200) lists the client's latest accesses, newest first, each with a panel verdict (`normal`/`review`/`block`) and its `decision_id`; requests of a blocked session after the block show as `block` (contract 5 in `docs/REPARTO.md`).
