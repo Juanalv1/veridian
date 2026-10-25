@@ -1,4 +1,4 @@
-# Handoff: Veridian para tres devs (Carlos Navas: motor y SDK; Christian Mendoza: notificaciones y operación; Maikol Aguilar: frontend)
+# Handoff: Veridian para cuatro devs (Carlos Navas: motor y SDK de Python; Christian Mendoza: notificaciones y operación; Maikol Aguilar: frontend; José Gómez: SDK de npm y registro)
 
 **Fecha:** 2026-10-25, ~05:30 (hora de Caracas)
 **Rama:** `main` (no se usan PR; ver `CLAUDE.md`)
@@ -18,7 +18,8 @@ Terminar las unidades del motor de `docs/DISENO-PRODUCTO.md` (U2–U8, U12, U13,
 
 - **Carlos Navas (antes Dev 3):** motor (acceso, rutas y datos, lo que era del Dev A) y SDK/middleware/app de demo.
 - **Christian Mendoza (Dev B):** notificaciones y operación.
-- **Maikol Aguilar (antes Dev A):** todo el frontend: landing, backoffice y panel.
+- **Maikol Aguilar (antes Dev A):** el frontend: landing, panel y el resto del backoffice.
+- **José Gómez (nuevo):** el SDK de npm y el registro y login del backoffice.
 
 Lo que Maikol cerró en el motor queda en `main`, con tests y documentado en `REPARTO.md` y `odd/tasks/engine-productization.md`:
 - el contrato 11 (`45f965a`) y `DELETE /v1/projects/{id}` (`ff891db`);
@@ -95,20 +96,27 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 **Design system:** [Veridian](https://claude.ai/artifact/2JFynja7aQQqX1oJN6qmK2) (colores, tipografía, logo, botones). Es la base para la landing y el panel, y es libre de añadirle lo que haga falta: componentes, estados, patrones.
 
 **Pendiente:**
-- **Registro en un paso y primera clave** (pedido de Juan, 2026-10-25; lo más importante del backoffice). Cualquier persona tiene que poder registrarse sola y dejar Veridian configurado en su app:
-  1. **Entrar con Google o con GitHub** (OAuth). Google ya existe desde T3; falta GitHub. Sin formulario de registro aparte.
-     - GitHub puede ocultar el correo del perfil: pedir el permiso `user:email` y usar el correo principal verificado.
-     - La misma persona entrando con Google y con GitHub (mismo correo verificado) es una sola cuenta, no dos.
-  2. **Primera vez, sin organización:** el panel pide solo el nombre de la empresa y crea la organización (con la persona como `owner`) y su primer proyecto. Hoy eso está cerrado a los correos de `VERIDIAN_ORG_CREATORS`; ver la tarea 5 de Carlos en el motor (y el mismo cambio en el motor falso).
-  3. **Crear la clave de API** (la página de claves ya existe, contrato 12) y mostrar el snippet con esa clave ya puesta, listo para copiar.
-  4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
-  - **Tests:** una persona nueva entra con Google, crea su organización y su clave sin que nadie la invite; una persona con organización no vuelve a ver el paso 2.
+- **El registro y el login pasaron a José Gómez** (ver su sección). Coordinar con él los estilos y las plantillas compartidas del panel.
 - **T6:** el panel para el webhook (contrato 13, ya en el motor real: `cb1b125`) y para borrar datos de un usuario o de un proyecto (contrato 14, depende de U13 de Carlos).
 - **T4, seguimiento:** una revisión visual. La decisión abierta 2 (quién crea organizaciones) queda resuelta: cualquiera con cuenta (ver el registro).
 - **El snippet en el panel y la landing** (puntos 2 y 3 de "Mejorar la integración del SDK", más abajo): el texto explicativo, las pestañas Python / Node, el resaltado, el botón de copiar y la clave recién creada ya puesta. La API del SDK la define Carlos; coordinar el snippet con él.
 - **La clasificación de rutas en el panel:** mostrarla cuando esté lista la tarea 6 de Christian.
 
 **Ya hecho por el borde, en `main`:** T1–T5, T7–T10 (ver la lista de Carlos). T5 quedó cerrado con la página de claves de API y la de auditoría (`bb6aea1`).
+
+### José Gómez: SDK de npm y registro del backoffice
+
+**Qué toma:** un paquete nuevo en `sdk/node/` y, en el panel (`edge/panel/`) y el motor falso, el registro y el login. El resto del panel es de Maikol: coordinar con él los estilos y plantillas, con el [design system](https://claude.ai/artifact/2JFynja7aQQqX1oJN6qmK2) como base.
+
+1. **SDK para npm** (la especificación completa está más abajo, en "SDK para npm, además del de Python", dentro de la sección de Carlos). Mismo comportamiento y contratos que el SDK de Python, con la API simple que ya tiene ese SDK (`48011c2`): la clave sale de `VERIDIAN_API_KEY`, un parámetro para identificar al usuario y la sesión detectada sola. Incluye reportar las rutas al arrancar para la clasificación automática, como hace el de Python (`967ee9e`). Coordinar con Carlos, que mantiene el de Python.
+2. **Registro en un paso y primera clave** (pedido de Juan, 2026-10-25; lo más importante del backoffice). Cualquier persona tiene que poder registrarse sola y dejar Veridian configurado en su app:
+   1. **Entrar con Google o con GitHub** (OAuth). Google ya existe desde T3; falta GitHub. Sin formulario de registro aparte.
+      - GitHub puede ocultar el correo del perfil: pedir el permiso `user:email` y usar el correo principal verificado.
+      - La misma persona entrando con Google y con GitHub (mismo correo verificado) es una sola cuenta, no dos.
+   2. **Primera vez, sin organización:** el panel pide solo el nombre de la empresa y crea la organización (con la persona como `owner`) y su primer proyecto. Hoy eso está cerrado a los correos de `VERIDIAN_ORG_CREATORS`; el motor real lo abre Carlos (su tarea 5) y el motor falso, José.
+   3. **Crear la clave de API** (la página de claves ya existe, contrato 12) y mostrar el snippet con esa clave ya puesta, listo para copiar. El snippet lo diseña Maikol; usar el mismo componente.
+   4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
+   - **Tests:** una persona nueva entra con Google o GitHub, crea su organización y su clave sin que nadie la invite; una persona con organización no vuelve a ver el paso 2; la misma persona con los dos proveedores es una sola cuenta.
 
 ### Carlos Navas: SDK, middleware y app de demo (lo que era del Dev 2)
 
@@ -141,7 +149,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 - Para que el panel desplegado funcione contra el motor real, hay que configurar `VERIDIAN_PANEL_TOKEN` en los dos servicios de Render, con el mismo valor.
 
 **Nuevo (pedido de Juan):**
-- **SDK para npm, además del de Python.** Un paquete de Node (por ejemplo `veridian-sdk`, para Express y Next.js) con el mismo comportamiento que `sdk/python/`:
+- **SDK para npm, además del de Python (lo toma José Gómez).** Un paquete de Node (por ejemplo `veridian-sdk`, para Express y Next.js) con el mismo comportamiento que `sdk/python/`:
   - envía los eventos en lotes cada ~2 s, en segundo plano;
   - consulta `/v1/blocklist` con `since`;
   - lee las rutas críticas de `/v1/routes` y consulta `POST /v1/check` antes de ejecutarlas, con timeout de 12 s y *fail-open*;
