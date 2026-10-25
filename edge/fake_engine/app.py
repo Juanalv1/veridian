@@ -187,6 +187,14 @@ class ClientState:
                 ),
                 "event_ids": [event.id],
                 "status": "open",
+                "access": {
+                    "ts": event.ts,
+                    "ip": event.ip,
+                    "device_id": event.device_id,
+                    "session_id": event.session_id,
+                    "method": event.method,
+                    "route": event.route,
+                },
             }
         )
 

@@ -278,3 +278,16 @@ def test_attackers_own_events_do_not_whitelist_their_network_before_the_delay():
     now[0] = 301.0
     prof = c.get("/v1/users/u_42/profile", headers=AUTH).json()
     assert "203.0.113.0/24" in prof["networks"]
+
+
+def test_decision_carries_the_triggering_access(client):
+    post_events(client, [attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    assert d["access"] == {
+        "ts": "2026-10-26T10:14:03Z",
+        "ip": "203.0.113.9",
+        "device_id": "d_1",
+        "session_id": "s_atk",
+        "method": "POST",
+        "route": "/payouts/bank-account",
+    }

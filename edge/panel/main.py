@@ -1,9 +1,8 @@
-"""Panel: users, decisions and profile from the engine, refreshed every 2 s.
+"""Panel: recent decisions, each compared against the user's profile; refreshed every 2 s.
 
 Env: VERIDIAN_URL (engine base URL), VERIDIAN_TOKEN (Bearer token).
 """
 
-import asyncio
 import os
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -16,43 +15,40 @@ from fastapi.templating import Jinja2Templates
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 REFRESH_SECONDS = 2
 
-# decision -> (label, css modifier)
-BADGES = {
-    "block": ("BLOQUEADO", "block"),
-    "alert": ("ALERTA", "alert"),
-    "allow": ("PERMITIDO", "allow"),
-    "step_up": ("SEGUNDO FACTOR", "alert"),
+# decision -> (nav word, detail word, color class)
+VERDICTS = {
+    "block": ("Bloqueado", "Bloqueado", "block"),
+    "alert": ("Alerta", "Alerta", "alert"),
+    "allow": ("Permitido", "Permitido", "allow"),
+    "step_up": ("Segundo factor", "Segundo factor", "alert"),
 }
-LIFTED_BADGE = ("BLOQUEO LEVANTADO", "lifted")
+LIFTED = ("Levantado", "Bloqueo levantado", "lifted")
+ROUTE_CLASSES = {"critical": "crítico", "sensitive": "sensible"}
 MARK_ERROR = "No se pudo marcar la decisión como normal. Inténtalo de nuevo."
-
-
-def _chips(signals: dict) -> list[dict]:
-    chips = []
-    if signals.get("new_network"):
-        chips.append({"text": "red nueva", "critical": False})
-    if signals.get("new_device"):
-        chips.append({"text": "dispositivo nuevo", "critical": False})
-    route_class = signals.get("route_class")
-    if route_class:
-        used = "nunca usada" if signals.get("route_never_used") else "ya usada"
-        chips.append({"text": f"{route_class} · {used}", "critical": route_class == "critical"})
-    elif signals.get("route_never_used"):
-        chips.append({"text": "ruta nunca usada", "critical": False})
-    return chips
+MAX_PROFILE_ROUTES = 4
 
 
 def _decorate(d: dict) -> dict:
     signals = d.get("signals") or {}
+    access = d.get("access") if isinstance(d.get("access"), dict) else {}
     lifted = d.get("decision") == "block" and d.get("status") == "marked_normal"
-    label, kind = LIFTED_BADGE if lifted else BADGES.get(d.get("decision"), (str(d.get("decision", "")).upper(), "alert"))
-    path = signals.get("path") or []
-    d["badge_label"], d["badge_kind"], d["lifted"] = label, kind, lifted
+    short, long, kind = LIFTED if lifted else VERDICTS.get(
+        d.get("decision"), (str(d.get("decision", "")).capitalize(), str(d.get("decision", "")).capitalize(), "alert"))
+    method, route = access.get("method"), access.get("route") or signals.get("route") or ""
+    d["access"] = access
+    d["verdict_short"], d["verdict_long"], d["verdict_kind"], d["lifted"] = short, long, kind, lifted
     d["time"] = str(d.get("ts", ""))[11:19]
-    d["route"] = signals.get("route") or ""
-    d["chips"] = _chips(signals)
+    d["action"] = f"{method} {route}" if method and route else route
+    d["marked_normal"] = d.get("status") == "marked_normal"
+    # Compared against the profile: flags the engine derived from the access.
+    route_class = ROUTE_CLASSES.get(signals.get("route_class"))
+    never = bool(signals.get("route_never_used"))
+    d["route_flag"] = (f"{route_class}, nunca lo hizo" if route_class else "nunca lo hizo") if never else (route_class or "")
+    d["new_network"] = bool(signals.get("new_network")) and bool(access.get("ip"))
+    d["new_device"] = bool(signals.get("new_device")) and bool(access.get("device_id"))
+    path = signals.get("path") or []
     d["path"] = " → ".join(str(p) for p in path) if path else ""
-    d["can_mark_normal"] = d.get("status") != "marked_normal"
+    d["blocks_ip"] = access.get("ip") if d.get("decision") == "block" else None
     return d
 
 
@@ -60,6 +56,12 @@ def _hours(hours: list) -> str:
     if len(hours) == 2:
         return f"{int(hours[0]):02d}:00 – {int(hours[1]):02d}:00 UTC"
     return ", ".join(f"{int(h):02d}:00" for h in hours) + " UTC"
+
+
+def _days(n) -> str:
+    if not isinstance(n, int) or isinstance(n, bool) or n < 0:
+        return ""
+    return f"{n} día de historial" if n == 1 else f"{n} días de historial"
 
 
 def create_app(engine_url: str | None = None, token: str | None = None,
@@ -99,25 +101,38 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         # user_id is opaque and comes from the customer's app: escape it fully.
         return f"/users/{quote(user_id, safe='')}" if user_id else "/"
 
+    def decision_url(d: dict) -> str:
+        return f"{user_url(d.get('user_id'))}/decisions/{quote(str(d.get('id', '')), safe='')}"
+
+    # Decorators register bottom-up: the more specific route must come first.
     @app.get("/", response_class=HTMLResponse)
     @app.get("/users/{user:path}", response_class=HTMLResponse)
-    async def index(request: Request, user: str | None = None, error: str | None = None):
+    @app.get("/users/{user:path}/decisions/{decision_id}", response_class=HTMLResponse)
+    async def index(request: Request, user: str | None = None, decision_id: str | None = None,
+                    error: str | None = None):
         decisions, engine_error = await load_decisions()
-        user_ids = list(dict.fromkeys(d.get("user_id", "") for d in decisions))
-        profiles = dict(zip(user_ids, await asyncio.gather(*(load_profile(u) for u in user_ids))))
-        users = [{"id": u, "href": user_url(u), "state": (profiles[u] or {}).get("state", "normal"),
-                  "blocked": (profiles[u] or {}).get("state") == "blocked"} for u in user_ids]
-        selected = user if user in profiles else (user_ids[0] if user_ids else None)
-        profile = profiles.get(selected) if selected else None
-        if profile is not None:
-            hours = profile.get("hours") or []
-            profile = {**profile, "hours_text": _hours(hours) if hours else "",
-                       "hours_utc": ",".join(str(int(h)) for h in hours)}
+        for d in decisions:
+            d["href"] = decision_url(d)
+        by_user = [d for d in decisions if d.get("user_id") == user]
+        current = (next((d for d in by_user if d.get("id") == decision_id), None)
+                   or (by_user[0] if by_user else None)
+                   or (decisions[0] if decisions else None))
+        profile = None
+        if current is not None:
+            raw = await load_profile(current.get("user_id", ""))
+            if raw is not None:
+                hours = raw.get("hours") or []
+                routes = list(raw.get("routes") or [])
+                profile = {**raw, "hours_text": _hours(hours) if hours else "",
+                           "hours_utc": ",".join(str(int(h)) for h in hours),
+                           "days_text": _days(raw.get("history_days")),
+                           "routes_shown": routes[:MAX_PROFILE_ROUTES],
+                           "routes_more": max(0, len(routes) - MAX_PROFILE_ROUTES)}
         return templates.TemplateResponse(request, "index.html", {
             "decisions": decisions, "engine_error": engine_error, "refresh": REFRESH_SECONDS,
-            "users": users, "selected": selected, "profile": profile,
+            "current": current, "profile": profile,
             "notice": MARK_ERROR if error else None,
-            "refresh_url": user_url(selected),
+            "refresh_url": decision_url(current) if current else "/",
         })
 
     @app.post("/decisions/{decision_id}/normal")
