@@ -343,6 +343,8 @@ class Notification:
     last_error: str | None = None
     enforced: bool = True
     recipient: str | None = None  # email rows only
+    # Email rows only. None: the admin alert (U17). "self_unlock": the branded email to the blocked user.
+    purpose: str | None = None
 
 
 def new_notification(
@@ -353,6 +355,7 @@ def new_notification(
     kind: str = "webhook",
     enforced: bool = True,
     recipient: str | None = None,
+    purpose: str | None = None,
 ) -> Notification:
     return Notification(
         id=notification_id,
@@ -362,6 +365,7 @@ def new_notification(
         next_attempt_at=now,
         enforced=enforced,
         recipient=recipient,
+        purpose=purpose,
     )
 
 

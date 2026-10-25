@@ -106,3 +106,13 @@ def test_non_block_decision_sends_nothing():
 
 def test_null_mailer_accepts_and_discards():
     assert notify(NullMailer()) == 2
+
+
+def test_senders_accept_html_and_a_visible_name_and_the_fake_records_them():
+    fake = FakeMailer()
+    fake.send("a@example.com", "Asunto", "texto")
+    fake.send("b@example.com", "Asunto", "texto", html="<p>hola</p>", from_name="Acme")
+
+    assert (fake.sent[0].html, fake.sent[0].from_name) == (None, None)
+    assert (fake.sent[1].html, fake.sent[1].from_name) == ("<p>hola</p>", "Acme")
+    NullMailer().send("a@example.com", "Asunto", "texto", html="<p>hola</p>", from_name="Acme")

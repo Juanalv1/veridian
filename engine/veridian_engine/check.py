@@ -32,9 +32,14 @@ class CheckResult:
     decision_id: str | None = None
     # A rule block whose rationale the judge rewrites after the response, as in contract 1.
     explain_later: Deviation | None = None
+    # A block whose user gets the unlock email: the middleware tells them to check their mailbox.
+    self_unlock: bool = False
 
     def body(self) -> dict:
-        return {"verdict": self.verdict, "decision_id": self.decision_id}
+        body = {"verdict": self.verdict, "decision_id": self.decision_id}
+        if self.self_unlock:
+            body["self_unlock"] = True
+        return body
 
 
 ALLOW = CheckResult("allow")

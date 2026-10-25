@@ -80,7 +80,8 @@ def _insert(conn: sqlite3.Connection, notification: Notification, now: datetime)
     created_at = format_ts(now)
     conn.execute(
         "INSERT INTO notifications (id, project_id, kind, decision_id, status, attempts, next_attempt_at,"
-        " last_error, enforced, recipient, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " last_error, enforced, recipient, purpose, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             notification.id,
             notification.project_id,
@@ -92,6 +93,7 @@ def _insert(conn: sqlite3.Connection, notification: Notification, now: datetime)
             notification.last_error,
             int(notification.enforced),
             notification.recipient,
+            notification.purpose,
             created_at,
             created_at,
         ),
@@ -110,6 +112,7 @@ def _from_row(row) -> Notification:
         last_error=row["last_error"],
         enforced=bool(row["enforced"]),
         recipient=row["recipient"],
+        purpose=row["purpose"],
     )
 
 

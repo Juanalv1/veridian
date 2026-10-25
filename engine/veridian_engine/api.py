@@ -25,6 +25,7 @@ from .retention_worker import build_retention_worker
 from .route_catalog import RouteCatalogIn, build_route_classifier, record_report
 from .route_classes import RouteClasses, seed_unseeded
 from .rules import evaluate_event
+from .self_unlock import self_unlock_applies
 from .settings import Settings
 from .summary import as_utc, build_summary, list_users
 
@@ -114,6 +115,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.connect(settings.db_path) as conn:
             route_classes = RouteClasses.for_project(conn, project_id)
         result = check_event(settings, route_classes, write_lock, project_id, body.event)
+        if result.verdict == "block":
+            with db.connect(settings.db_path) as conn:
+                result.self_unlock = self_unlock_applies(conn, project_id, body.event.user_id)
         if result.explain_later is not None:
             # A rule block answers at once; the AI rewrites its rationale after the response.
             background_tasks.add_task(judge_deviations, settings, write_lock, [result.explain_later])

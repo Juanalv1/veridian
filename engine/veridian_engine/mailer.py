@@ -17,7 +17,12 @@ NOTIFIED_ROLES = frozenset({"owner", "admin"})
 
 
 class Mailer(Protocol):
-    def send(self, to: str, subject: str, text: str) -> None: ...
+    def send(
+        self, to: str, subject: str, text: str, html: str | None = None, from_name: str | None = None
+    ) -> None:
+        """`html` is an optional rich alternative to `text`; `from_name` the visible sender name
+        (the address is the provider's configuration)."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -25,12 +30,16 @@ class EmailMessage:
     to: str
     subject: str
     text: str
+    html: str | None = None
+    from_name: str | None = None
 
 
 class NullMailer:
     """Accepts every message and discards it (no provider configured)."""
 
-    def send(self, to: str, subject: str, text: str) -> None:
+    def send(
+        self, to: str, subject: str, text: str, html: str | None = None, from_name: str | None = None
+    ) -> None:
         return None
 
 
@@ -41,10 +50,12 @@ class FakeMailer:
     fail_for: set[str] = field(default_factory=set)
     sent: list[EmailMessage] = field(default_factory=list)
 
-    def send(self, to: str, subject: str, text: str) -> None:
+    def send(
+        self, to: str, subject: str, text: str, html: str | None = None, from_name: str | None = None
+    ) -> None:
         if to in self.fail_for:
             raise RuntimeError(f"simulated delivery failure for {to}")
-        self.sent.append(EmailMessage(to=to, subject=subject, text=text))
+        self.sent.append(EmailMessage(to=to, subject=subject, text=text, html=html, from_name=from_name))
 
 
 def _field(item: Any, name: str) -> Any:

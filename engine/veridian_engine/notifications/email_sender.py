@@ -8,16 +8,22 @@ left the organization, lost owner/admin or turned `notify_email` off is not mail
 from __future__ import annotations
 
 import threading
+from contextlib import nullcontext
 from dataclasses import replace
 from urllib.parse import quote
 
+from .. import db
 from ..decisions import triggering_access
 from ..mailer import NullMailer, build_block_alert, select_recipients
-from .outbox import notified_members
+from ..self_unlock import PURPOSE as SELF_UNLOCK
+from ..self_unlock import access_of, issue_token, project_self_unlock, user_email
+from ..self_unlock_email import access_detail, build_self_unlock_email
+from .outbox import notified_members, parse_ts
 from .sender import WebhookSender
 from .webhook import FAILED, DeliveryResult, Notification
 
 NO_PROVIDER = "no email provider configured"
+DEFAULT_PANEL_URL = "https://veridian-panel.onrender.com"
 
 
 class EmailSender(WebhookSender):
@@ -35,6 +41,8 @@ class EmailSender(WebhookSender):
 
         if isinstance(self._mailer, NullMailer):
             return failed(NO_PROVIDER)
+        if notification.purpose == SELF_UNLOCK:
+            return self._prepare_self_unlock(conn, notification, failed)
         recipient = notification.recipient
         if not recipient or recipient not in select_recipients(notified_members(conn, notification.project_id)):
             return failed("recipient no longer notified")
@@ -54,10 +62,51 @@ class EmailSender(WebhookSender):
         )
         return (recipient, subject, text)
 
+    def _prepare_self_unlock(self, conn, notification: Notification, failed) -> Notification | tuple:
+        """The branded email to the blocked user. Everything is checked again at send time: the feature
+        may have been turned off, the decision marked normal or the address erased since it was queued."""
+        project = project_self_unlock(conn, notification.project_id)
+        if project is None:
+            return failed("self-unlock is off")
+        decision = conn.execute(
+            "SELECT user_id, decision, normal FROM decisions WHERE project_id = ? AND id = ?",
+            (notification.project_id, notification.decision_id),
+        ).fetchone()
+        if decision is None or decision["decision"] != "block" or decision["normal"]:
+            return failed("decision no longer open")
+        recipient = user_email(conn, notification.project_id, decision["user_id"])
+        if not recipient:
+            return failed("no user email")
+        access = access_of(conn, notification.project_id, notification.decision_id)
+        detail = access_detail(
+            parse_ts(access["ts"]) if access else None, access["user_agent"] if access else None
+        )
+        brand = {
+            "name": project["brand_name"] or project["name"],
+            "logo_url": project["brand_logo_url"],
+            "color": project["brand_color"],
+            "support_url": project["brand_support_url"],
+            "support_email": project["brand_support_email"],
+        }
+        return (recipient, brand, detail, decision["user_id"])
+
     def _attempt(self, notification: Notification, prepared: tuple) -> DeliveryResult:
+        if notification.purpose == SELF_UNLOCK:
+            return self._send_self_unlock(notification, prepared)
         recipient, subject, text = prepared
         # A provider error raises here and counts as a failed attempt (process_due).
         self._mailer.send(recipient, subject, text)
+        return DeliveryResult(delivered=True)
+
+    def _send_self_unlock(self, notification: Notification, prepared: tuple) -> DeliveryResult:
+        recipient, brand, detail, user_id = prepared
+        # The token is born here, so the plain value exists only in this email. A retry replaces it.
+        with self._write_lock or nullcontext(), db.connect(self._db_path) as conn:
+            token = issue_token(conn, notification_id=notification.id, project_id=notification.project_id,
+                                decision_id=notification.decision_id, user_id=user_id, now=self._clock())
+        base = (self._panel_base_url or DEFAULT_PANEL_URL).rstrip("/")
+        subject, text, html = build_self_unlock_email(brand=brand, access=detail, link=f"{base}/desbloquear/{token}")
+        self._mailer.send(recipient, subject, text, html=html, from_name=brand["name"])
         return DeliveryResult(delivered=True)
 
 

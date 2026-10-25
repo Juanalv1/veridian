@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .notifications.outbox import enqueue_block_emails, enqueue_block_notification
+from .self_unlock import enqueue_self_unlock_email, project_self_unlock, user_email
 
 
 def format_decision_ts(value: datetime) -> str:
@@ -48,6 +49,7 @@ def create_decision(
         # Outbox, same transaction (decision 8: only blocks notify). Sending happens later.
         enqueue_block_notification(conn, project_id, decision_id, ts)
         enqueue_block_emails(conn, project_id, decision_id, ts)
+        enqueue_self_unlock_email(conn, project_id, decision_id, user_id, ts)
     return decision_id
 
 
@@ -131,13 +133,20 @@ def bump_version(conn: sqlite3.Connection, project_id: str) -> None:
 def blocklist(conn: sqlite3.Connection, project_id: str) -> dict:
     """Full blocklist. "users" stays empty: blocking the user would lock out the owner too."""
     rows = conn.execute(
-        "SELECT session_id, ip FROM decisions WHERE project_id = ? AND decision = 'block' AND normal = 0",
+        "SELECT session_id, ip, user_id FROM decisions WHERE project_id = ? AND decision = 'block' AND normal = 0",
         (project_id,),
     ).fetchall()
-    return {
+    listing = {
         "version": current_version(conn, project_id),
         "users": [],
         "sessions": sorted({row["session_id"] for row in rows}),
         # A session-only block (the owner's own network) stores no ip.
         "ips": sorted({row["ip"] for row in rows if row["ip"]}),
     }
+    if project_self_unlock(conn, project_id) is not None:
+        # Only present when the feature is on: the blocked sessions whose user gets the unlock email,
+        # so the middleware can tell them to check their mailbox.
+        listing["self_unlock_sessions"] = sorted(
+            {row["session_id"] for row in rows if user_email(conn, project_id, row["user_id"])}
+        )
+    return listing
