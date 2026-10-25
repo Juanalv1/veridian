@@ -1,5 +1,5 @@
 // Veridian for Express (and anything Connect-compatible): app.use(veridian({ user: (req) => ... }))
-import { Veridian, BLOCKED_BODY } from './core.js';
+import { Veridian, blockedBody } from './core.js';
 import { resolveConfig, VeridianConfigError } from './config.js';
 import { resolveClientIp, deviceCookieHeader, detectSession } from './identity.js';
 import { expressRoutes, routeMatcher, normalizeTemplate } from './routes.js';
@@ -71,7 +71,7 @@ export function veridian(options = {}) {
       return next();
     }
     if (ctx.blocked) {
-      res.status(403).type('json').send(BLOCKED_BODY);
+      res.status(403).type('json').send(blockedBody(ctx.selfUnlock));
       return undefined;
     }
     if (ctx.excluded) return next();

@@ -4,7 +4,7 @@
 //   export const protect = createVeridian({ user: async (request) => ..., trustedProxies: 1 });
 //   // app/api/payouts/route.js
 //   export const POST = protect(async (request) => Response.json({ ok: true }), { route: '/api/payouts' });
-import { Veridian, BLOCKED_BODY } from './core.js';
+import { Veridian, blockedBody } from './core.js';
 import { resolveConfig } from './config.js';
 import { resolveClientIp, deviceCookieHeader } from './identity.js';
 import { normalizeTemplate } from './routes.js';
@@ -57,7 +57,7 @@ export function createVeridian(options = {}) {
         return handler(request, ...rest);
       }
       if (ctx.blocked) {
-        return new Response(BLOCKED_BODY, { status: 403, headers: { 'content-type': 'application/json' } });
+        return new Response(blockedBody(ctx.selfUnlock), { status: 403, headers: { 'content-type': 'application/json' } });
       }
       if (ctx.excluded) return handler(request, ...rest);
       let response;

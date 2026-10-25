@@ -9,6 +9,7 @@ export async function startEngine(overrides = {}) {
     blocklist: { users: [], sessions: [], ips: [] },
     routes: [], // [{method, route, class}]
     verdict: 'allow',
+    checkExtra: {}, // extra fields of the check answer, e.g. { self_unlock: true }
     // Replace any of these to force a status: {status, body}
     forced: {}, // keyed by "METHOD /path"
     delay: {}, // keyed by "METHOD /path" -> ms
@@ -39,7 +40,7 @@ export async function startEngine(overrides = {}) {
         return send(200, { version: engine.version, ...engine.blocklist });
       }
       if (id === 'GET /v1/routes') return send(200, { routes: engine.routes, default: 'normal' });
-      if (id === 'POST /v1/check') return send(200, { verdict: engine.verdict, decision_id: 'd_1' });
+      if (id === 'POST /v1/check') return send(200, { verdict: engine.verdict, decision_id: 'd_1', ...engine.checkExtra });
       if (id === 'PUT /v1/routes/catalog') return send(200, { received: record.body.routes.length, to_classify: 0 });
       return send(404, { error: 'not_found' });
     });

@@ -55,6 +55,7 @@ Works with Express 4 and 5. Register Veridian **after** the middleware that iden
 | Option | Default | What it does |
 |---|---|---|
 | `user` | none | Function `(req) => id or null`: who makes the request (sync or async). A lookup that throws `TypeError`, like `req.user.id` with nobody logged in, counts as `null`. Numbers are sent as strings. Requests with no user are not reported. Any other error is logged and counts as `null`. |
+| `userEmail` | none | Optional function `(req) => email or null`, like `user`. With it, Veridian can email a blocked user a link to unlock themselves (self-unlock by email, turned on per project in the panel). It is personal data: Veridian keeps only the last one per user. `null`, a lookup that throws `TypeError` or something that is not an address means "no email". Next.js: same option on `createVeridian`. |
 | `session` | detected | Function `(req) => id or null`. Without it, the session is the hash of the first of these cookies: `sessionid`, `connect.sid`, `sid`, `session_id`, `PHPSESSID`, `JSESSIONID`; else the hash of an `Authorization: Bearer` token; else none. Pass your own function to use a cookie called `session` (cookie-session), which changes on every response: send a hash, never the cookie. **Critical routes are only checked when there is a session.** |
 | `apiKey` | `VERIDIAN_API_KEY` | The project's key. Missing: `VeridianConfigError` when `veridian()` is called. |
 | `baseUrl` | `VERIDIAN_URL`, else `https://veridian-engine.onrender.com` | The engine. A value that is not a full `http(s)` URL: `VeridianConfigError`. |
@@ -113,6 +114,8 @@ export const POST = protect(
 - Next.js has no router to read, so routes are not reported automatically: pass `routes: [{ method: 'POST', route: '/api/payouts/bank-account' }]` to `createVeridian` for the classification at startup.
 - The event's `bytes` is the response's `Content-Length`, or `0` when it has none.
 
+Self-unlock by email: when the engine says a blocked session was sent the unlock email, the `403` body adds `"message": "Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú."` for your app to show. Otherwise the body is exactly `{"error":"blocked"}`.
+
 ## Critical routes
 
 The middleware reads `GET /v1/routes` at startup and every `routesPollInterval`, and keeps the routes classified `critical` (method plus route template, for example `POST /payouts/bank-account`). Before it passes a request on one of them to your app, it calls `POST /v1/check` with the same event that will go in the batch (same `id`) and waits for the verdict:
@@ -133,7 +136,7 @@ At startup, once (retried every `routesPollInterval` until the engine accepts it
 
 ## What is sent
 
-One event per request, sent in the background in batches: `id`, `ts`, `user_id`, `session_id`, `ip`, `user_agent` (first 200 characters), `device_id`, `method`, `route` (the route template, for example `/items/{id}`), `status` and `bytes` (the `Content-Length` of the response, `0` when there is none).
+One event per request, sent in the background in batches: `id`, `ts`, `user_id`, `session_id`, `ip`, `user_agent` (first 200 characters), `device_id`, `method`, `route` (the route template, for example `/items/{id}`), `status` and `bytes` (the `Content-Length` of the response, `0` when there is none); plus `user_email` only if you pass `userEmail`.
 
 The middleware also sets its own device cookie (`vrd_did`) in the user's browser.
 

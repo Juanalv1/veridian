@@ -6,6 +6,14 @@ import { REPORTED_METHODS, normalizeTemplate } from './routes.js';
 
 export const MAX_BATCH = 200;
 export const BLOCKED_BODY = '{"error":"blocked"}';
+// Added to the 403 body only when the engine says it sent the user an unlock email (self-unlock by email).
+export const SELF_UNLOCK_MESSAGE = 'Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú.';
+export const MAX_EMAIL = 254;
+
+/** The 403 body: exactly `{"error":"blocked"}`, plus `message` when the unlock email was sent. */
+export function blockedBody(selfUnlock = false) {
+  return selfUnlock ? JSON.stringify({ error: 'blocked', message: SELF_UNLOCK_MESSAGE }) : BLOCKED_BODY;
+}
 export const MAX_REPORTED_ROUTES = 1000;
 export const MAX_ROUTE_TEXT = 2000;
 
@@ -16,6 +24,7 @@ export class Veridian {
     this.queue = []; // events; drops the oldest when full
     this.blocklistVersion = null;
     this.blocked = { users: new Set(), sessions: new Set(), ips: new Set() };
+    this.selfUnlockSessions = new Set(); // blocked sessions whose user got the unlock email
     this.timers = [];
     this.flushing = false;
     this.critical = new Set(); // "METHOD route template"; last known
@@ -59,6 +68,13 @@ export class Veridian {
     }
   }
 
+  /** The user's email from `userEmail`, or null: nothing, not an address, or an error (never throws). */
+  async emailOf(req) {
+    const value = await this.identity(this.config.userEmail, req);
+    const email = value?.trim();
+    return email && email.includes('@') && email.length <= MAX_EMAIL ? email : null;
+  }
+
   async sessionOf(info) {
     if (this.config.session) return this.identity(this.config.session, info.req);
     return detectSession(info.headers);
@@ -79,7 +95,8 @@ export class Veridian {
 
   /**
    * Decide what to do with a request before the app runs.
-   * @returns {Promise<{excluded?: true, blocked: boolean, deviceId?: string | null, newDevice?: boolean, eventId?: string}>}
+   * `selfUnlock` is true on a block when the engine says the user was sent the unlock email.
+   * @returns {Promise<{excluded?: true, blocked: boolean, selfUnlock?: boolean, deviceId?: string | null, newDevice?: boolean, eventId?: string}>}
    */
   async before(info) {
     if (this.isExcluded(info.path)) return { excluded: true, blocked: false };
@@ -88,19 +105,22 @@ export class Veridian {
     const session = await this.sessionOf(info);
     if (this.isBlocked({ ip: info.ip, session, user })) {
       // The device cookie is only read here, never issued to a blocked client.
-      await this.record(info, cookieDevice, 403, BLOCKED_BODY.length, { route: info.routeBeforeRun() });
-      return { blocked: true, deviceId: cookieDevice, newDevice: false };
+      const selfUnlock = Boolean(session && this.selfUnlockSessions.has(session));
+      await this.record(info, cookieDevice, 403, Buffer.byteLength(blockedBody(selfUnlock)), { route: info.routeBeforeRun() });
+      return { blocked: true, selfUnlock, deviceId: cookieDevice, newDevice: false };
     }
     const newDevice = cookieDevice === null;
     const deviceId = cookieDevice ?? newDeviceId();
     const eventId = 'e_' + randomUUID().replaceAll('-', '');
     if (this.critical.size) {
       const route = info.routeBeforeRun();
-      if (this.critical.has(`${info.method.toUpperCase()} ${route}`) && await this.checkBlocks(info, deviceId, route, eventId)) {
+      const verdict = this.critical.has(`${info.method.toUpperCase()} ${route}`) ? await this.checkBlocks(info, deviceId, route, eventId) : null;
+      if (verdict) {
         // Same id as the pre-check. The engine keeps the first write of an id, so the 403
         // only reaches it when the pre-check never got through; no cookie either.
-        await this.record(info, deviceId, 403, BLOCKED_BODY.length, { route, eventId });
-        return { blocked: true, deviceId, newDevice: false };
+        const selfUnlock = verdict.self_unlock === true;
+        await this.record(info, deviceId, 403, Buffer.byteLength(blockedBody(selfUnlock)), { route, eventId });
+        return { blocked: true, selfUnlock, deviceId, newDevice: false };
       }
     }
     return { blocked: false, deviceId, newDevice, eventId };
@@ -118,6 +138,7 @@ export class Veridian {
   async buildEvent(info, deviceId, status, bytes, { route, eventId } = {}) {
     const user = await this.identity(this.config.user, info.req);
     if (!user) return null;
+    const email = this.config.userEmail ? await this.emailOf(info.req) : null;
     return {
       id: eventId ?? 'e_' + randomUUID().replaceAll('-', ''),
       ts: new Date().toISOString().slice(0, 19) + 'Z',
@@ -130,6 +151,7 @@ export class Veridian {
       route: route ?? info.routeAfterRun(),
       status,
       bytes,
+      ...(email ? { user_email: email } : {}),
     };
   }
 
@@ -179,6 +201,7 @@ export class Veridian {
         return new Set((body[name] ?? []).map(String));
       };
       this.blocked = { users: list('users'), sessions: list('sessions'), ips: list('ips') };
+      this.selfUnlockSessions = Array.isArray(body.self_unlock_sessions) ? new Set(body.self_unlock_sessions.map(String)) : new Set();
       this.blocklistVersion = version;
     } catch (err) {
       this.config.logger.warn(`veridian: blocklist refresh failed: ${err?.message ?? err}`);
@@ -204,8 +227,8 @@ export class Veridian {
   }
 
   /**
-   * Ask the engine whether this critical request must be refused. True only on an explicit
-   * `block`; every failure answers false (fail-open).
+   * Ask the engine whether this critical request must be refused. The engine's answer on an
+   * explicit `block`, else null; every failure answers null (fail-open).
    *
    * The engine stores the first event it sees for an id, so the pre-check carries the id the
    * batched event will have, status 200 (the engine accepts 100-599 only; the app has not run)
@@ -215,12 +238,12 @@ export class Veridian {
   async checkBlocks(info, deviceId, route, eventId) {
     try {
       const event = await this.buildEvent(info, deviceId, 200, 0, { route, eventId });
-      if (!event || !event.session_id || !event.ip) return false;
+      if (!event || !event.session_id || !event.ip) return null;
       const { status, body } = await this.http('POST', '/v1/check', { json: { event }, timeout: this.config.checkTimeout });
-      return status === 200 && body !== null && typeof body === 'object' && body.verdict === 'block';
+      return status === 200 && body !== null && typeof body === 'object' && body.verdict === 'block' ? body : null;
     } catch (err) {
       this.config.logger.warn(`veridian: check failed, letting the request through: ${err?.message ?? err}`);
-      return false;
+      return null;
     }
   }
 

@@ -54,6 +54,7 @@ export function resolveConfig(options = {}, env = process.env) {
   const baseUrl = resolveUrl(options.baseUrl, env);
   const user = checkFunction(options.user, 'user');
   const session = checkFunction(options.session, 'session');
+  const userEmail = checkFunction(options.userEmail, 'userEmail');
   const trustedProxies = options.trustedProxies ?? 0;
   if (!Number.isInteger(trustedProxies) || trustedProxies < 0) {
     throw new VeridianConfigError('veridian: `trustedProxies` must be a whole number of proxies, 0 or more');
@@ -67,6 +68,7 @@ export function resolveConfig(options = {}, env = process.env) {
     apiKey,
     baseUrl,
     user,
+    userEmail,
     session,
     logger,
     trustedProxies,

@@ -1,6 +1,6 @@
 {
   "name": "veridian-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Express and Next.js middleware that reports access events to Veridian and blocks sessions, IPs and users on its blocklist",
   "type": "module",
   "license": "MIT",
