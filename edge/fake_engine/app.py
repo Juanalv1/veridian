@@ -61,6 +61,10 @@ class Forbidden(Exception):
     pass
 
 
+class ProjectRequired(Exception):
+    pass
+
+
 # Roles of docs/DISENO-PRODUCTO.md, weakest first.
 ROLE_RANK = {"viewer": 0, "admin": 1, "owner": 2}
 Role = Literal["viewer", "admin", "owner"]
@@ -471,38 +475,144 @@ def create_app(
     routes: dict[str, str] | None = None,
     learn_delay: float | None = None,
     clock=time.monotonic,
+    panel_tokens: set[str] | None = None,
+    bootstrap_owners: set[str] | None = None,
+    project_creators: set[str] | None = None,
 ) -> FastAPI:
     """Build the fake engine. With no arguments it reads the environment:
 
-    VERIDIAN_TOKENS         comma-separated accepted tokens (none -> all 401)
+    VERIDIAN_TOKENS         comma-separated SDK keys; each one is its own seeded project
     VERIDIAN_ALLOW_DEV_TOKEN=1   additionally accept the local "dev-token"
     VERIDIAN_LEARN_DELAY    seconds before an unflagged event enters the profile (default 300)
     VERIDIAN_SEED           "demo" or a JSON list of {user_id, ips, routes, devices}
+    VERIDIAN_PANEL_TOKEN    service credential of the panel (VERIDIAN_PANEL_TOKENS: comma list, to rotate)
+    VERIDIAN_BOOTSTRAP_OWNERS    emails that become owner of the projects that have no owner, on login
+    VERIDIAN_PROJECT_CREATORS    emails allowed to create projects (empty: nobody). Provisional:
+                            open decision 2 of docs/DISENO-PRODUCTO.md
+
+    Two callers, as in the design: `sdk` (a project's key: events, check, blocklist, routes) and
+    `panel` (service credential + X-Veridian-Actor + X-Veridian-Project; membership and role are
+    checked on every request).
     """
     accepted = set(tokens) if tokens is not None else _tokens_from_env()
     seed_data = seed if seed is not None else _seed_from_env()
     route_map = dict(routes) if routes is not None else dict(DEFAULT_ROUTES)
     delay = learn_delay if learn_delay is not None else float(os.environ.get("VERIDIAN_LEARN_DELAY", "300"))
-    states: dict[str, ClientState] = {}
+    panel_accepted = set(panel_tokens) if panel_tokens is not None else _panel_tokens_from_env()
+    owners = {e.lower() for e in bootstrap_owners} if bootstrap_owners is not None else _emails_from_env("VERIDIAN_BOOTSTRAP_OWNERS")
+    creators = {e.lower() for e in project_creators} if project_creators is not None else _emails_from_env("VERIDIAN_PROJECT_CREATORS")
+
+    projects: dict[str, Project] = {}
+    by_token: dict[str, str] = {}  # SDK key -> project id
+    people: dict[str, Person] = {}  # person id -> person
+    by_sub: dict[str, str] = {}  # google_sub -> person id
+
+    def new_state() -> ClientState:
+        return ClientState(routes=dict(route_map), learn_delay=delay, clock=clock)
+
+    # Each SDK key is a project of its own, already seeded, with no members until a bootstrap owner logs in.
+    ordered = sorted(accepted)
+    for i, token in enumerate(ordered, start=1):
+        st = new_state()
+        for item in seed_data:
+            st.seed(item["user_id"], item.get("ips", ()), item.get("routes", ()), item.get("devices", ()))
+        pid = "p_" + hashlib.sha256(token.encode()).hexdigest()[:8]
+        name = "Demo" if len(ordered) == 1 else f"Demo {i}"
+        projects[pid] = Project(id=pid, name=name, state=st, created_at=now_iso(), enforcement="enforce")
+        by_token[token] = pid
 
     app = FastAPI(title="Veridian fake engine")
+    app.state.projects = projects
+    app.state.project_id_for = by_token.__getitem__
 
     @app.exception_handler(Unauthorized)
     async def _unauthorized(_: Request, __: Unauthorized):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
-    def state_for(authorization: Annotated[str | None, Header()] = None) -> ClientState:
-        scheme, _, token = (authorization or "").partition(" ")
-        if scheme != "Bearer" or token not in accepted:
-            raise Unauthorized()
-        if token not in states:
-            st = ClientState(routes=route_map, learn_delay=delay, clock=clock)
-            for item in seed_data:
-                st.seed(item["user_id"], item.get("ips", ()), item.get("routes", ()), item.get("devices", ()))
-            states[token] = st
-        return states[token]
+    @app.exception_handler(Forbidden)
+    async def _forbidden(_: Request, __: Forbidden):
+        return JSONResponse({"error": "forbidden"}, status_code=403)
 
-    State = Annotated[ClientState, Depends(state_for)]
+    @app.exception_handler(ProjectRequired)
+    async def _project_required(_: Request, __: ProjectRequired):
+        return JSONResponse({"error": "project_required"}, status_code=400)
+
+    def bearer_of(authorization: str | None) -> str:
+        scheme, _, token = (authorization or "").partition(" ")
+        if scheme != "Bearer" or not token:
+            raise Unauthorized()
+        return token
+
+    def is_panel(token: str) -> bool:
+        return any(hmac.compare_digest(token.encode(), p.encode()) for p in panel_accepted)
+
+    def kind_of(authorization: str | None) -> tuple[str, str]:
+        """("panel" | "sdk", token); anything else is 401. The panel credential is checked first."""
+        token = bearer_of(authorization)
+        if is_panel(token):
+            return "panel", token
+        if token in accepted:
+            return "sdk", token
+        raise Unauthorized()
+
+    def actor_of(authorization: str | None, actor_id: str | None) -> Person:
+        kind, _ = kind_of(authorization)
+        person = people.get(actor_id or "")
+        if kind != "panel" or person is None:
+            raise Forbidden()
+        return person
+
+    def authorize(person: Person, project_id: str | None, minimum: Role) -> Project:
+        """The project, if the person is a member with at least `minimum`. Unknown project = foreign = 403."""
+        project = projects.get(project_id or "")
+        role = project.members.get(person.id) if project else None
+        if project is None or role is None or ROLE_RANK[role] < ROLE_RANK[minimum]:
+            raise Forbidden()
+        return project
+
+    def sdk_state(authorization: Annotated[str | None, Header()] = None) -> ClientState:
+        kind, token = kind_of(authorization)
+        if kind != "sdk":
+            raise Forbidden()
+        return projects[by_token[token]].state
+
+    def panel_state(minimum: Role, allow_sdk: bool = False):
+        def dep(authorization: Annotated[str | None, Header()] = None,
+                x_veridian_actor: Annotated[str | None, Header()] = None,
+                x_veridian_project: Annotated[str | None, Header()] = None) -> ClientState:
+            kind, token = kind_of(authorization)
+            if kind == "sdk" and allow_sdk:
+                return projects[by_token[token]].state
+            person = actor_of(authorization, x_veridian_actor)
+            if not x_veridian_project:
+                raise ProjectRequired()
+            return authorize(person, x_veridian_project, minimum).state
+        return dep
+
+    State = Annotated[ClientState, Depends(sdk_state)]  # SDK key only
+    ReadState = Annotated[ClientState, Depends(panel_state("viewer"))]  # panel, any member
+    SharedState = Annotated[ClientState, Depends(panel_state("viewer", allow_sdk=True))]  # SDK key or panel
+    AdminState = Annotated[ClientState, Depends(panel_state("admin"))]  # panel, admin or owner
+
+    def person_of(authorization: Annotated[str | None, Header()] = None,
+                  x_veridian_actor: Annotated[str | None, Header()] = None) -> Person:
+        return actor_of(authorization, x_veridian_actor)
+
+    Actor = Annotated[Person, Depends(person_of)]
+
+    def panel_only(authorization: Annotated[str | None, Header()] = None) -> None:
+        if kind_of(authorization)[0] != "panel":
+            raise Forbidden()
+
+    def role_of(person: Person, project: Project) -> str:
+        return project.members[person.id]
+
+    def listing(person: Person) -> list[dict]:
+        return [{"id": p.id, "name": p.name, "role": p.members[person.id]}
+                for p in projects.values() if person.id in p.members]
+
+    def person_public(person: Person) -> dict:
+        return {"id": person.id, "email": person.email, "name": person.name}
 
     @app.post("/v1/events", status_code=202)
     def post_events(body: EventsIn, st: State):
@@ -520,21 +630,21 @@ def create_app(
         return st.check(body.event)
 
     @app.get("/v1/blocklist")
-    def get_blocklist(st: State, since: int | None = None):
+    def get_blocklist(st: SharedState, since: int | None = None):
         if since is not None and since == st.version:
             return Response(status_code=304)
         return {"version": st.version, "users": [], "sessions": list(st.sessions), "ips": list(st.ips)}
 
     @app.get("/v1/decisions")
-    def get_decisions(st: State, limit: Annotated[int, Query(ge=1, le=500)] = 50):
+    def get_decisions(st: ReadState, limit: Annotated[int, Query(ge=1, le=500)] = 50):
         return {"decisions": list(reversed(st.decisions))[:limit]}
 
     @app.get("/v1/activity")
-    def get_activity(st: State, limit: Annotated[int, Query(ge=1, le=200)] = 50):
+    def get_activity(st: ReadState, limit: Annotated[int, Query(ge=1, le=200)] = 50):
         return {"activity": st.activity(limit)}
 
     @app.get("/v1/summary")
-    def get_summary(st: State, since: str | None = None, until: str | None = None):
+    def get_summary(st: ReadState, since: str | None = None, until: str | None = None):
         try:
             end = parse_iso(until) if until else datetime.now(timezone.utc)
             start = parse_iso(since) if since else end - timedelta(hours=24)
@@ -545,11 +655,11 @@ def create_app(
         return st.summary(start, end)
 
     @app.get("/v1/users")
-    def get_users(st: State):
+    def get_users(st: ReadState):
         return {"users": st.users()}
 
     @app.get("/v1/routes")
-    def get_routes(st: State):
+    def get_routes(st: SharedState):
         """Contract 8: classified routes only, critical first, then by route and method."""
         rank = {"critical": 0, "sensitive": 1}
         rows = []
@@ -561,14 +671,14 @@ def create_app(
         return {"routes": rows, "default": "normal"}
 
     @app.post("/v1/decisions/{decision_id}/normal")
-    def post_normal(decision_id: str, st: State):
+    def post_normal(decision_id: str, st: AdminState):
         decision = st.mark_normal(decision_id)
         if decision is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
         return decision
 
     @app.get("/v1/users/{user_id}/profile")
-    def get_profile(user_id: str, st: State):
+    def get_profile(user_id: str, st: ReadState):
         st.apply_pending()
         p = st.profile(user_id)
         hours = [min(p.hours), max(p.hours)] if p.hours else []
@@ -581,6 +691,59 @@ def create_app(
             "routes": sorted(p.route_keys),
             "state": "blocked" if user_id in st.blocked_users else "normal",
         }
+
+    # --- contract 10: people and projects (panel only) ---------------------------------------
+
+    @app.post("/v1/people/login", dependencies=[Depends(panel_only)])
+    def post_login(body: LoginIn):
+        """Upsert by google_sub, take the bootstrap and the pending invitations, answer with the projects."""
+        email = body.email.strip().lower()
+        stamp = now_iso()
+        pid = by_sub.get(body.google_sub)
+        if pid is None:
+            pid = "per_" + secrets.token_hex(8)
+            by_sub[body.google_sub] = pid
+            people[pid] = Person(pid, body.google_sub, email, body.name or email, stamp, stamp)
+        person = people[pid]
+        person.email, person.last_login_at = email, stamp
+        if body.name:
+            person.name = body.name
+        for project in projects.values():
+            if email in owners and not project.has_owner():
+                project.members[person.id] = "owner"
+            for inv in project.invitations:
+                if inv["email"] == email and inv["accepted_at"] is None and parse_iso(inv["expires_at"]) > datetime.now(timezone.utc):
+                    inv["accepted_at"] = stamp
+                    current = project.members.get(person.id)
+                    if current is None or ROLE_RANK[inv["role"]] > ROLE_RANK[current]:
+                        project.members[person.id] = inv["role"]
+        return {"person": person_public(person), "projects": listing(person)}
+
+    @app.get("/v1/me/projects")
+    def get_my_projects(person: Actor):
+        return {"projects": listing(person)}
+
+    @app.post("/v1/projects", status_code=201)
+    def post_project(body: ProjectIn, person: Actor):
+        if person.email not in creators:
+            raise Forbidden()
+        pid = "p_" + secrets.token_hex(4)
+        project = Project(id=pid, name=body.name.strip(), state=new_state(), created_at=now_iso())
+        project.members[person.id] = "owner"
+        projects[pid] = project
+        return {**project.public(), "role": "owner"}
+
+    @app.get("/v1/projects/{project_id}")
+    def get_project(project_id: Annotated[str, Path()], person: Actor):
+        project = authorize(person, project_id, "viewer")
+        return {**project.public(), "role": role_of(person, project)}
+
+    @app.patch("/v1/projects/{project_id}")
+    def patch_project(project_id: Annotated[str, Path()], body: ProjectPatch, person: Actor):
+        project = authorize(person, project_id, "admin")
+        for key, value in body.model_dump(exclude_none=True).items():
+            setattr(project, key, value.strip() if key == "name" else value)
+        return {**project.public(), "role": role_of(person, project)}
 
     return app
 

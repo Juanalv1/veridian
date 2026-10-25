@@ -298,7 +298,7 @@ def test_attackers_own_events_do_not_whitelist_their_network_before_the_delay():
     assert c.get("/v1/blocklist", headers=AUTH).json()["sessions"] == ["s_atk"]
     # after the delay the unflagged login would be learned
     now[0] = 301.0
-    prof = c.get("/v1/users/u_42/profile", headers=client.panel_a).json()
+    prof = c.get("/v1/users/u_42/profile", headers=c.panel_a).json()
     assert "203.0.113.0/24" in prof["networks"]
 
 
