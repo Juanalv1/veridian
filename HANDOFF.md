@@ -2,7 +2,10 @@
 
 **Fecha:** 2026-10-25, ~05:30 (hora de Caracas)
 **Rama:** `main` (no se usan PR; ver `CLAUDE.md`)
-**Estado:** en curso. El motor funciona y está desplegado; faltan unidades del plan de producto.
+**Estado:** en curso.
+- El motor está desplegado y pasa sus tests, pero **su comportamiento no está validado por personas.** Ver "Validación humana pendiente": los ensayos reales ya mostraron cosas que había que cambiar, y quedan casos sin probar.
+- Hay un bug conocido sin corregir (ver "Bug conocido").
+- Faltan unidades del plan de producto.
 
 Antes de tocar código lee `INIT.md`, `docs/REPARTO.md` (contratos) y `docs/DISENO-PRODUCTO.md` (plan de producto). El progreso unidad por unidad está en `odd/tasks/engine-productization.md`.
 
@@ -175,6 +178,63 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
 - **Ensayos:**
   - `engine/scripts/reset_client.py`, `seed_demo_history.py` y `send_sample_events.py` leen `.env` desde `engine/`;
   - el reset desaparece con U13.
+
+## Bug conocido: el perfil aprende de la sesión del atacante
+
+**Qué pasa:**
+- Después del ensayo real, el perfil de Ana (`u_42`, cliente `demo` en Render) tiene aprendida **la red del atacante** (`186.164.35.0/24`) y **su dispositivo** (`d_11623911ab28`).
+- Si el atacante repite desde el mismo teléfono pasados 10 minutos, el motor ya no lo ve como "red nueva" ni como "dispositivo nuevo".
+
+**Por qué pasa:**
+- `build_profile` (`engine/veridian_engine/profile.py`) solo descarta los eventos ligados a una decisión `block`/`alert` por `decision_events`, que es el evento que **disparó** la decisión.
+- El resto de la sesión del atacante no está ligado a ninguna decisión: su `POST /login`, las facturas a las que la app lo redirige, los `403` posteriores.
+- Al pasar `VERIDIAN_LEARN_DELAY_MIN`, esos eventos se aprenden.
+
+**Qué principio rompe:** `docs/DECISIONES.md`, *"Nunca aprende de lo marcado como sospechoso"*. Un atacante bloqueado termina enseñándole al perfil.
+
+**Corrección propuesta (sin hacer):**
+- No aprender **ningún** evento de una sesión que tenga una decisión `block`, `step_up` o `alert` abierta. Tampoco de la IP de un bloqueo que la incluya.
+- Si la decisión se marcó como normal, esa sesión sí se aprende (contrato 3).
+
+**Tests que hacen falta:**
+- una sesión bloqueada cuyos eventos sin decisión no entran al perfil, ni pasada la espera;
+- la misma sesión después de marcarla normal, que sí entra;
+- la sesión del dueño, en paralelo, que sigue aprendiéndose.
+
+**Limpieza de la base de la demo:** al corregirlo, se pueden recalcular los perfiles, porque se construyen desde `events`. Si no, basta con reiniciar y sembrar el cliente `demo` antes de cada ensayo.
+
+## Validación humana pendiente
+
+Los tests prueban que el código hace lo que se diseñó, **no que el diseño tenga sentido con uso real.** Cada ensayo con personas cambió algo:
+- el atacante alcanzaba a cambiar la cuenta;
+- la IP del dueño rotaba;
+- el dueño con laptop nueva quedaba bloqueado;
+- la IA respondía `step_up`, que nadie aplica.
+
+Hay que probar estos casos **con personas, la app real y redes reales**, y anotar qué pasó contra lo esperado. Cada caso es una pregunta de producto, no solo de código.
+
+| # | Caso | Lo esperado hoy | Qué hay que decidir u observar |
+|---|---|---|---|
+| 1 | Dueño en su red estable y su dispositivo, uso normal | Todo `normal`, sin decisiones | ¿Aparecen alertas falsas? |
+| 2 | Dueño con datos móviles o CGNAT (la IP rota) | `review` en el primer acceso de cada sesión | ¿Cuánto ruido es aceptable en el panel? |
+| 3 | Dueño en otra red (viaje, café) con su dispositivo, revisa facturas | `review` con la explicación de la IA, sin bloqueo | ¿La explicación convence? |
+| 4 | Dueño con **dispositivo nuevo** (laptop nueva) que cambia la cuenta bancaria | La IA bloquea (10 de 10 en la medición) | ¿Está bien bloquear al dueño legítimo? ¿Cómo se desbloquea a sí mismo? |
+| 5 | Dueño de viaje (otra red y otro dispositivo) en una ruta crítica | Bloqueo | Igual que el caso 4: es el falso positivo más caro |
+| 6 | Atacante (otra red y otro dispositivo) va directo a cambiar la cuenta | `block` **antes** de ejecutar (`403`, la cuenta no cambia) | Confirmar en cada ensayo |
+| 7 | Atacante que solo **mira** la cuenta bancaria (ruta `sensitive`) | La IA lo bloqueó en el ensayo | ¿Es demasiado agresivo si el dueño la mira desde otra red? |
+| 8 | Atacante con el mismo operador que el dueño (`/24` cercana) | Depende de que caiga en otra `/24` | ¿Pasa seguido? |
+| 9 | Atacante que repite desde el mismo teléfono, pasados 10 min | **Hoy falla** (ver "Bug conocido") | Validar la corrección |
+| 10 | Script en la laptop del dueño (`--scenario bot`) | Bloqueo solo de sesión; el dueño sigue entrando | ¿El dueño realmente no queda afuera? |
+| 11 | Usuario legítimo muy rápido, o app con muchas llamadas por página | No debería disparar la ráfaga (piso 30/min) | Los umbrales (3× lo habitual, 30/min) **no están medidos** |
+| 12 | Usuario **sin historial** (nuevo) que usa una ruta crítica | Bloqueo por regla (red nueva + ruta nunca usada) | ¿Qué hacemos con los usuarios nuevos? Es pregunta abierta en `PENDIENTES.md` |
+| 13 | "Esto era normal" en el panel | Levanta el bloqueo y el perfil lo aprende | ¿Quién puede hacerlo? (decisión 3) ¿El dueño entiende que enseña al perfil? |
+| 14 | Motor caído o lento | La ruta crítica pasa (*fail-open*, timeout de 12 s) | ¿Aceptable para un cliente real? |
+| 15 | Proyecto en `observe` | Nada se bloquea, todo se registra | ¿El panel deja claro que no se bloqueó? (`/v1/activity` sigue mostrando `block`) |
+| 16 | Proyecto con `ai_enabled = 0` | Solo reglas | ¿Se pierde mucho sin IA? |
+| 17 | Lo que ve el panel durante un ataque | Escalada `review` → `step_up` → `block` (3 o 4 decisiones) | ¿Se entiende o confunde? |
+| 18 | La explicación de la IA en el panel | Llega entre 3 y 12 s después del bloqueo; antes se ve el texto de la regla | ¿Se nota el cambio? ¿Confunde? |
+
+Anota los resultados en `docs/PENDIENTES.md` (sección "Por medir"), con fecha, redes y `decision_id`. `DEMO.md` pide unas 20 vueltas por momento de la demo.
 
 ## Advertencias
 
