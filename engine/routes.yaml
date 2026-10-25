@@ -1,0 +1,8 @@
+# Route classification used by the block rule.
+# Key: route template ("/invoices/{id}") or "METHOD template" ("POST /users").
+# A method-specific key wins over a plain template. Anything not listed is "normal".
+# Classes: critical | sensitive | normal
+routes:
+  /payouts/bank-account: critical
+  POST /users: sensitive
+  /invoices/export: sensitive
