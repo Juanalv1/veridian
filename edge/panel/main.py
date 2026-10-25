@@ -3,7 +3,10 @@
 Env: VERIDIAN_URL (engine base URL), VERIDIAN_TOKEN (Bearer token).
 """
 
+import asyncio
 import os
+import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -14,11 +17,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .cache import TTLCache
+
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "9"
+ASSET_VERSION = "10"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -28,6 +33,10 @@ VERDICTS = {
     "step_up": ("Segundo factor", "Segundo factor", "alert"),
 }
 ACTIVITY_LIMIT = 50
+# Engine GETs are cached in-process: short for what the 2 s poll reads (bursts of clicks reuse it,
+# the poll still sees fresh data), longer for profiles. Marking a decision normal drops everything.
+LIVE_TTL = 1.0
+PROFILE_TTL = 15.0
 # activity verdict -> (word, color class). Normal rows are quiet (muted), never green.
 ACTIVITY_VERDICTS = {"normal": ("Normal", "normal"), "review": ("Raro", "alert"), "block": ("Bloqueado", "block")}
 LIFTED = ("Levantado", "Bloqueo levantado", "lifted")
@@ -153,7 +162,8 @@ def _days(n) -> str:
 
 
 def create_app(engine_url: str | None = None, token: str | None = None,
-               http_client: httpx.AsyncClient | None = None) -> FastAPI:
+               http_client: httpx.AsyncClient | None = None,
+               clock: Callable[[], float] = time.monotonic) -> FastAPI:
     base = (engine_url or os.environ.get("VERIDIAN_URL", "http://localhost:8000")).rstrip("/")
     bearer = token if token is not None else os.environ.get("VERIDIAN_TOKEN", "")
     client = http_client or httpx.AsyncClient(timeout=3.0)
@@ -161,9 +171,15 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     app = FastAPI(title="Veridian panel", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
+    cache = TTLCache(clock)
+
+    async def engine_get(path: str, ttl: float, params: dict | None = None) -> httpx.Response:
+        key = (path, tuple(sorted((params or {}).items())))
+        return await cache.get(key, ttl, lambda: client.get(f"{base}{path}", params=params, headers=headers))
+
     async def load_decisions() -> tuple[list[dict], str | None]:
         try:
-            r = await client.get(f"{base}/v1/decisions", params={"limit": 50}, headers=headers)
+            r = await engine_get("/v1/decisions", LIVE_TTL, {"limit": 50})
         except httpx.HTTPError:
             return [], "No se pudo conectar con el motor. Reintentando…"
         if r.status_code == 401:
@@ -180,7 +196,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         """None when the engine has no /v1/activity (or it fails): the panel then
         shows the decisions list, with no error."""
         try:
-            r = await client.get(f"{base}/v1/activity", params={"limit": ACTIVITY_LIMIT}, headers=headers)
+            r = await engine_get("/v1/activity", LIVE_TTL, {"limit": ACTIVITY_LIMIT})
             if r.status_code != 200:
                 return None
             items = [a for a in r.json()["activity"] if isinstance(a, dict)]
@@ -191,7 +207,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     async def load_blocked_ips() -> set[str] | None:
         """IPs on the engine's blocklist, or None if it cannot be read."""
         try:
-            r = await client.get(f"{base}/v1/blocklist", headers=headers)
+            r = await engine_get("/v1/blocklist", LIVE_TTL)
             if r.status_code != 200:
                 return None
             return {str(ip) for ip in r.json()["ips"]}
@@ -200,7 +216,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
 
     async def load_profile(user_id: str) -> dict | None:
         try:
-            r = await client.get(f"{base}/v1/users/{quote(user_id, safe='')}/profile", headers=headers)
+            r = await engine_get(f"/v1/users/{quote(user_id, safe='')}/profile", PROFILE_TTL)
             if r.status_code != 200:
                 return None
             p = r.json()
@@ -217,10 +233,16 @@ def create_app(engine_url: str | None = None, token: str | None = None,
 
     # Decorators register bottom-up: the more specific route must come first.
     async def render(request: Request, user: str | None, decision_id: str | None, error: bool):
-        decisions, engine_error = await load_decisions()
+        # Independent engine calls run together. The profile of the user in the URL starts with them
+        # too; on `/` the selected user is only known once the decisions are in.
+        t0 = time.perf_counter()
+        guess = asyncio.ensure_future(load_profile(user)) if user else None
+        (decisions, engine_error), activity, blocked_ips = await asyncio.gather(
+            load_decisions(), load_activity(), load_blocked_ips())
         for d in decisions:
             d["href"] = decision_url(d)
-        activity = await load_activity() if engine_error is None else None
+        if engine_error is not None:
+            activity = None
         by_user = [d for d in decisions if d.get("user_id") == user]
         current = (next((d for d in by_user if d.get("id") == decision_id), None)
                    or (by_user[0] if by_user else None)
@@ -233,10 +255,16 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                 a["selected"] = True
         profile = None
         if current is not None and current.get("decision") == "block" and not current["marked_normal"]:
-            current["block_effect"] = _block_effect((current.get("access") or {}).get("ip"),
-                                                    await load_blocked_ips())
+            current["block_effect"] = _block_effect((current.get("access") or {}).get("ip"), blocked_ips)
+        raw = None
         if current is not None:
-            raw = await load_profile(current.get("user_id", ""))
+            raw = await (guess if guess is not None and current.get("user_id") == user
+                         else load_profile(current.get("user_id", "")))
+        if guess is not None and not guess.done():
+            guess.cancel()
+        engine_ms = (time.perf_counter() - t0) * 1000
+        t1 = time.perf_counter()
+        if current is not None:
             if raw is not None:
                 hours = raw.get("hours") or []
                 routes = list(raw.get("routes") or [])
@@ -247,7 +275,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                            "days_text": _days(raw.get("history_days")),
                            "routes_shown": routes[:MAX_PROFILE_ROUTES],
                            "routes_more": max(0, len(routes) - MAX_PROFILE_ROUTES)}
-        return templates.TemplateResponse(request, "index.html", {
+        response = templates.TemplateResponse(request, "index.html", {
             "decisions": decisions, "activity": activity,
             "watching": _watching(activity) if activity is not None else "", "engine_error": engine_error, "refresh": REFRESH_SECONDS,
             "asset_version": ASSET_VERSION,
@@ -255,6 +283,9 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             "notice": MARK_ERROR if error else None,
             "refresh_url": decision_url(current) if current else "/",
         })
+        response.headers["Server-Timing"] = (
+            f"engine;dur={engine_ms:.1f}, render;dur={(time.perf_counter() - t1) * 1000:.1f}")
+        return response
 
     @app.get("/", response_class=HTMLResponse)
     @app.get("/users/{user:path}", response_class=HTMLResponse)
@@ -271,6 +302,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             ok = r.status_code == 200
         except httpx.HTTPError:
             pass
+        cache.invalidate()  # whatever the engine answered, what was cached may no longer be true
         if request.headers.get("HX-Request") == "true":
             # htmx swaps the returned page in place: same selected decision, same error text.
             return await render(request, user, decision_id, not ok)
