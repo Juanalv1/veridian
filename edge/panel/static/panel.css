@@ -211,7 +211,9 @@
   a.flat-row:hover { background:var(--surface-hover); }
   a.flat-row:focus-visible, .more-link:focus-visible, .users-table a:focus-visible { outline:var(--focus-ring); outline-offset:-2px; }
   .blocks-row { grid-template-columns:auto minmax(0, 1fr) auto; }
-  .routes-group { display:flex; flex-direction:column; gap:8px; margin-bottom:24px; }
+  .routes-group { display:flex; flex-direction:column; gap:8px; }
+  .routes-foot { display:flex; flex-direction:column; gap:4px; }
+  .routes-foot p { margin:0; }
   .routes-group h2 { margin:0; }
   .route-row { padding:14px 20px; font-size:15px; overflow-wrap:anywhere; }
   .route-row + .route-row { border-top:1px solid var(--line); }

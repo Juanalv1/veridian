@@ -21,9 +21,11 @@
       </div>
     </section>
     {% endfor %}
-    <p class="muted-time">Todas las demás rutas se tratan como normales.</p>
     {% endif %}
-    <p class="muted-time">La clasificación se configura en el motor y aquí es solo lectura.</p>
+    <div class="routes-foot">
+      {% if groups %}<p class="muted-time">Todas las demás rutas se tratan como normales.</p>{% endif %}
+      <p class="muted-time">La clasificación se configura en el motor y aquí es solo lectura.</p>
+    </div>
   {% endif %}
 </main>
 {% endblock %}
