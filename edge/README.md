@@ -37,6 +37,9 @@ uv sync
 | `VERIDIAN_TOKEN` | demo | Token Bearer (clave del SDK) con el que habla con el motor. El panel ya no lo usa |
 | `TRUSTED_PROXIES` | demo | Cantidad de proxies propios delante de la app (por defecto `0`: se usa la IP de la conexión y se ignora `X-Forwarded-For`). En Render es `3` (medido) |
 | `DEMO_PASSWORD` | demo | Contraseña de los usuarios de ejemplo. Por defecto `demo1234`, solo para uso local |
+| `DEMO_PREPARE_PIN` | demo | Activa `/preparar` (preparar la demo con un toque). Sin valor, la página responde `404` |
+| `VERIDIAN_PANEL_TOKEN` (demo) | demo | Credencial del panel que usa `/preparar` para borrar los datos del proyecto |
+| `DEMO_PROJECT_ID`, `DEMO_USER_ID`, `DEMO_ACTOR_EMAIL` | demo | Como en `engine/scripts/prepare_demo.py` (por defecto `demo`, `u_42`, `ensayo@veridian.demo`; ese correo debe ser owner de la organización Demo) |
 
 Los tokens no se guardan en el repo; se pasan por entorno o por un `.env` (ignorado por git).
 
@@ -112,4 +115,5 @@ No usan red real ni esperas: el motor falso y las apps se conectan por `httpx.AS
 - La app y el panel usan la raíz del repo como directorio raíz (`rootDir` vacío), porque `edge` instala el SDK desde `../sdk/python`. Build: `cd edge && pip install uv && uv sync --frozen --no-dev`. Start: `cd edge && .venv/bin/uvicorn ...`.
 - La app se redespliega cuando cambia `edge/**` o `sdk/python/**`; el panel solo cuando cambia `edge/**`.
 - `VERIDIAN_TOKEN` es el token del cliente `demo` del motor; `DEMO_PASSWORD` está en el entorno de Render, no en el repo.
+- **Preparar un ensayo desde el teléfono:** abrir `https://veridian-demo.onrender.com/preparar` en el teléfono del presentador, en la red del evento, escribir el PIN (`DEMO_PREPARE_PIN`) la primera vez y pulsar «Preparar demo». Borra los datos del proyecto (`DELETE /v1/projects/{id}/data`), siembra 14 días a la hora UTC actual ±1 con la IP y la cookie de dispositivo de ese teléfono, y vacía la lista de bloqueos de la app sin reiniciarla. Responde «Listo: 1 red, 1 dispositivo, 14 días». Tras un PIN correcto, una cookie recuerda el teléfono y las siguientes veces basta el botón.
 - **Antes de la demo:** el plan free se duerme a los 15 min sin uso y tarda ~1 min en despertar; pasar a starter o abrir ambas URLs unos minutos antes.
