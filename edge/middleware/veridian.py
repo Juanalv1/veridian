@@ -22,6 +22,7 @@ log = logging.getLogger("veridian")
 DEVICE_COOKIE = "vrd_did"
 DEVICE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 MAX_BATCH = 200
+DEFAULT_EXCLUDE_PATHS = ("/static",)
 
 
 def resolve_client_ip(scope: dict, trusted_proxies: int = 0) -> str:
@@ -88,18 +89,25 @@ class VeridianMiddleware:
         poll_interval: float = 2.0,
         max_queue: int = 1000,
         background: bool = True,
+        exclude_paths: tuple[str, ...] = DEFAULT_EXCLUDE_PATHS,
     ):
         """`user_id` and `session_id` are callables taking a Starlette Request
         and returning a string or None. They run before the app (to enforce the
         blocklist) and again after it (the app may have just logged the user in,
         e.g. by setting request.state). `background=False` disables the
-        flush/poll tasks so tests can drive flush() and refresh_blocklist()."""
+        flush/poll tasks so tests can drive flush() and refresh_blocklist().
+
+        `exclude_paths` are path prefixes (whole segments) that pass straight
+        through: no event, no device cookie and no blocklist check. Static
+        assets are not user actions, and a blocked attacker only needs to be
+        stopped on the app's routes, so `/static` is excluded by default."""
         self.app = app
         self.token = token
         self.base_url = base_url.rstrip("/")
         self.user_id = user_id
         self.session_id = session_id
         self.trusted_proxies = trusted_proxies
+        self.exclude_paths = tuple(p.rstrip("/") for p in exclude_paths)
         self.client = http_client or httpx.AsyncClient(timeout=2.0)
         self.flush_interval = flush_interval
         self.poll_interval = poll_interval
@@ -120,6 +128,9 @@ class VeridianMiddleware:
             return
 
         self._ensure_background()
+        if self._is_excluded(scope.get("path", "")):
+            await self.app(scope, receive, send)
+            return
         request = Request(scope)
         ip = resolve_client_ip(scope, self.trusted_proxies)
 
@@ -155,6 +166,9 @@ class VeridianMiddleware:
             await self.app(scope, receive, send_wrapper)
         finally:
             self._record(scope, request, ip, device_id, status, size)
+
+    def _is_excluded(self, path: str) -> bool:
+        return any(path == p or path.startswith(p + "/") for p in self.exclude_paths)
 
     def _watch_shutdown(self, receive):
         async def wrapped():

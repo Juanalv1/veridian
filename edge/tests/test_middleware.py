@@ -375,3 +375,57 @@ async def test_end_to_end_attacker_is_blocked_owner_is_not():
         # the owner, own session and IP, keeps working
         r = await c.get("/items/1", cookies=owner, headers=xff("190.202.14.7"))
         assert r.status_code == 200
+
+
+# --- excluded paths ----------------------------------------------------------
+
+
+def app_with_static():
+    app = build_app()
+
+    @app.get("/static/app.css")
+    async def css():
+        return {"css": True}
+
+    @app.get("/staticky")
+    async def staticky():
+        return {"ok": True}
+
+    return app
+
+
+async def test_static_requests_are_not_reported_by_default(rec):
+    mw = make_mw(app_with_static(), rec.client())
+    async with client_for(mw) as c:
+        r = await c.get("/static/app.css", cookies={"uid": "u_42", "sid": "s_1"})
+    assert r.status_code == 200
+    assert "set-cookie" not in r.headers
+    await mw.flush()
+    assert rec.events == []
+
+
+async def test_exclusion_matches_whole_path_segments_only(rec):
+    mw = make_mw(app_with_static(), rec.client())
+    async with client_for(mw) as c:
+        await c.get("/staticky", cookies={"uid": "u_42"})
+    await mw.flush()
+    assert [e["route"] for e in rec.events] == ["/staticky"]
+
+
+async def test_excluded_paths_skip_the_blocklist(rec):
+    # Deliberate: a blocked attacker only has to be stopped on app routes.
+    rec.blocklist = {"users": ["u_42"], "sessions": [], "ips": []}
+    rec.version = 1
+    mw = make_mw(app_with_static(), rec.client())
+    await mw.refresh_blocklist()
+    async with client_for(mw) as c:
+        assert (await c.get("/static/app.css", cookies={"uid": "u_42"})).status_code == 200
+        assert (await c.get("/items/1", cookies={"uid": "u_42"})).status_code == 403
+
+
+async def test_exclude_paths_is_configurable(rec):
+    mw = make_mw(app_with_static(), rec.client(), exclude_paths=())
+    async with client_for(mw) as c:
+        await c.get("/static/app.css", cookies={"uid": "u_42"})
+    await mw.flush()
+    assert [e["route"] for e in rec.events] == ["/static/app.css"]
