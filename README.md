@@ -23,7 +23,7 @@ Tu app (middleware)  ── registros ──►  Veridian (nube)
    anota y bloquea   ◄── bloqueos ───   aprende y decide
 ```
 
-Un middleware en tu app le reporta al servidor de Veridian cada acceso: el identificador del usuario, desde dónde, a qué hora y a qué parte del sistema. Los primeros días el servidor aprende cómo se comporta normalmente cada usuario. Después, una IA compara cada acceso con ese comportamiento, y si detecta algo extraño, el middleware bloquea la siguiente petición.
+Un middleware en tu app le reporta al servidor de Veridian cada acceso: el identificador del usuario, desde dónde, a qué hora y a qué parte del sistema. Los primeros días el servidor aprende cómo se comporta normalmente cada usuario. Después, una IA compara cada acceso con ese comportamiento, y si detecta que quien accede es otra persona, el middleware bloquea el acceso: en las rutas críticas, como cambiar la cuenta bancaria, antes de que la acción se ejecute; en el resto, en la petición siguiente.
 
 Así se instala en una app con FastAPI:
 
