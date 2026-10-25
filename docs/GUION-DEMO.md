@@ -1,6 +1,6 @@
 # Guion de la demo
 
-Borrador: se escribe por partes (2026-10-25). Partes 1 a 3 aprobadas; el resto está pendiente.
+Estructura y texto aprobados (2026-10-25). Falta medirlo en voz alta.
 
 Va después de la slide 4 y antes de la slide 5 (`GUION.md`). Tiempo disponible: 125-140 s (sin medir todavía).
 
@@ -50,7 +50,17 @@ Estructura: una sola persona, la dueña de la cuenta.
 
 ## Parte 4: desbloqueo por correo
 
-Pendiente.
+**[En el teléfono abre su correo: llegó el aviso, con la marca de la plataforma]**
+
+> Al mismo tiempo, me llega este correo. Como sí era yo, lo confirmo.
+
+**[Toca «Fui yo, desbloquear», se abre la página de confirmación y toca el botón]**
+
+**[Vuelve a la PC y cambia la cuenta bancaria]**
+
+> Y sigo trabajando con normalidad. En el panel, el acceso queda en verde.
+
+**[Panel: «Desbloqueado por el usuario», en verde (texto de la especificación; confirmar cuando esté implementado)]**
 
 ## Antes de subir
 
