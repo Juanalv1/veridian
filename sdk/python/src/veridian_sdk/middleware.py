@@ -37,6 +37,9 @@ MAX_ROUTE_TEXT = 2000
 DEFAULT_BASE_URL = "https://veridian-engine.onrender.com"
 API_KEY_ENV = "VERIDIAN_API_KEY"
 URL_ENV = "VERIDIAN_URL"
+# Shown in the 403 body only when the engine says it sent the user an unlock email (self-unlock by email).
+SELF_UNLOCK_MESSAGE = "Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú."
+MAX_EMAIL = 254
 # Session cookies whose value stays the same for the whole session. Starlette's
 # `session` is left out on purpose: it is re-signed on every response.
 SESSION_COOKIES = ("sessionid", "connect.sid", "sid", "session_id", "PHPSESSID", "JSESSIONID")
@@ -99,6 +102,13 @@ def _check_callable(value, name: str):
             f"veridian: `{name}` must be a function that takes the request, e.g. {name}=lambda request: ..."
         )
     return value
+
+
+def _blocked_response(self_unlock: bool = False) -> JSONResponse:
+    """The 403 of a blocked request. The generic body stays `{"error": "blocked"}` exactly; the unlock message is
+    added only when the engine said an email went to the user."""
+    body = {"error": "blocked", "message": SELF_UNLOCK_MESSAGE} if self_unlock else {"error": "blocked"}
+    return JSONResponse(body, status_code=403)
 
 
 def resolve_client_ip(scope: dict, trusted_proxies: int = 0) -> str:
@@ -203,6 +213,7 @@ class VeridianMiddleware:
         token: str | None = None,
         user_id=None,
         session_id=None,
+        user_email=None,
     ):
         """Install it with `app.add_middleware(VeridianMiddleware, user=...)`.
 
@@ -220,6 +231,14 @@ class VeridianMiddleware:
         `request.state.user.id` with nobody logged in, counts as None without
         logging. Without `session`, it is detected: a known session cookie
         (SESSION_COOKIES), then a Bearer token, sent only as a hash.
+        `user_email` is optional, like `user`: a callable taking the request and returning the
+        user's email address or None. With it the engine can email a blocked user a link to unlock
+        themselves (self-unlock by email, enabled per project in the panel). It is personal data:
+        it is sent with the event and the engine keeps the last one per user. None, an error like
+        the ones above, or something that is not an address means "no email" and nothing breaks.
+        When the engine says a blocked session was sent that email, the 403 body also carries a
+        `message` telling the user to check their inbox; otherwise the body is exactly
+        `{"error": "blocked"}`.
         `background=False` disables the flush/poll tasks so tests can drive
         flush() and refresh_blocklist().
 
@@ -250,6 +269,7 @@ class VeridianMiddleware:
             log.warning("veridian: no `user` given, so no request will be reported. "
                         "Pass user=lambda request: <your user's id or None>")
         self.user_id = user or (lambda request: None)
+        self.user_email = _check_callable(user_email, "user_email")
         self.session_id = session or detect_session
         self.trusted_proxies = trusted_proxies
         self.exclude_paths = tuple(p.rstrip("/") for p in exclude_paths)
@@ -262,6 +282,7 @@ class VeridianMiddleware:
         self.queue: deque[dict] = deque(maxlen=max_queue)  # drops oldest when full
         self.blocklist_version: int | None = None
         self.blocked = {"users": set(), "sessions": set(), "ips": set()}
+        self.self_unlock_sessions: set[str] = set()  # blocked sessions whose user got the unlock email
         self.critical: set[tuple[str, str]] = set()  # (METHOD, route template); last known
         self._tasks: list[asyncio.Task] = []
         self._failing: dict[str, int | None] = {}  # last refused status per engine call, for _note_status
@@ -289,7 +310,7 @@ class VeridianMiddleware:
             return _template_without_calling(scope, _routes_of(scope.get("app") or self.app))
 
         if self._is_blocked(request, ip):
-            response = JSONResponse({"error": "blocked"}, status_code=403)
+            response = _blocked_response(self._unlock_email_sent(request))
             await response(scope, receive, send)
             # The device cookie is only read here, never issued to a blocked client.
             self._record(scope, request, ip, _cookie(scope, DEVICE_COOKIE), 403, len(response.body), route=template())
@@ -302,10 +323,11 @@ class VeridianMiddleware:
 
         event_id = "e_" + uuid.uuid4().hex
         route = template() if self.critical else None
-        if route is not None and (scope["method"].upper(), route) in self.critical and await self._check_blocks(
-            scope, request, ip, device_id, route, event_id
-        ):
-            response = JSONResponse({"error": "blocked"}, status_code=403)
+        verdict = None
+        if route is not None and (scope["method"].upper(), route) in self.critical:
+            verdict = await self._check_blocks(scope, request, ip, device_id, route, event_id)
+        if verdict is not None:
+            response = _blocked_response(verdict.get("self_unlock") is True)
             await response(scope, receive, send)
             # Same id as the pre-check. The engine keeps the first write of an id, so the
             # 403 only reaches it when the pre-check never got through; no cookie either.
@@ -372,6 +394,11 @@ class VeridianMiddleware:
         user = self._safe(self.user_id, request)
         return bool(user and user in b["users"])
 
+    def _unlock_email_sent(self, request: Request) -> bool:
+        """Whether the engine listed this request's session as one whose user got the unlock email."""
+        session = self._safe(self.session_id, request)
+        return bool(session and session in self.self_unlock_sessions)
+
     async def refresh_blocklist(self) -> None:
         """Poll the engine once. Any failure keeps the last known list."""
         try:
@@ -390,6 +417,8 @@ class VeridianMiddleware:
                 "sessions": set(map(str, data.get("sessions", []))),
                 "ips": set(map(str, data.get("ips", []))),
             }
+            sessions = data.get("self_unlock_sessions")
+            self.self_unlock_sessions = set(map(str, sessions)) if isinstance(sessions, list) else set()
             self.blocklist_version = int(data["version"])
         except Exception as exc:
             log.warning("veridian: blocklist refresh failed: %s", exc)
@@ -401,7 +430,7 @@ class VeridianMiddleware:
         user = self._safe(self.user_id, request)
         if not user:
             return None
-        return {
+        event = {
             "id": event_id or "e_" + uuid.uuid4().hex,
             "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "user_id": user,
@@ -414,6 +443,17 @@ class VeridianMiddleware:
             "status": status,
             "bytes": size,
         }
+        email = self._email(request)
+        if email:
+            event["user_email"] = email
+        return event
+
+    def _email(self, request: Request) -> str | None:
+        """The user's address from `user_email`, or None when there is none or it does not look like one."""
+        if self.user_email is None:
+            return None
+        value = self._safe(self.user_email, request)
+        return value.strip() if value and "@" in value and len(value.strip()) <= MAX_EMAIL else None
 
     def _record(self, scope, request, ip, device_id, status, size, route=None, event_id=None) -> None:
         try:
@@ -486,10 +526,10 @@ class VeridianMiddleware:
         except Exception as exc:
             log.warning("veridian: routes refresh failed: %s", exc)
 
-    async def _check_blocks(self, scope, request, ip, device_id, route, event_id) -> bool:
+    async def _check_blocks(self, scope, request, ip, device_id, route, event_id) -> dict | None:
         """Ask the engine (contract 9) whether this critical request must be refused.
 
-        True only on an explicit `block`; every failure answers False (fail-open).
+        The engine's answer on an explicit `block`, else None; every failure answers None (fail-open).
 
         The engine stores the first event it sees for an id, so the pre-check
         carries the id the batched event will have, `status` 200 (the engine
@@ -501,7 +541,7 @@ class VeridianMiddleware:
         try:
             event = self._event(scope, request, ip, device_id, 200, 0, route, event_id)
             if event is None or not event["session_id"] or not ip:
-                return False
+                return None
             r = await asyncio.wait_for(
                 self.client.post(
                     f"{self.base_url}/v1/check",
@@ -512,12 +552,12 @@ class VeridianMiddleware:
                 self.check_timeout,
             )
             if r.status_code != 200:
-                return False
+                return None
             body = r.json()
-            return isinstance(body, dict) and body.get("verdict") == "block"
+            return body if isinstance(body, dict) and body.get("verdict") == "block" else None
         except Exception as exc:
             log.warning("veridian: check failed, letting the request through: %s", exc)
-            return False
+            return None
 
     async def flush(self) -> None:
         """Send queued events once. On failure they stay queued (ids make the

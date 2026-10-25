@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "veridian-sdk"
-version = "0.3.0"
+version = "0.4.0"
 description = "ASGI middleware that reports access events to Veridian and blocks sessions, IPs and users on its blocklist"
 readme = "README.md"
 license = "MIT"

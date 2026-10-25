@@ -36,6 +36,7 @@ The session is detected on its own and Veridian only receives a hash, never the 
 | Argument | Default | What it does |
 |---|---|---|
 | `user` | none | Function `request -> id or None`: who makes the request. It runs before your routes (to enforce the blocklist and check critical routes) and again after them (your app may have just logged the user in). A lookup that raises `AttributeError` or `LookupError`, like `request.state.user.id` with nobody logged in, counts as `None`. Ints are sent as strings. Requests with no user are not reported. |
+| `user_email` | none | Optional function `request -> email or None`, like `user`. With it, Veridian can email a blocked user a link to unlock themselves (self-unlock by email, turned on per project in the panel). It is personal data: Veridian keeps only the last one per user. `None`, a failing lookup or something that is not an address means "no email". |
 | `session` | detected | Function `request -> id or None`. Without it, the session is the hash of the first of these cookies: `sessionid`, `connect.sid`, `sid`, `session_id`, `PHPSESSID`, `JSESSIONID`; else the hash of an `Authorization: Bearer` token; else none. Starlette's `session` cookie is ignored because it changes on every response: with it, pass `session` yourself (a hash, never the cookie). **Critical routes are only checked when there is a session.** |
 | `api_key` | `VERIDIAN_API_KEY` | The project's key. Missing: `VeridianConfigError` when the app starts. |
 | `base_url` | `VERIDIAN_URL`, else `https://veridian-engine.onrender.com` | The engine. A value that is not a full `http(s)` URL: `VeridianConfigError`. |
@@ -46,6 +47,8 @@ The session is detected on its own and Veridian only receives a hash, never the 
 | `report_routes` | `True` | Send the app's routes (method, route template, OpenAPI summary and description) once at startup, so the engine classifies them. Retried every `routes_poll_interval` until accepted. |
 
 Middleware order: in Starlette, the middleware added last runs first. If your login puts the user in `request.state` from another middleware, add that one after Veridian's.
+
+Self-unlock by email: when the engine says a blocked session was sent the unlock email, the `403` body adds `"message": "Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú."` for your app to show. Otherwise the body is exactly `{"error": "blocked"}`.
 
 The older names still work: `token` for `api_key`, `user_id` for `user`, `session_id` for `session`, and wrapping the app (`app = VeridianMiddleware(app, ...)`).
 
@@ -64,7 +67,7 @@ The check needs a user and a session: a critical request without them is not che
 
 ## What is sent
 
-One event per request, sent in the background in batches: `id`, `ts`, `user_id`, `session_id`, `ip`, `user_agent` (first 200 characters), `device_id`, `method`, `route` (the route template, for example `/items/{item_id}`), `status` and `bytes`.
+One event per request, sent in the background in batches: `id`, `ts`, `user_id`, `session_id`, `ip`, `user_agent` (first 200 characters), `device_id`, `method`, `route` (the route template, for example `/items/{item_id}`), `status` and `bytes`; plus `user_email` only if you pass `user_email`.
 
 The middleware also sets its own device cookie (`vrd_did`) in the user's browser.
 
