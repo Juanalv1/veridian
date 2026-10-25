@@ -170,7 +170,8 @@ class Auth:
         return profile if isinstance(profile, dict) else None
 
     async def engine_login(self, profile: dict) -> tuple[dict, list[dict]] | None:
-        """POST /v1/people/login with the service credential: (person, projects), or None if the engine says no."""
+        """POST /v1/people/login with the service credential: (person, projects), or None if the engine says no.
+        The engine answers person + orgs (role and projects each); `projects` is those of every org, in order."""""
         body = {"google_sub": str(profile["sub"]), "email": str(profile["email"]).lower(),
                 "name": str(profile.get("name") or profile["email"])}
         try:
@@ -179,10 +180,12 @@ class Auth:
             if r.status_code != 200:
                 return None
             answer = r.json()
-            person, projects = answer["person"], answer["projects"]
-            if not isinstance(person["id"], str) or not isinstance(projects, list):
+            person, orgs = answer["person"], answer["orgs"]
+            if not isinstance(person["id"], str) or not isinstance(orgs, list):
                 return None
-            return person, [p for p in projects if isinstance(p, dict) and isinstance(p.get("id"), str)]
+            projects = [p for o in orgs if isinstance(o, dict) and isinstance(o.get("projects"), list)
+                        for p in o["projects"] if isinstance(p, dict) and isinstance(p.get("id"), str)]
+            return person, projects
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return None
 
@@ -230,7 +233,7 @@ class Auth:
                 "person": person["id"], "email": str(profile["email"]).lower(),
                 "name": str(profile.get("name") or profile["email"]), "csrf": secrets.token_urlsafe(32)})
             if projects:
-                request.session["project"] = projects[0]["id"]  # until the project selector (T4)
+                request.session["project"] = projects[0]["id"]  # first project of the first org, until the selector (T4)
             return RedirectResponse("/" if projects else "/sin-proyectos", status_code=303)
 
         return router

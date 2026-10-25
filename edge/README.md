@@ -29,8 +29,8 @@ uv sync
 | `VERIDIAN_SEED=demo` | motor falso | Precarga el historial del dueño (`u_42` desde `127.0.0.1`). También acepta un JSON `[{"user_id", "ips", "routes"}]` |
 | `VERIDIAN_LEARN_DELAY` | motor falso | Segundos antes de que un evento no marcado entre al perfil (por defecto 300). Evita que el login del atacante legitime su red |
 | `VERIDIAN_PANEL_TOKEN` | motor falso y panel | Credencial de servicio del panel. El motor falso la exige (más `X-Veridian-Actor` y `X-Veridian-Project`) en todo lo que no es del SDK; `VERIDIAN_PANEL_TOKENS` admite una lista para rotar |
-| `VERIDIAN_BOOTSTRAP_OWNERS` | motor falso | Correos que, al entrar, quedan como `owner` de los proyectos sin owner (el proyecto de cada token sembrado) |
-| `VERIDIAN_PROJECT_CREATORS` | motor falso | Correos que pueden crear proyectos; vacío = nadie. Provisional hasta la decisión 2 |
+| `VERIDIAN_BOOTSTRAP_OWNERS` | motor falso | Correos que, al entrar, quedan como `owner` de las organizaciones sin owner (cada token sembrado es una organización con un proyecto) |
+| `VERIDIAN_ORG_CREATORS` | motor falso | Correos que pueden crear organizaciones; vacío = nadie (antes `VERIDIAN_PROJECT_CREATORS`). Owners y admins de una organización crean sus proyectos sin estar en la lista. Provisional hasta la decisión 2 |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `PUBLIC_URL` | panel | Login con Google y cookie de sesión. En local se leen de `edge/.env` sin pisar el entorno. Sin ellos el panel responde 503 (no hay modo abierto) |
 | `VERIDIAN_URL` | demo y panel | URL del motor (por defecto `http://localhost:8000`) |
 | `VERIDIAN_TOKEN` | demo | Token Bearer (clave del SDK) con el que habla con el motor. El panel ya no lo usa |

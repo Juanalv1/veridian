@@ -65,7 +65,7 @@ class ProjectRequired(Exception):
     pass
 
 
-# Roles of docs/DISENO-PRODUCTO.md, weakest first.
+# Roles of docs/DISENO-PRODUCTO.md, weakest first. They live at the organization level only.
 ROLE_RANK = {"viewer": 0, "admin": 1, "owner": 2}
 Role = Literal["viewer", "admin", "owner"]
 
@@ -100,6 +100,14 @@ class LoginIn(BaseModel):
 
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+
+
+class OrgIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class OrgPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
 
 
 class ProjectPatch(BaseModel):
@@ -419,15 +427,30 @@ class Person:
 
 @dataclass
 class Project:
-    """The tenant: one isolated ClientState plus who may see it and with which role."""
+    """One isolated ClientState (events, decisions, blocklist). It has no members of its own: who may
+    see it, and with which role, is decided by its organization."""
 
     id: str
+    org_id: str
     name: str
     state: ClientState
     created_at: str
     retention_days: int = 90
     enforcement: str = "observe"
     ai_enabled: bool = True
+
+    def public(self) -> dict:
+        return {"id": self.id, "org_id": self.org_id, "name": self.name, "retention_days": self.retention_days,
+                "enforcement": self.enforcement, "ai_enabled": self.ai_enabled, "created_at": self.created_at}
+
+
+@dataclass
+class Organization:
+    """Groups projects and holds the only member list: one role per person, valid for every project."""
+
+    id: str
+    name: str
+    created_at: str
     members: dict[str, str] = field(default_factory=dict)  # person_id -> role
     invitations: list[dict] = field(default_factory=list)  # {email, role, expires_at, accepted_at}
 
@@ -437,10 +460,6 @@ class Project:
     def invite(self, email: str, role: Role, expires_at: str) -> None:
         self.invitations.append({"email": email.strip().lower(), "role": role, "expires_at": expires_at,
                                  "accepted_at": None})
-
-    def public(self) -> dict:
-        return {"id": self.id, "name": self.name, "retention_days": self.retention_days,
-                "enforcement": self.enforcement, "ai_enabled": self.ai_enabled, "created_at": self.created_at}
 
 
 def _tokens_from_env() -> set[str]:
@@ -477,22 +496,23 @@ def create_app(
     clock=time.monotonic,
     panel_tokens: set[str] | None = None,
     bootstrap_owners: set[str] | None = None,
-    project_creators: set[str] | None = None,
+    org_creators: set[str] | None = None,
 ) -> FastAPI:
     """Build the fake engine. With no arguments it reads the environment:
 
-    VERIDIAN_TOKENS         comma-separated SDK keys; each one is its own seeded project
+    VERIDIAN_TOKENS         comma-separated SDK keys; each one is its own seeded organization with one project
     VERIDIAN_ALLOW_DEV_TOKEN=1   additionally accept the local "dev-token"
     VERIDIAN_LEARN_DELAY    seconds before an unflagged event enters the profile (default 300)
     VERIDIAN_SEED           "demo" or a JSON list of {user_id, ips, routes, devices}
     VERIDIAN_PANEL_TOKEN    service credential of the panel (VERIDIAN_PANEL_TOKENS: comma list, to rotate)
-    VERIDIAN_BOOTSTRAP_OWNERS    emails that become owner of the projects that have no owner, on login
-    VERIDIAN_PROJECT_CREATORS    emails allowed to create projects (empty: nobody). Provisional:
-                            open decision 2 of docs/DISENO-PRODUCTO.md
+    VERIDIAN_BOOTSTRAP_OWNERS    emails that become owner of the organizations that have no owner, on login
+    VERIDIAN_ORG_CREATORS   emails allowed to create organizations (empty: nobody). Provisional:
+                            open decision 2 of docs/DISENO-PRODUCTO.md. Owners and admins of an
+                            organization create its projects without being on this list.
 
     Two callers, as in the design: `sdk` (a project's key: events, check, blocklist, routes) and
-    `panel` (service credential + X-Veridian-Actor + X-Veridian-Project; membership and role are
-    checked on every request).
+    `panel` (service credential + X-Veridian-Actor + X-Veridian-Project; the actor's role in the
+    organization of that project is checked on every request).
     """
     accepted = set(tokens) if tokens is not None else _tokens_from_env()
     seed_data = seed if seed is not None else _seed_from_env()
@@ -500,8 +520,9 @@ def create_app(
     delay = learn_delay if learn_delay is not None else float(os.environ.get("VERIDIAN_LEARN_DELAY", "300"))
     panel_accepted = set(panel_tokens) if panel_tokens is not None else _panel_tokens_from_env()
     owners = {e.lower() for e in bootstrap_owners} if bootstrap_owners is not None else _emails_from_env("VERIDIAN_BOOTSTRAP_OWNERS")
-    creators = {e.lower() for e in project_creators} if project_creators is not None else _emails_from_env("VERIDIAN_PROJECT_CREATORS")
+    creators = {e.lower() for e in org_creators} if org_creators is not None else _emails_from_env("VERIDIAN_ORG_CREATORS")
 
+    orgs: dict[str, Organization] = {}
     projects: dict[str, Project] = {}
     by_token: dict[str, str] = {}  # SDK key -> project id
     people: dict[str, Person] = {}  # person id -> person
@@ -510,20 +531,25 @@ def create_app(
     def new_state() -> ClientState:
         return ClientState(routes=dict(route_map), learn_delay=delay, clock=clock)
 
-    # Each SDK key is a project of its own, already seeded, with no members until a bootstrap owner logs in.
+    # Each SDK key is an organization of its own with one seeded project, and no members until a
+    # bootstrap owner logs in.
     ordered = sorted(accepted)
     for i, token in enumerate(ordered, start=1):
         st = new_state()
         for item in seed_data:
             st.seed(item["user_id"], item.get("ips", ()), item.get("routes", ()), item.get("devices", ()))
-        pid = "p_" + hashlib.sha256(token.encode()).hexdigest()[:8]
+        digest = hashlib.sha256(token.encode()).hexdigest()[:8]
+        pid, oid = "p_" + digest, "org_" + digest
         name = "Demo" if len(ordered) == 1 else f"Demo {i}"
-        projects[pid] = Project(id=pid, name=name, state=st, created_at=now_iso(), enforcement="enforce")
+        orgs[oid] = Organization(id=oid, name=name, created_at=now_iso())
+        projects[pid] = Project(id=pid, org_id=oid, name=name, state=st, created_at=now_iso(), enforcement="enforce")
         by_token[token] = pid
 
     app = FastAPI(title="Veridian fake engine")
     app.state.projects = projects
+    app.state.orgs = orgs
     app.state.project_id_for = by_token.__getitem__
+    app.state.org_id_for = lambda token: projects[by_token[token]].org_id
 
     @app.exception_handler(Unauthorized)
     async def _unauthorized(_: Request, __: Unauthorized):
@@ -562,12 +588,21 @@ def create_app(
             raise Forbidden()
         return person
 
-    def authorize(person: Person, project_id: str | None, minimum: Role) -> Project:
-        """The project, if the person is a member with at least `minimum`. Unknown project = foreign = 403."""
-        project = projects.get(project_id or "")
-        role = project.members.get(person.id) if project else None
-        if project is None or role is None or ROLE_RANK[role] < ROLE_RANK[minimum]:
+    def authorize_org(person: Person, org_id: str | None, minimum: Role) -> Organization:
+        """The organization, if the person is a member with at least `minimum`. Unknown org = foreign = 403."""
+        org = orgs.get(org_id or "")
+        role = org.members.get(person.id) if org else None
+        if org is None or role is None or ROLE_RANK[role] < ROLE_RANK[minimum]:
             raise Forbidden()
+        return org
+
+    def authorize(person: Person, project_id: str | None, minimum: Role) -> Project:
+        """The project, if the person's role in its organization is at least `minimum`. There are no
+        project roles. Unknown project = foreign = 403."""
+        project = projects.get(project_id or "")
+        if project is None:
+            raise Forbidden()
+        authorize_org(person, project.org_id, minimum)
         return project
 
     def sdk_state(authorization: Annotated[str | None, Header()] = None) -> ClientState:
@@ -604,12 +639,17 @@ def create_app(
         if kind_of(authorization)[0] != "panel":
             raise Forbidden()
 
-    def role_of(person: Person, project: Project) -> str:
-        return project.members[person.id]
+    def project_refs(org: Organization) -> list[dict]:
+        return [{"id": p.id, "name": p.name} for p in projects.values() if p.org_id == org.id]
+
+    def org_view(org: Organization, person: Person) -> dict:
+        return {"id": org.id, "name": org.name, "role": org.members[person.id], "projects": project_refs(org)}
 
     def listing(person: Person) -> list[dict]:
-        return [{"id": p.id, "name": p.name, "role": p.members[person.id]}
-                for p in projects.values() if person.id in p.members]
+        return [org_view(o, person) for o in orgs.values() if person.id in o.members]
+
+    def project_view(project: Project, person: Person) -> dict:
+        return {**project.public(), "role": orgs[project.org_id].members[person.id]}
 
     def person_public(person: Person) -> dict:
         return {"id": person.id, "email": person.email, "name": person.name}
@@ -692,11 +732,11 @@ def create_app(
             "state": "blocked" if user_id in st.blocked_users else "normal",
         }
 
-    # --- contract 10: people and projects (panel only) ---------------------------------------
+    # --- contract 10: people, organizations and projects (panel only) ------------------------
 
     @app.post("/v1/people/login", dependencies=[Depends(panel_only)])
     def post_login(body: LoginIn):
-        """Upsert by google_sub, take the bootstrap and the pending invitations, answer with the projects."""
+        """Upsert by google_sub, take the bootstrap and the pending invitations, answer with the orgs."""
         email = body.email.strip().lower()
         stamp = now_iso()
         pid = by_sub.get(body.google_sub)
@@ -708,42 +748,66 @@ def create_app(
         person.email, person.last_login_at = email, stamp
         if body.name:
             person.name = body.name
-        for project in projects.values():
-            if email in owners and not project.has_owner():
-                project.members[person.id] = "owner"
-            for inv in project.invitations:
+        for org in orgs.values():
+            if email in owners and not org.has_owner():
+                org.members[person.id] = "owner"
+            for inv in org.invitations:
                 if inv["email"] == email and inv["accepted_at"] is None and parse_iso(inv["expires_at"]) > datetime.now(timezone.utc):
                     inv["accepted_at"] = stamp
-                    current = project.members.get(person.id)
+                    current = org.members.get(person.id)
                     if current is None or ROLE_RANK[inv["role"]] > ROLE_RANK[current]:
-                        project.members[person.id] = inv["role"]
-        return {"person": person_public(person), "projects": listing(person)}
+                        org.members[person.id] = inv["role"]
+        return {"person": person_public(person), "orgs": listing(person)}
 
-    @app.get("/v1/me/projects")
-    def get_my_projects(person: Actor):
-        return {"projects": listing(person)}
+    @app.get("/v1/me/orgs")
+    def get_my_orgs(person: Actor):
+        return {"orgs": listing(person)}
 
-    @app.post("/v1/projects", status_code=201)
-    def post_project(body: ProjectIn, person: Actor):
+    @app.post("/v1/orgs", status_code=201)
+    def post_org(body: OrgIn, person: Actor):
         if person.email not in creators:
             raise Forbidden()
+        oid = "org_" + secrets.token_hex(4)
+        org = Organization(id=oid, name=body.name.strip(), created_at=now_iso())
+        org.members[person.id] = "owner"
+        orgs[oid] = org
+        return org_view(org, person)
+
+    @app.get("/v1/orgs/{org_id}")
+    def get_org(org_id: Annotated[str, Path()], person: Actor):
+        org = authorize_org(person, org_id, "viewer")
+        return {**org_view(org, person), "created_at": org.created_at}
+
+    @app.patch("/v1/orgs/{org_id}")
+    def patch_org(org_id: Annotated[str, Path()], body: OrgPatch, person: Actor):
+        org = authorize_org(person, org_id, "admin")
+        if body.name is not None:
+            org.name = body.name.strip()
+        return {**org_view(org, person), "created_at": org.created_at}
+
+    @app.get("/v1/orgs/{org_id}/projects")
+    def get_org_projects(org_id: Annotated[str, Path()], person: Actor):
+        org = authorize_org(person, org_id, "viewer")
+        return {"projects": [project_view(p, person) for p in projects.values() if p.org_id == org.id]}
+
+    @app.post("/v1/orgs/{org_id}/projects", status_code=201)
+    def post_org_project(org_id: Annotated[str, Path()], body: ProjectIn, person: Actor):
+        org = authorize_org(person, org_id, "admin")
         pid = "p_" + secrets.token_hex(4)
-        project = Project(id=pid, name=body.name.strip(), state=new_state(), created_at=now_iso())
-        project.members[person.id] = "owner"
+        project = Project(id=pid, org_id=org.id, name=body.name.strip(), state=new_state(), created_at=now_iso())
         projects[pid] = project
-        return {**project.public(), "role": "owner"}
+        return project_view(project, person)
 
     @app.get("/v1/projects/{project_id}")
     def get_project(project_id: Annotated[str, Path()], person: Actor):
-        project = authorize(person, project_id, "viewer")
-        return {**project.public(), "role": role_of(person, project)}
+        return project_view(authorize(person, project_id, "viewer"), person)
 
     @app.patch("/v1/projects/{project_id}")
     def patch_project(project_id: Annotated[str, Path()], body: ProjectPatch, person: Actor):
         project = authorize(person, project_id, "admin")
         for key, value in body.model_dump(exclude_none=True).items():
             setattr(project, key, value.strip() if key == "name" else value)
-        return {**project.public(), "role": role_of(person, project)}
+        return project_view(project, person)
 
     return app
 
