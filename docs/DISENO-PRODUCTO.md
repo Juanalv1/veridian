@@ -104,7 +104,7 @@ erDiagram
 `EVENT` y `DECISION` son las tablas actuales con `client_id` renombrado a `project_id`.
 
 - **Person:** una cuenta de Google verificada. La identidad es `google_sub` (estable); el `email` puede cambiar. Una persona existe una vez, sin importar a cuántas organizaciones pertenezca.
-- **Organization:** la empresa o cuenta que agrupa proyectos y personas. Es el nivel donde viven los miembros y los roles. Una persona puede pertenecer a varias. Se elimina con borrado lógico (`deleted_at`); el contrato de eliminación de una organización **no está definido** (ver brechas de decisión al final).
+- **Organization:** la empresa o cuenta que agrupa proyectos y personas. Es el nivel donde viven los miembros y los roles. Una persona puede pertenecer a varias. Se elimina con borrado lógico (`deleted_at`); el contrato de eliminación de una organización **no está definido** (pendiente de definir).
 - **Project:** la unidad de datos y de claves. Reemplaza a `client_id` y pertenece a **una** organización (`org_id`). Todo dato de la plataforma de datos cuelga de un proyecto. No tiene miembros ni roles propios: hereda los de su organización.
 - **Membership:** la relación persona–organización con un rol. Es la única fuente de permisos y vale para todos los proyectos de la organización. Una persona tiene un solo rol por organización.
 - **Invitation:** invitación **a la organización** por correo con rol y vencimiento. Se acepta sola cuando esa persona entra con Google y el correo verificado coincide; no hace falta enviar correo para que funcione (ver decisión 4).
