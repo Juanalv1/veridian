@@ -2,6 +2,8 @@
 
 Mapa de cada menú del panel y para qué sirve. Capturas tomadas del panel desplegado (`veridian-panel.onrender.com`), proyecto de ejemplo recién creado, el 25 oct 2026.
 
+**Cómo leer las capturas:** las flechas naranjas señalan dónde hacer clic. Los números siguen el flujo de puesta en marcha: Proyectos (1–3) → Claves de API (1–2) → Webhook (3–4) → Actividad (5) → Resumen (6).
+
 ## Mapa general
 
 ```
