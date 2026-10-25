@@ -1393,7 +1393,9 @@ def create_app(
                 return JSONResponse({"error": "unsafe_url", "detail": f"unsafe logo url: {reason}"}, status_code=422)
         for key, value in changes.items():
             setattr(project, key, value.strip() if key == "name" else value)
-        if changes:
+        if changes.keys() & {*BRAND_TEXT_FIELDS, "self_unlock_enabled"}:
+            # The engine audits every project.update; the fake audits only the brand and self-unlock changes so
+            # the older mode and name changes keep their quiet audit log (simplification).
             record(orgs[project.org_id], person, "project.update", "project", project.id, project.id, changes)
         return project_view(project, person)
 

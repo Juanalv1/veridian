@@ -435,7 +435,9 @@ def test_a_member_reads_the_project(client, engine):
     assert r.status_code == 200
     assert r.json() == {"id": pid, "org_id": org_of(engine, SDK), "name": engine.state.projects[pid].name,
                         "retention_days": 90, "enforcement": "enforce", "ai_enabled": True,
-                        "created_at": engine.state.projects[pid].created_at, "role": "viewer"}
+                        "created_at": engine.state.projects[pid].created_at, "role": "viewer",
+                        "brand_name": None, "brand_logo_url": None, "brand_color": None,
+                        "brand_support_url": None, "brand_support_email": None, "self_unlock_enabled": False}
 
 
 def test_a_non_member_cannot_read_or_patch_a_project(client, engine):
