@@ -1,8 +1,7 @@
-# Route classification used by the block rule.
-# Key: route template ("/invoices/{id}") or "METHOD template" ("POST /users").
-# A method-specific key wins over a plain template. Anything not listed is "normal".
-# Classes: critical | sensitive | normal
+# Route classification used by the block rule (see docs/REPARTO.md, contract 1).
+# Key: "METHOD /route/template", method upper-case. Exact match only.
+# Classes: critical | sensitive | normal. Anything not listed is "normal".
 routes:
-  /payouts/bank-account: critical
-  POST /users: sensitive
-  /invoices/export: sensitive
+  GET /invoices/export: sensitive
+  GET /payouts/bank-account: sensitive
+  POST /payouts/bank-account: critical
