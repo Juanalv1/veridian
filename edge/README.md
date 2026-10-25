@@ -1,0 +1,96 @@
+# Borde y demo (Dev 2)
+
+Todo lo que toca la app del cliente y lo que se ve en el escenario:
+
+| Carpeta | Qué es |
+|---|---|
+| `middleware/` | Middleware ASGI: envía eventos al motor en segundo plano y responde `403 {"error": "blocked"}` a lo que esté en la lista de bloqueos |
+| `demo_app/` | App de facturas de ejemplo (login, facturas, cuenta bancaria de cobros) protegida por el middleware |
+| `panel/` | Página que lista `GET /v1/decisions` y se actualiza sola |
+| `fake_engine/` | Motor falso en memoria que respeta los contratos de `docs/REPARTO.md`, para trabajar sin el motor real |
+
+El middleware nunca envía cuerpos de peticiones, contraseñas ni datos de clientes, y falla abierto: si el motor no responde, la app sigue con la última lista conocida.
+
+## Instalar
+
+Requiere [uv](https://docs.astral.sh/uv/) (descarga Python 3.12 si hace falta).
+
+```bash
+cd edge
+uv sync
+```
+
+## Variables de entorno
+
+| Variable | Quién la usa | Para qué |
+|---|---|---|
+| `VERIDIAN_TOKENS` | motor falso | Tokens aceptados, separados por coma. Sin tokens, todo da `401` |
+| `VERIDIAN_ALLOW_DEV_TOKEN=1` | motor falso | Acepta además el token local `dev-token` (solo desarrollo) |
+| `VERIDIAN_SEED=demo` | motor falso | Precarga el historial del dueño (`u_42` desde `127.0.0.1`). También acepta un JSON `[{"user_id", "ips", "routes"}]` |
+| `VERIDIAN_LEARN_DELAY` | motor falso | Segundos antes de que un evento no marcado entre al perfil (por defecto 300). Evita que el login del atacante legitime su red |
+| `VERIDIAN_URL` | demo y panel | URL del motor (por defecto `http://localhost:8000`) |
+| `VERIDIAN_TOKEN` | demo y panel | Token Bearer con el que hablan con el motor |
+| `TRUSTED_PROXIES` | demo | Cantidad de proxies propios delante de la app (por defecto `0`: se usa la IP de la conexión y se ignora `X-Forwarded-For`) |
+| `DEMO_PASSWORD` | demo | Contraseña de los usuarios de ejemplo. Por defecto `demo1234`, solo para uso local |
+
+Los tokens no se guardan en el repo; se pasan por entorno o por un `.env` (ignorado por git).
+
+## Levantar los tres procesos
+
+En tres terminales, desde `edge/`:
+
+```bash
+# 1. Motor falso (puerto 8000)
+VERIDIAN_TOKENS=dev-local VERIDIAN_SEED=demo uv run uvicorn fake_engine.app:app --port 8000
+
+# 2. App de ejemplo (puerto 8001)
+VERIDIAN_URL=http://localhost:8000 VERIDIAN_TOKEN=dev-local TRUSTED_PROXIES=1 \
+  uv run uvicorn demo_app.main:app --port 8001
+
+# 3. Panel (puerto 8002)
+VERIDIAN_URL=http://localhost:8000 VERIDIAN_TOKEN=dev-local \
+  uv run uvicorn panel.main:app --port 8002
+```
+
+- App: <http://localhost:8001> (usuario `ana@facturas.demo`, contraseña `DEMO_PASSWORD`). También existe `luis@facturas.demo`.
+- Panel: <http://localhost:8002>.
+
+Para usar el motor real de Dev 1, apunta `VERIDIAN_URL` y `VERIDIAN_TOKEN` a él y no levantes el motor falso.
+
+## Simular al atacante en local
+
+`TRUSTED_PROXIES=1` hace que la app tome la IP del último valor de `X-Forwarded-For`, como si hubiera un proxy propio delante. Así `curl` puede "venir" de otra red. El dueño del historial sembrado es `127.0.0.1`.
+
+```bash
+APP=http://localhost:8001
+
+# Dueño: entra y navega (200)
+curl -s -c dueno.txt -d 'email=ana@facturas.demo&password=demo1234' -H 'X-Forwarded-For: 127.0.0.1' $APP/login -o /dev/null
+curl -s -b dueno.txt -H 'X-Forwarded-For: 127.0.0.1' -o /dev/null -w '%{http_code}\n' $APP/invoices
+
+# Atacante: misma contraseña, otra red (el primer valor es falso y se ignora)
+H='X-Forwarded-For: 9.9.9.9, 203.0.113.9'
+curl -s -c atacante.txt -d 'email=ana@facturas.demo&password=demo1234' -H "$H" $APP/login -o /dev/null
+curl -s -b atacante.txt -d 'bank=Otro&account_number=1' -H "$H" -o /dev/null -w '%{http_code}\n' $APP/payouts/bank-account   # 200: pasa la petición que dispara el bloqueo
+sleep 5
+curl -s -b atacante.txt -H "$H" $APP/invoices                                                                              # 403 {"error":"blocked"}
+curl -s -b dueno.txt -H 'X-Forwarded-For: 127.0.0.1' -o /dev/null -w '%{http_code}\n' $APP/invoices                       # 200
+```
+
+El panel muestra la decisión `block` con sus señales y la explicación. Se bloquea la petición siguiente, no la sospechosa, por los ciclos de ~2 s.
+
+Sin proxy (`TRUSTED_PROXIES=0`), la IP es siempre la de la conexión y `X-Forwarded-For` se ignora, aunque el atacante lo falsifique.
+
+## Tests
+
+```bash
+cd edge
+uv run pytest -q
+```
+
+No usan red real ni esperas: el motor falso y las apps se conectan por `httpx.ASGITransport`, y los tests llaman a `flush()` y `refresh_blocklist()` del middleware directamente.
+
+## Notas
+
+- La regla del motor falso refleja el primer hito de Dev 1: ruta `critical` nunca usada del usuario, desde una red `/24` nunca vista para él → `block` de su sesión y su IP (`users` queda vacío). Un usuario sin historial no se juzga.
+- El `session_id` que ve el motor es un hash de la cookie de sesión, nunca la cookie.
