@@ -40,11 +40,16 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 
 ### Reglas generales
 
-- **Autenticación en todas las rutas:** `Authorization: Bearer <token del cliente>`. Cada cliente está aislado.
+- **Autenticación en todas las rutas:** `Authorization: Bearer <credencial>`. Hay dos tipos de llamante (ver `docs/DISENO-PRODUCTO.md`, "Cómo se autentica el panel contra el motor"):
+  - **`sdk`:** la clave de API de un proyecto. Solo sirve en `POST /v1/events`, `POST /v1/check`, `GET /v1/blocklist` y `GET /v1/routes` (contratos 1, 2, 8 y 9) de **su** proyecto. En cualquier otro endpoint responde `403 {"error": "forbidden"}`: una clave filtrada ya no lee decisiones ni perfiles ni marca decisiones como normales.
+  - **`panel`:** la credencial de servicio del panel (`VERIDIAN_PANEL_TOKEN`; `VERIDIAN_PANEL_TOKENS` admite la actual y la anterior para rotarla sin corte) más `X-Veridian-Actor: <person_id>` (la persona de la sesión). En las lecturas de datos (contratos 2 a 8) también `X-Veridian-Project: <project_id>`. El motor autoriza con el **rol del actor en la organización de ese proyecto**, leído de la base en cada petición; no hay roles por proyecto. Sin `X-Veridian-Project`: `400 {"error": "project_required"}`. Actor desconocido, no miembro, proyecto desconocido o eliminado: `403 {"error": "forbidden"}` (indistinguibles). La credencial del panel en `POST /v1/events` o `POST /v1/check`: `403`.
+- **Organizaciones y roles:** los roles (`owner`, `admin`, `viewer`) viven solo en la organización: un rol por persona y organización, válido en todos sus proyectos; una persona puede estar en varias organizaciones. Leer datos: `viewer` o más. Marcar normal, editar un proyecto o la organización, crear proyectos y gestionar claves: `admin` o `owner`. Si un `viewer` puede marcar normal es la decisión abierta 3; hoy no (un solo interruptor en el motor).
 - **Token de desarrollo:** el middleware lo lee de la variable `VERIDIAN_TOKEN`. El motor importa al arrancar cada token de `VERIDIAN_TOKENS` como clave de API (solo guarda su hash) y autentica contra la tabla `api_key`; el mismo token sigue funcionando. Nunca se sube al repo.
 - **Errores:**
   - `401 {"error": "unauthorized"}` si falta el token o no es válido; es idéntico para clave inexistente, revocada o de un proyecto eliminado;
   - `429 {"error": "rate_limited"}` con cabecera `Retry-After` (segundos) tras demasiados fallos de autenticación desde la misma IP o con el mismo prefijo de clave; se aplica antes de validar la clave;
+  - `403 {"error": "forbidden"}` si el llamante no puede usar ese endpoint o su rol no alcanza;
+  - `400 {"error": "project_required"}` si el panel lee datos sin `X-Veridian-Project`;
   - `422` si el cuerpo no cumple el contrato.
 - **Fechas:** `ts` siempre en UTC, ISO 8601 con `Z`.
 
@@ -304,7 +309,7 @@ La clasificación de rutas que el motor está usando, para que el panel la muest
 }
 ```
 
-- **Mismo contenido para todos los clientes:** hoy la clasificación es una sola (`routes.yaml`) y es global al motor. El token se exige igual que en los otros endpoints, pero no cambia la respuesta.
+- **Mismo contenido para todos los clientes:** hoy la clasificación es una sola (`routes.yaml`) y es global al motor. La credencial se exige igual (clave `sdk` o panel con `X-Veridian-Project` y rol `viewer`), pero no cambia la respuesta.
 - **Orden:** primero `critical`, después `sensitive`; dentro de cada clase, por ruta y luego por método.
 - **Solo lo clasificado:** las rutas `normal` no se listan. Cualquier ruta que no aparezca recibe la clase `default`.
 - **`route`:** la plantilla, igual que en el contrato 1. El panel no puede editar la clasificación.
@@ -336,6 +341,44 @@ Respuesta `200`:
 ### Solo para ensayos: reinicio
 
 `POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_RESET_TOKEN` definido en el motor y el header `X-Veridian-Reset-Token` con ese valor (además del Bearer normal); si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
+
+El reinicio sigue usando la clave `sdk` del proyecto (no la credencial del panel).
+
+### 10. Personas, organizaciones y proyectos: panel → motor
+
+Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app.py`), para que el panel funcione igual contra los dos.
+
+| Endpoint | Rol | Respuesta |
+|---|---|---|
+| `POST /v1/people/login` `{"google_sub", "email", "name"?}` | solo credencial (sin actor) | `200 {"person": {"id", "email", "name"}, "orgs": [{"id", "name", "role", "projects": [{"id", "name"}]}]}` |
+| `GET /v1/me/orgs` | actor conocido | `{"orgs": [...]}`, igual que en el login |
+| `POST /v1/orgs` `{"name"}` | correo en `VERIDIAN_ORG_CREATORS` | `201`, la organización como en `orgs`, con el creador `owner` |
+| `GET /v1/orgs/{id}` | `viewer` | la organización con su `role`, `projects` y `created_at` |
+| `PATCH /v1/orgs/{id}` `{"name"?}` | `admin` | igual que `GET` |
+| `GET /v1/orgs/{id}/projects` | `viewer` | `{"projects": [proyecto]}` |
+| `POST /v1/orgs/{id}/projects` `{"name"}` | `admin` | `201`, proyecto. Empieza en `observe` (decisión 6) |
+| `GET /v1/projects/{id}` | `viewer` | proyecto |
+| `PATCH /v1/projects/{id}` `{"name"?, "retention_days"?, "enforcement"?, "ai_enabled"?}` | `admin` | proyecto; solo cambia lo enviado |
+
+- **Proyecto:** `{"id", "org_id", "name", "retention_days", "enforcement", "ai_enabled", "created_at", "role"}`; `role` es el del actor en la organización.
+- **Login:** alta o actualización por `google_sub` (el correo se guarda en minúsculas; sin `name` se conserva el anterior). Después: si el correo está en `VERIDIAN_BOOTSTRAP_OWNERS`, la persona pasa a `owner` de **cada organización sin owner** (nunca de una que ya lo tiene); y acepta las invitaciones vigentes de ese correo (una invitación nunca cambia el rol de quien ya es miembro).
+- **Organización `Demo`:** los proyectos que ya existían (y los que se crean al arrancar desde `VERIDIAN_TOKENS` o desde datos existentes) están en la organización `Demo` (`org_demo`), sin miembros hasta que entra un bootstrap owner.
+- **Validación:** `name` de 1 a 80 caracteres; `retention_days >= 1`; `enforcement` `observe` | `enforce`; si no, `422`.
+- **Auditoría:** crear organización o proyecto, renombrar, cambiar un proyecto y el bootstrap quedan en `audit_log` con el actor.
+- **Pendiente:** `DELETE /v1/projects/{id}` (owner) y el contrato 11 (miembros e invitaciones de la organización) aún no tienen endpoint; las invitaciones existen en la base y se aceptan al entrar.
+
+### 12. Claves de API: panel → motor
+
+Solo `panel`, rol `admin` de la organización del proyecto de la ruta.
+
+- `POST /v1/projects/{id}/api-keys` `{"name"}` → `201 {"id", "name", "prefix", "key"}`. **`key` se muestra solo esta vez**; el motor guarda su hash. Formato `vrd_<8 hex de prefijo>_<32 bytes aleatorios en base64url>`.
+- `GET /v1/projects/{id}/api-keys` → `{"api_keys": [{"id", "name", "prefix", "created_by", "created_at", "last_used_at", "revoked_at"}]}`, de la más nueva a la más vieja, incluidas las revocadas y la importada de `VERIDIAN_TOKENS` (`prefix: "legacy"`). Nunca devuelve `key` ni su hash.
+- `POST /v1/projects/{id}/api-keys/{key_id}/revoke` → `200` con la clave como en el listado. Vale desde la petición siguiente (`401`). Una clave ya revocada, o de otro proyecto: `404 {"error": "not_found"}`.
+- Crear y revocar quedan en `audit_log`. `last_used_at` se escribe como mucho una vez por minuto por clave.
+
+### Marcar normal (contrato 3)
+
+`POST /v1/decisions/{id}/normal` es solo `panel` con `X-Veridian-Project` y rol `admin` u `owner`; queda en `audit_log` (`decision.mark_normal`, con el actor) en la misma transacción. Un `viewer` recibe `403`; una decisión inexistente, `404`.
 
 ## Primer hito de cada dev
 

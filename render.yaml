@@ -36,3 +36,12 @@ services:
       # Leave unset for real customers. Replaced by DELETE /v1/projects/{id}/data (U13).
       - key: VERIDIAN_RESET_TOKEN
         sync: false
+      # Service credential of the panel (same value as the panel's VERIDIAN_PANEL_TOKEN). Unset: no panel.
+      - key: VERIDIAN_PANEL_TOKEN
+        sync: false
+      # Email that owns org "Demo" (the legacy projects) on first login.
+      - key: VERIDIAN_BOOTSTRAP_OWNERS
+        sync: false
+      # Emails allowed to create organizations (provisional, open decision 2). Unset: nobody.
+      - key: VERIDIAN_ORG_CREATORS
+        sync: false

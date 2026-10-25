@@ -41,6 +41,19 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_SECRET_KEY` | empty | Fernet key (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) that encrypts webhook signing secrets at rest. Empty: webhooks cannot be configured (clear error); the engine still runs. Losing or changing it makes stored secrets unreadable: their deliveries fail until the endpoint is set again. Never log it |
 | `VERIDIAN_WEBHOOKS` | `on` | `off` stops the background webhook sender (block notifications stay queued in `notifications`) |
 | `VERIDIAN_PANEL_URL` | empty | Panel base URL, used for `panel_url` in the webhook payload |
+| `VERIDIAN_PANEL_TOKEN` | empty | Service credential of the panel (Bearer, compared in constant time). Empty: no panel can call the engine. The most sensitive secret: whoever holds it can act as any member whose `person_id` they know. Must differ from every project key |
+| `VERIDIAN_PANEL_TOKENS` | empty | Extra panel credentials, comma-separated, accepted together with `VERIDIAN_PANEL_TOKEN` (current and previous, to rotate without a cut) |
+| `VERIDIAN_BOOTSTRAP_OWNERS` | empty | Comma-separated emails. On login, such a person becomes owner of every organization that has no owner (for example org `Demo`, created for the legacy projects). An organization that already has an owner is never touched |
+| `VERIDIAN_ORG_CREATORS` | empty | Comma-separated emails allowed to create organizations (`POST /v1/orgs`). Empty: nobody. Provisional (open decision 2). Projects are created by the owners and admins of an organization, without this list |
+
+## Callers, organizations and roles
+
+Two kinds of caller (docs/DISENO-PRODUCTO.md, "Revisión 2026-10-25"):
+
+- `sdk`: a project's API key. Only `POST /v1/events`, `POST /v1/check`, `GET /v1/blocklist` and `GET /v1/routes`, of the key's project. Any other endpoint answers `403 {"error": "forbidden"}`.
+- `panel`: `Authorization: Bearer <VERIDIAN_PANEL_TOKEN>` plus `X-Veridian-Actor: <person_id>` and, on data reads (decisions, activity, summary, users, profile, and also blocklist and routes), `X-Veridian-Project: <project_id>`. Missing project header: `400 {"error": "project_required"}`. Unknown actor, non-member, unknown or deleted project: `403`. The panel credential on `/v1/events` or `/v1/check`: `403`.
+
+Roles (`owner`, `admin`, `viewer`) live only in the organization: one role per person and organization, valid for every project of it; a person may belong to several organizations. The matrix is `control_plane/roles.py`; whether a viewer may mark a decision normal (open decision 3) is the single switch `VIEWER_CAN_MARK_NORMAL` there (default: no). Migration `0004` adds `organization` and `project.org_id`, and moves memberships (keeping the strongest role), invitations and audit to the organization; existing projects, and the projects seeded at startup from `VERIDIAN_TOKENS` or from existing data, belong to org `Demo` (`org_demo`). `POST /v1/decisions/{id}/normal` needs `admin` or `owner` and writes `decision.mark_normal` to `audit_log` in the same transaction. Endpoints: contracts 10 and 12 in `docs/REPARTO.md`.
 
 They can also live in a `.env` file (git-ignored), found by searching upward from the working directory. Real environment variables take precedence.
 
@@ -54,7 +67,7 @@ A deviation is an event with a new network, a new device (non-empty `device_id` 
 
 ## Observe mode and per-project AI
 
-Each `project` row carries `enforcement` (`observe` | `enforce`) and `ai_enabled` (decisions 6 and 10 of `docs/DISENO-PRODUCTO.md`); a project without a row behaves as `enforce` with AI. They are read on every request and changed with `project_settings.set_project_flags` (no HTTP endpoint yet).
+Each `project` row carries `enforcement` (`observe` | `enforce`) and `ai_enabled` (decisions 6 and 10 of `docs/DISENO-PRODUCTO.md`); a project without a row behaves as `enforce` with AI. They are read on every request and changed with `PATCH /v1/projects/{id}` (admin), which goes through `project_settings.set_project_flags`.
 
 - `observe`: detection, decisions, activity and the panel stay exactly as in `enforce`; only enforcement is suppressed. `GET /v1/blocklist` returns empty `users`/`sessions`/`ips` with the current version, and `POST /v1/check` answers `allow` with the `decision_id` of the decision it would have enforced (the stored status is not rewritten to 403). Activity still shows accesses after a recorded block as `block`: it reflects decisions, not enforcement. Changing `enforcement` bumps the blocklist version, so middlewares polling with `since` refresh.
 - `ai_enabled = 0`: rule-only for that project, as without `ANTHROPIC_API_KEY`: neither the background nor the synchronous judge is called (no `ai_judgments` rows); rule blocks still apply, subject to enforcement.
@@ -90,7 +103,7 @@ With the engine running, send a 14-day owner history and an attacker session (st
 VERIDIAN_TOKEN=dev py -3.12 engine/scripts/send_sample_events.py --base-url http://localhost:8000
 ```
 
-It prints the blocklist (attacker session and IP) and the block decision. With `--scenario bot`, the second step is a burst of 60 `GET /invoices/{id}` in 60 s from the owner's network and device: with the AI judge it can block that session only; rule-only, it records nothing.
+It prints the blocklist (attacker session and IP); its read of the decisions now answers `403`, since decisions are panel-only. With `--scenario bot`, the second step is a burst of 60 `GET /invoices/{id}` in 60 s from the owner's network and device: with the AI judge it can block that session only; rule-only, it records nothing.
 
 ## Demo rehearsal
 
@@ -103,7 +116,7 @@ With `VERIDIAN_RESET_TOKEN` set on the engine (otherwise, or with a wrong secret
    py -3.12 engine/scripts/seed_demo_history.py --user-id u_presenter --ip <wifi IP> --hours 13,14,15,16 --device-id <cookie, if known>
    ```
 
-   It prints the accepted count and the resulting profile. Without `--device-id`, the presenter's real device is new to the profile and counts as a deviation.
+   It prints the accepted count and then tries to read the profile with the SDK key, which now answers `403` (data reads are panel-only); check the profile in the panel. Without `--device-id`, the presenter's real device is new to the profile and counts as a deviation.
 3. Run the demo.
 
 ## Deploy (Render)
@@ -112,6 +125,9 @@ With `VERIDIAN_RESET_TOKEN` set on the engine (otherwise, or with a wrong secret
 
 - `VERIDIAN_TOKENS`: `client=token` for each customer app; the demo app's middleware uses that token as `VERIDIAN_TOKEN`.
 - `ANTHROPIC_API_KEY`: enables the AI judge.
+- `VERIDIAN_PANEL_TOKEN`: the panel's service credential (the same value in the panel service).
+- `VERIDIAN_BOOTSTRAP_OWNERS`: the email that should own org `Demo` on first login.
+- `VERIDIAN_ORG_CREATORS`: emails allowed to create organizations (optional).
 
 The service runs on the `starter` plan with a 1 GB disk at `/var/data`, where the SQLite file lives. Free instances cannot attach a disk, so every deploy would wipe the profiles, and they spin down after 15 minutes idle ([Render docs](https://render.com/docs/disks), [free tier](https://render.com/docs/free)). With a disk the service runs as one instance, and each deploy has a few seconds of downtime.
 
