@@ -23,7 +23,7 @@ Mode: on. Source: `INIT.md` ("test first when there is clear behavior"). Runner:
 
 ## Tasks
 
-- [ ] T1 Scaffold `edge/` (pyproject, uv, Python 3.12) and `fake_engine/` implementing the 4 contracts in memory, with the Dev 1 first-milestone rule (critical route from a new /24 → block session + IP). Route: delegated (writer trigger: 2+ non-trivial files).
+- [x] T1 Scaffold `edge/` (pyproject, uv, Python 3.12) and `fake_engine/` implementing the 4 contracts in memory, with the Dev 1 first-milestone rule (critical route from a new /24 → block session + IP). Route: delegated (writer trigger: 2+ non-trivial files). Evidence: 9979024; `uv run pytest -q` 26 passed.
 - [ ] T2 Middleware: event capture (route template, IP rule, `device_id` cookie, user/session callables), batched background sender (~2 s, bounded buffer, retry), blocklist poller (`since`, `304`, keep last list on failure), `403 {"error": "blocked"}`. Route: delegated.
 - [ ] T3 Demo app: login, invoices (list, detail, export), payout bank account (view, change), using the middleware. Route: delegated.
 - [ ] T4 Panel: lists `GET /v1/decisions` with signals and rationale, auto-refresh. Route: delegated.
