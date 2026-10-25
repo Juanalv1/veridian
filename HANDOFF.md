@@ -62,6 +62,17 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
    - rotar el token del cliente `demo`, que quedó expuesto en una conversación (motor: `VERIDIAN_TOKENS`; app y panel: `VERIDIAN_TOKEN`);
    - poner `VERIDIAN_SECRET_KEY` (Fernet) para el webhook.
 4. **REPARTO.md:** documentar en neutral los contratos 13, 14 y 15 a medida que aterricen.
+5. **Preparar la demo en un solo paso** (pedido de Juan; hoy son 4 comandos con 3 secretos y las IPs copiadas a mano). Coordinar con Dev A, porque U13 reemplaza el reset por el borrado por proyecto.
+   - **Script:** `engine/scripts/prepare_demo.py`, sin argumentos en el uso normal.
+     - **Configuración:** lee la URL, el token `demo`, el secreto de reset (o lo que lo reemplace con U13) y el usuario del presentador de `engine/.env` (por ejemplo `DEMO_USER_ID=u_42`).
+     - **Modo `--calibrar`:** el presentador navega unos minutos y el script toma de `GET /v1/activity` (con el acceso del panel) **todas** las IPs y `device_id` de ese usuario en los últimos N minutos. Así se resuelve lo del CGNAT sin copiar IPs a mano. Las guarda en `engine/.demo-presenter.json`, ignorado por git.
+     - **Modo normal:**
+       - reinicia el cliente;
+       - siembra con las IPs y los dispositivos calibrados, en la hora UTC actual ±1;
+       - verifica que el perfil quedó como se esperaba;
+       - imprime un resumen de una línea: `listo: 3 redes, 1 dispositivo, 14 días`.
+   - **Botón (opcional, con el Dev 2):** "Preparar demo" en el panel, visible solo para un owner y solo si el ensayo está habilitado en el motor. Lo respalda un endpoint del motor que hace lo mismo que el script, por ejemplo `POST /v1/projects/{id}/rehearsal/prepare`. Tiene que ir con auditoría y quedar apagado en producción.
+   - **Tests:** que la calibración tome todas las IPs del usuario y no las de otros usuarios; que la preparación deje el perfil sin rastros del atacante; que sin el ensayo habilitado el endpoint responda `404`.
 
 
 ## Ya está en `main`
