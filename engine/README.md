@@ -28,7 +28,7 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_AUTH_MAX_FAILURES_PER_PREFIX` | `10` | Same, per visible prefix of a `vrd_<prefix>_...` key. Legacy tokens have no prefix and are limited by IP only |
 | `VERIDIAN_AUTH_FAILURE_WINDOW_S` | `60` | Sliding window of the failure limits, in seconds |
 | `VERIDIAN_DB` | `veridian.db` | SQLite file. At startup the engine applies pending migrations from `veridian_engine/migrations/` (recorded in `schema_migrations`), after copying the file to `<file>.pre-NNNN`; there are no down migrations, that copy is the way back. The client name in `VERIDIAN_TOKENS` is stored as `project_id` |
-| `VERIDIAN_ROUTES_FILE` | `engine/routes.yaml` | Route classification (`"METHOD /route": class`) |
+| `VERIDIAN_ROUTES_FILE` | `engine/routes.yaml` | Demo route classification (`"METHOD /route": class`), seeded only into projects that existed without rules at startup; new projects start empty and are edited from the panel |
 | `VERIDIAN_LEARN_DELAY_MIN` | `10` | Events younger than this (by `ts`) are not learned yet |
 | `VERIDIAN_RATE_FACTOR` | `3` | A session spikes above this many times the user's usual max events per minute. Unmeasured starting point |
 | `VERIDIAN_RATE_FLOOR` | `30` | Minimum events per minute for a spike, whatever the history. Unmeasured starting point |

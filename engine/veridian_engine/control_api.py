@@ -102,7 +102,6 @@ SECRET_KEY_MISSING = {"error": "secret_key_missing"}
 
 def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
     router = APIRouter()
-    route_template = RouteClasses.load(settings.routes_file)
 
     def org_view(conn, org_id: str, person_id: str, with_created: bool = False) -> dict:
         org = repository.get_organization(conn, org_id)
@@ -206,7 +205,8 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
             # Decision 6: a new project observes until someone turns enforcement on.
             project_id = repository.create_project(conn, actor_id=person_id, org_id=org_id, name=body.name.strip(),
                                                    enforcement="observe", now=settings.clock())
-            replace_rules(conn, project_id, route_template.mapping)
+            # A new project starts empty (everything normal): routes.yaml describes the demo app, not this one.
+            replace_rules(conn, project_id, {})
             return project_view(conn, project_id, person_id)
 
     # --- contract 14: erasure (audited; profiles are computed from events, so they go too) ---
@@ -236,6 +236,46 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
                 actor_kind="person", action="routes.replaced", target_type="project", target_id=project.project_id,
                 now=settings.clock(), meta={"count": len(mapping)},
             )
+            return {"routes": RouteClasses.for_project(conn, project.project_id).listing(), "default": "normal"}
+
+    def audit_rule(conn, project: PanelProject, action: str, meta: dict) -> None:
+        repository.record_audit(
+            conn, org_id=project.org_id, project_id=project.project_id, actor_person_id=project.person_id,
+            actor_kind="person", action=action, target_type="project", target_id=project.project_id,
+            now=settings.clock(), meta=meta,
+        )
+
+    @router.put("/v1/projects/{project_id}/routes/rule")
+    def put_route_rule(body: RouteRuleIn, project: PanelProject = Depends(path_project("manage_routes"))) -> dict:
+        """Add or change the class of one route (the panel's /rutas form)."""
+        with write_lock, db.connect(settings.db_path) as conn:
+            conn.execute(
+                "INSERT INTO route_rules (project_id, method, route, class, source) VALUES (?, ?, ?, ?, 'admin')"
+                " ON CONFLICT (project_id, method, route) DO UPDATE SET class = excluded.class, source = 'admin'",
+                (project.project_id, body.method, body.route, body.route_class),
+            )
+            conn.execute("UPDATE project SET routes_seeded = 1 WHERE id = ?", (project.project_id,))
+            audit_rule(conn, project, "routes.rule_set",
+                       {"method": body.method, "route": body.route, "class": body.route_class})
+            return {"routes": RouteClasses.for_project(conn, project.project_id).listing(), "default": "normal"}
+
+    @router.delete("/v1/projects/{project_id}/routes/rule")
+    def delete_route_rule(
+        method: str = Query(pattern=r"^[A-Z]+$", max_length=10),
+        route: str = Query(pattern=r"^/\S*$", max_length=300),
+        project: PanelProject = Depends(path_project("manage_routes")),
+    ) -> dict:
+        """Return one route to normal. A route the SDK reported keeps an admin `normal` rule so the AI
+        does not classify it again."""
+        with write_lock, db.connect(settings.db_path) as conn:
+            gone = conn.execute(
+                "DELETE FROM route_rules WHERE project_id = ? AND method = ? AND route = ? AND class != 'normal'",
+                (project.project_id, method, route),
+            ).rowcount
+            if not gone:
+                return JSONResponse(status_code=404, content=NOT_FOUND)
+            protect_unlisted(conn, project.project_id)
+            audit_rule(conn, project, "routes.rule_deleted", {"method": method, "route": route})
             return {"routes": RouteClasses.for_project(conn, project.project_id).listing(), "default": "normal"}
 
     @router.get("/v1/projects/{project_id}/routes/catalog")

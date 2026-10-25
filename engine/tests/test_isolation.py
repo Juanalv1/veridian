@@ -69,6 +69,8 @@ OPERATIONS = [
     ("PATCH", "/v1/projects/{project_id}", "foreign", {"enforcement": "observe"}),
     ("DELETE", "/v1/projects/{project_id}", "foreign", None),
     ("PUT", "/v1/projects/{project_id}/routes", "foreign", {"routes": []}),
+    ("PUT", "/v1/projects/{project_id}/routes/rule", "foreign", {"method": "POST", "route": "/x", "class": "critical"}),
+    ("DELETE", "/v1/projects/{project_id}/routes/rule", "foreign", None),
     ("GET", "/v1/projects/{project_id}/routes/catalog", "foreign", None),
     ("PUT", "/v1/routes/catalog", "sdk", {"routes": [{"method": "POST", "route": "/payouts/bank-account"}]}),
     ("DELETE", "/v1/projects/{project_id}/users/{user_id}", "foreign", None),
