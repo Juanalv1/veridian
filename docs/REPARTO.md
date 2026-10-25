@@ -467,6 +467,19 @@ Cada `block` encola un correo para cada `owner` y `admin` de la organización de
 
 Cada `block` encola, en la misma transacción y en la misma bandeja (`notifications`, `kind = 'email'`, `purpose = 'self_unlock'`), un correo al **usuario bloqueado** si el proyecto está en `enforce`, tiene `self_unlock_enabled` y existe un `user_email` de ese usuario. Como máximo uno por usuario cada 15 min (sin medir). La fila no copia el correo: el motor lo lee de `user_contact` al enviar, y vuelve a revisar entonces que la función siga activa, que la decisión siga `open` y que el correo exista (si no, queda `failed` con el motivo). El token se crea al enviar: aleatorio, atado a `decision_id` + `project_id` + `user_id`, de un solo uso, vence a las 24 h; solo se guarda su SHA-256 (`self_unlock_token`). Un reintento reemplaza el token sin usar. El correo lleva la marca del proyecto, fecha y hora (UTC) y un dispositivo aproximado ("Chrome en Windows"); nunca la IP ni la ruta. El enlace es `<VERIDIAN_PANEL_URL o https://veridian-panel.onrender.com>/desbloquear/<token>`. Remitente: `VERIDIAN_MAIL_FROM`, con `brand_name` como nombre visible.
 
+### Página pública de desbloqueo (T4): panel → motor
+
+La página pública del panel (`/desbloquear/<token>`) llama al motor con la **credencial de servicio del panel** (`Authorization: Bearer <VERIDIAN_PANEL_TOKEN>`), sin `X-Veridian-Actor` ni `X-Veridian-Project`: quien visita la página no tiene sesión, el token es su prueba. El token va en el encabezado `X-Veridian-Unlock-Token` (una URL lo pondría en los registros de acceso). Una clave del SDK recibe `403`; sin credencial, `401`.
+
+| Endpoint | Respuesta |
+|---|---|
+| `GET /v1/self-unlock` | `200 {"state": "valid" \| "used" \| "closed" \| "expired", "brand": {"name", "logo_url", "color", "support_url", "support_email"}, "access": {"time", "device"}, "expires_at"}`. **Nunca cambia nada.** Token desconocido o ausente: `404 {"error": "not_found"}` |
+| `POST /v1/self-unlock` | Válido: `200 {"unlocked": true, "brand": {...}}`. Vencido, ya usado o de una decisión que ya no está `open`: `409 {"error": "expired" \| "used" \| "closed"}` y no se desbloquea nada. Desconocido: `404` |
+
+- `closed`: la decisión ya está `marked_normal` (un admin se adelantó) o ya no existe. `used` se evalúa primero, luego `closed`, luego `expired`.
+- `brand.name` cae al nombre del proyecto si no hay `brand_name`; el resto es `null` si no está configurado. `access.time` es texto en español y UTC (`26 de octubre de 2026, 12:00 UTC`); `access.device` es aproximado (`Chrome en Windows`). Ni la IP ni el `user_id` ni el correo salen en ninguna respuesta.
+- El `POST` reutiliza la lógica de marcar normal (la sesión y la IP salen de la lista de bloqueo, sube la `version`, el perfil lo aprende) y escribe `decision.self_unlocked` en la auditoría, con `actor_kind: "system"`, sin persona, `target_type: "decision"`; el panel lo muestra como "Desbloqueado por el usuario".
+
 ### Marcar normal (contrato 3)
 
 `POST /v1/decisions/{id}/normal` es solo `panel` con `X-Veridian-Project` y rol `admin` u `owner`; queda en `audit_log` (`decision.mark_normal`, con el actor) en la misma transacción. Un `viewer` recibe `403`; una decisión inexistente, `404`.
