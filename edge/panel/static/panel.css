@@ -42,6 +42,18 @@
     .backdrop { display:block; position:fixed; inset:0; z-index:10; background:rgba(0, 0, 0, 0.5); opacity:0; pointer-events:none; transition:opacity 200ms var(--ease-out); }
     .side[data-open] + .backdrop { opacity:1; pointer-events:auto; }
   }
+  /* On Actividad the sidebar collapses to an icon rail: the list-detail view needs the width.
+     Labels stay in the accessible name; the title gives sighted users a tooltip. */
+  @media (min-width:901px) {
+    .shell:has(.view-actividad) .side { flex-basis:72px; width:72px; padding:24px 12px; align-items:center; }
+    .shell:has(.view-actividad) .brand { padding:0; }
+    .shell:has(.view-actividad) .brand .wordmark, .shell:has(.view-actividad) .brand .app { display:none; }
+    .shell:has(.view-actividad) .nav-link { position:relative; justify-content:center; padding:12px; }
+    .shell:has(.view-actividad) .nav-label, .shell:has(.view-actividad) .conn-label, .shell:has(.view-actividad) .last-access { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+    .shell:has(.view-actividad) #nav-badge { position:absolute; top:2px; right:0; }
+    .shell:has(.view-actividad) .badge { font-size:11px; padding:0 5px; }
+    .shell:has(.view-actividad) .conn-card { padding:12px; border:0; align-items:center; }
+  }
   /* Actividad is a list-detail view: the feed scrolls on its own in a fixed column, the detail beside it. */
   main.view-actividad { display:grid; grid-template-columns:minmax(320px, 380px) minmax(0, 1fr); gap:32px; align-items:start; }
   nav[aria-label="Decisiones recientes"] { flex:1 1 260px; max-width:320px; min-width:0; display:flex; flex-direction:column; }

@@ -593,8 +593,8 @@ def test_end_to_end_owner_then_attacker_then_rejections_then_mark_normal():
                                             event(id="e_r2", method="GET", route="/invoices", status=403, bytes=21)]}, headers=AUTH)
     html = panel.get("/actividad").text
     r = rows(html)
-    assert [("Bloqueado" in x, "detenido (403)" in x, "pasó antes del bloqueo (200)" in x) for x in r] == [
-        (True, True, False), (True, True, False), (True, False, True), (False, False, False)]
+    assert [suffix_of(x) for x in r] == ["detenido", "detenido", "pasó antes del bloqueo", None]
+    assert all("Bloqueado" in x for x in r[:3]) and "(403)" not in html
     assert "Normal" in r[3]
     did = decision_id(engine)
     panel.post(f"/decisions/{did}/normal", data={"user": "u_42"})
@@ -666,8 +666,9 @@ def test_block_rows_say_what_happened_to_the_request_using_the_real_status():
             act("e_2", verdict="block", decision_id="d_1", status=200),
             act("e_1", verdict="block", decision_id="d_1", status=404)]
     r = rows(stub_panel([dec()], activity=acts).get("/actividad").text)
-    assert [suffix_of(x) for x in r] == ["detenido (403)", "pasó antes del bloqueo (302)",
-                                         "pasó antes del bloqueo (200)", "404"]
+    # The list says it in words; the HTTP code stays out of it (the detail keeps it).
+    assert [suffix_of(x) for x in r] == ["detenido", "pasó antes del bloqueo",
+                                         "pasó antes del bloqueo", "404"]
     assert all("Bloqueado" in x for x in r)
 
 

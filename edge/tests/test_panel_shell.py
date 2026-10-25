@@ -420,3 +420,15 @@ def test_mobile_drawer_css_starts_closed_slides_and_respects_reduced_motion():
     assert re.search(r"\.menu-btn \{[^}]*width:44px[^}]*height:44px", css)
     reduced = css[css.rindex("prefers-reduced-motion"):]
     assert "transition:none" in reduced.replace(" ", "")
+
+
+def test_actividad_collapses_the_sidebar_to_an_icon_rail_on_desktop():
+    # The list-detail view needs the width; the rail keeps icons, the badge and the live dot.
+    css = full().panel().get("/static/panel.css").text
+    desktop = css[css.index("@media (min-width:901px)"):]
+    assert re.search(r"\.shell:has\(\.view-actividad\) \.side \{[^}]*width:72px", desktop)
+    # Labels are hidden visually but stay in the accessible name.
+    assert re.search(r"\.shell:has\(\.view-actividad\) \.nav-label[^{]*\{[^}]*clip", desktop)
+    html = full().panel().get("/actividad").text
+    nav = re.search(r'<nav[^>]*aria-label="Secciones"[^>]*>(.*?)</nav>', html, re.S).group(1)
+    assert re.findall(r'<a [^>]*title="([^"]+)"', nav) == ["Resumen", "Actividad", "Usuarios", "Rutas críticas"]

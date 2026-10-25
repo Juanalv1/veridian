@@ -31,7 +31,7 @@
     <nav aria-label="Secciones" class="sections" hx-boost="true" hx-target="#live" hx-select="#live" hx-swap="outerHTML"
          hx-sync="closest a:replace" preload="mouseenter">
       {% for key, href, label in sections %}
-        <a class="nav-link" data-nav="{{ key }}" href="{{ href }}"{% if key == section %} aria-current="page"{% endif %}>
+        <a class="nav-link" data-nav="{{ key }}" href="{{ href }}" title="{{ label }}"{% if key == section %} aria-current="page"{% endif %}>
           {{ nav_icon(key) }}
           <span class="nav-label">{{ label }}</span>
           {% if key == 'actividad' %}<span id="nav-badge">{% if nav_blocks %}<span class="badge" aria-hidden="true">{{ nav_blocks }}</span><span class="vh">{{ nav_blocks_text }}</span>{% endif %}</span>{% endif %}

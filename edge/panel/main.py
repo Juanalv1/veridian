@@ -93,14 +93,15 @@ def _block_effect(access_ip: str | None, listed_ips: set[str] | None) -> str:
     return "La sesión no puede seguir."
 
 
-def _status_note(status) -> str:
-    """Suffix for a block row: what happened to that request. Empty if unknown."""
+def _status_note(status, with_code: bool = False) -> str:
+    """What happened to a blocked request. Empty if unknown. The list says it in words;
+    the detail adds the HTTP code."""
     if not isinstance(status, int) or isinstance(status, bool):
         return ""
     if status == 403:
-        return "detenido (403)"
+        return "detenido (403)" if with_code else "detenido"
     if 200 <= status < 400:
-        return f"pasó antes del bloqueo ({status})"
+        return f"pasó antes del bloqueo ({status})" if with_code else "pasó antes del bloqueo"
     return str(status)
 
 
@@ -325,7 +326,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                 a["selected"] = True
         if current is not None and row is not None and row.get("event_id") not in (current.get("event_ids") or []):
             # The detail describes another request than the row that was clicked: say so.
-            note = row.get("status_note")
+            note = _status_note(row.get("status"), with_code=True) if row.get("verdict_kind") == "block" else ""
             what = "del bloqueo" if row.get("verdict_kind") == "block" else "de la decisión"
             lead = f"Este acceso: {note} · parte" if note else "Este acceso: parte"
             current["selected_note"] = {"text": f"{lead} {what} de las", "ts": current.get("ts")}
