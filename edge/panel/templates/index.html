@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="{{ refresh }}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Veridian · Decisiones</title>
+<style>
+  :root { --ink:#e8edf5; --muted:#8c99ad; --line:#26324a; --bg:#0e1524; --card:#151f35; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:28px 24px; }
+  header { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:20px; }
+  h1 { margin:0; font-size:1.6rem; } h1 span { color:#4f8cff; }
+  .live { color:var(--muted); font-size:.85rem; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; }
+  .badge { display:inline-block; padding:3px 12px; border-radius:999px; font-weight:700; font-size:.85rem; text-transform:uppercase; }
+  .block { background:#5b1620; color:#ff9aa6; } .alert { background:#5a4210; color:#ffd36b; }
+  .step_up { background:#3a2a5e; color:#c4b0ff; } .allow { background:#12432f; color:#7be0b1; }
+  .signals span { display:inline-block; margin:0 6px 4px 0; padding:1px 8px; border:1px solid var(--line); border-radius:6px; font-size:.82rem; color:var(--muted); }
+  .note { padding:16px 18px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--muted); }
+  .error { color:#ffd36b; border-color:#5a4210; }
+  td.time, td.user { white-space:nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1><span>Veridian</span> · Decisiones</h1><div class="live">Se actualiza cada {{ refresh }} s</div></header>
+  {% if error %}
+    <div class="note error">{{ error }}</div>
+  {% elif not decisions %}
+    <div class="note">Sin decisiones por ahora. Todo normal.</div>
+  {% else %}
+  <table>
+    <thead><tr><th>Hora</th><th>Usuario</th><th>Decisión</th><th>Señales</th><th>Explicación</th></tr></thead>
+    <tbody>
+    {% for d in decisions %}
+      <tr>
+        <td class="time">{{ d.ts }}</td>
+        <td class="user">{{ d.user_id }}</td>
+        <td><span class="badge {{ d.decision }}">{{ d.decision }}</span></td>
+        <td class="signals">{% for s in d.signal_labels %}<span>{{ s }}</span>{% endfor %}</td>
+        <td>{{ d.rationale }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</main>
+</body>
+</html>
