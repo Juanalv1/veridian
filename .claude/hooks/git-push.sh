@@ -6,10 +6,6 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 git remote get-url origin >/dev/null 2>&1 || exit 0
 
-# Never auto-commit or auto-push on main: every push to main redeploys Render.
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-[ "$branch" = "main" ] && exit 0
-
 active=false
 echo "$input" | grep -q '"stop_hook_active": *true' && active=true
 
