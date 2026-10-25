@@ -23,3 +23,5 @@ Route classification is per project and editable from the panel `/rutas`; new pr
 - Panel RED: 6 of 7 in `edge/tests/test_panel_routes.py` failed; GREEN: `cd edge && .venv/Scripts/python -m pytest -q` -> 805 passed, 1 failed (`test_panel_perf.py::test_engine_calls_overlap_when_the_user_is_in_the_url`, timing; passes alone, 14/14, with and without this change).
 
 ## Commits
+- 42976b5 feat(engine): per-project rule endpoints, new projects empty (T1)
+- fc1b808 feat(panel): /rutas editable, fake engine mirror, docs (T2, T3)
