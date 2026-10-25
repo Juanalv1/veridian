@@ -1,0 +1,22 @@
+[project]
+name = "veridian-edge"
+version = "0.1.0"
+description = "Veridian edge: middleware, demo app, panel and a fake engine"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "jinja2",
+    "httpx",
+    "python-multipart",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = []
