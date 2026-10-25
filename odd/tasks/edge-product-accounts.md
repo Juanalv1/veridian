@@ -28,11 +28,12 @@ Out of scope: engine changes (Dev 1), billing.
 ## Decisions
 
 - 2026-10-25 (user, final): there is an organization layer above projects. Roles live only at the organization level: one role per person per org (owner / admin / viewer), valid for every project of that org, one member list per org, no per-project roles, a person may belong to several orgs. Provisional (not asked): org creation allowlist `VERIDIAN_ORG_CREATORS` (empty = nobody) pending decision 2; org owners/admins create projects; invitations and audit are per org; the seeded demo is org "Demo"; bootstrap owners own orgs without an owner. T4 and T5 now target orgs (selector groups projects by org; members, invitations and audit are `/v1/orgs/{id}/...`).
+- 2026-10-25 (user, decision 3): a viewer can NOT mark a decision normal (lift a block); only admin and owner. Marked decided in `docs/DISENO-PRODUCTO.md`.
 - 2026-10-25 (user): only an org OWNER may delete an organization, and only when it has no projects left (projects are deleted first, one by one); deleting a non-empty org is refused (`409 org_not_empty`). Added to contract 10 as `DELETE /v1/orgs/{id}`.
 
 ## Open decisions affecting this work
 
-From `docs/DISENO-PRODUCTO.md` "Decisiones abiertas": 1 is decided (above); 2 (who creates organizations), 3 (viewer marks normal), 4 (email) pending. Tasks that depend on them wait.
+From `docs/DISENO-PRODUCTO.md` "Decisiones abiertas": 1 and 3 are decided (above); 2 (who creates organizations) and 4 (email) pending. Tasks that depend on them wait.
 
 ## TDD
 

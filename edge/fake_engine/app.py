@@ -10,6 +10,7 @@ No AI, no persistence.
 import hashlib
 import hmac
 import ipaddress
+import itertools
 import json
 import os
 import secrets
@@ -65,6 +66,15 @@ class ProjectRequired(Exception):
     pass
 
 
+class NotFound(Exception):
+    pass
+
+
+class Conflict(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+
 # Roles of docs/DISENO-PRODUCTO.md, weakest first. They live at the organization level only.
 ROLE_RANK = {"viewer": 0, "admin": 1, "owner": 2}
 Role = Literal["viewer", "admin", "owner"]
@@ -96,6 +106,15 @@ class LoginIn(BaseModel):
     google_sub: str = Field(min_length=1)
     email: str = Field(min_length=3)
     name: str | None = None
+
+
+class MemberPatch(BaseModel):
+    role: Role
+
+
+class InvitationIn(BaseModel):
+    email: str = Field(max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    role: Role
 
 
 class ProjectIn(BaseModel):
@@ -453,15 +472,30 @@ class Organization:
     name: str
     created_at: str
     members: dict[str, str] = field(default_factory=dict)  # person_id -> role
-    invitations: list[dict] = field(default_factory=list)  # {email, role, expires_at, accepted_at}
+    joined: dict[str, str] = field(default_factory=dict)  # person_id -> when they became a member
+    invitations: list[dict] = field(default_factory=list)  # see `invite`
+    audit: list[dict] = field(default_factory=list)  # append-only; nothing edits or deletes it
     deleted_at: str | None = None  # logical delete: the org is gone for every endpoint
 
     def has_owner(self) -> bool:
         return "owner" in self.members.values()
 
-    def invite(self, email: str, role: Role, expires_at: str) -> None:
-        self.invitations.append({"email": email.strip().lower(), "role": role, "expires_at": expires_at,
-                                 "accepted_at": None})
+    def owners(self) -> int:
+        return sum(1 for r in self.members.values() if r == "owner")
+
+    def add_member(self, person_id: str, role: str, at: str) -> None:
+        self.members[person_id] = role
+        self.joined.setdefault(person_id, at)
+
+    def invite(self, email: str, role: Role, expires_at: str, invited_by: str | None = None) -> dict:
+        inv = {"id": "inv_" + secrets.token_hex(6), "email": email.strip().lower(), "role": role,
+               "invited_by": invited_by, "created_at": now_iso(), "expires_at": expires_at,
+               "accepted_at": None, "revoked_at": None}
+        self.invitations.append(inv)
+        return inv
+
+    def pending(self) -> list[dict]:
+        return [i for i in self.invitations if i["accepted_at"] is None and i["revoked_at"] is None]
 
 
 def _tokens_from_env() -> set[str]:
@@ -499,6 +533,7 @@ def create_app(
     panel_tokens: set[str] | None = None,
     bootstrap_owners: set[str] | None = None,
     org_creators: set[str] | None = None,
+    invitation_days: int | None = None,
 ) -> FastAPI:
     """Build the fake engine. With no arguments it reads the environment:
 
@@ -511,6 +546,7 @@ def create_app(
     VERIDIAN_ORG_CREATORS   emails allowed to create organizations (empty: nobody). Provisional:
                             open decision 2 of docs/DISENO-PRODUCTO.md. Owners and admins of an
                             organization create its projects without being on this list.
+    VERIDIAN_INVITATION_DAYS     days an invitation stays valid (default 14; a setting, not a measured value)
 
     Two callers, as in the design: `sdk` (a project's key: events, check, blocklist, routes) and
     `panel` (service credential + X-Veridian-Actor + X-Veridian-Project; the actor's role in the
@@ -523,12 +559,14 @@ def create_app(
     panel_accepted = set(panel_tokens) if panel_tokens is not None else _panel_tokens_from_env()
     owners = {e.lower() for e in bootstrap_owners} if bootstrap_owners is not None else _emails_from_env("VERIDIAN_BOOTSTRAP_OWNERS")
     creators = {e.lower() for e in org_creators} if org_creators is not None else _emails_from_env("VERIDIAN_ORG_CREATORS")
+    invite_days = invitation_days if invitation_days is not None else int(os.environ.get("VERIDIAN_INVITATION_DAYS", "14"))
 
     orgs: dict[str, Organization] = {}
     projects: dict[str, Project] = {}
     by_token: dict[str, str] = {}  # SDK key -> project id
     people: dict[str, Person] = {}  # person id -> person
     by_sub: dict[str, str] = {}  # google_sub -> person id
+    audit_seq = itertools.count(1)
 
     def new_state() -> ClientState:
         return ClientState(routes=dict(route_map), learn_delay=delay, clock=clock)
@@ -560,6 +598,14 @@ def create_app(
     @app.exception_handler(Forbidden)
     async def _forbidden(_: Request, __: Forbidden):
         return JSONResponse({"error": "forbidden"}, status_code=403)
+
+    @app.exception_handler(NotFound)
+    async def _not_found(_: Request, __: NotFound):
+        return JSONResponse({"error": "not_found"}, status_code=404)
+
+    @app.exception_handler(Conflict)
+    async def _conflict(_: Request, exc: Conflict):
+        return JSONResponse({"error": exc.code}, status_code=409)
 
     @app.exception_handler(ProjectRequired)
     async def _project_required(_: Request, __: ProjectRequired):
@@ -661,6 +707,32 @@ def create_app(
     def person_public(person: Person) -> dict:
         return {"id": person.id, "email": person.email, "name": person.name}
 
+    def record(org: Organization, actor: Person, action: str, target_type: str, target_id: str,
+               project_id: str | None = None, meta: dict | None = None) -> None:
+        """Append to the org's audit log. Never put a secret or a customer's user id in `meta`."""
+        org.audit.append({"seq": next(audit_seq), "ts": now_iso(), "org_id": org.id, "project_id": project_id,
+                          "actor_person_id": actor.id, "actor_kind": "person", "action": action,
+                          "target_type": target_type, "target_id": target_id, "meta": meta or {}})
+
+    def audit_view(entry: dict) -> dict:
+        actor, project = people.get(entry["actor_person_id"]), projects.get(entry["project_id"] or "")
+        return {**entry, "actor_name": actor.name if actor else None, "project_name": project.name if project else None}
+
+    def member_view(org: Organization, person_id: str) -> dict:
+        person = people[person_id]
+        return {"person_id": person.id, "email": person.email, "name": person.name, "role": org.members[person_id],
+                "joined_at": org.joined.get(person_id)}
+
+    def invitation_view(inv: dict) -> dict:
+        return {"id": inv["id"], "email": inv["email"], "role": inv["role"], "invited_by": inv["invited_by"],
+                "created_at": inv["created_at"], "expires_at": inv["expires_at"],
+                "expired": parse_iso(inv["expires_at"]) <= datetime.now(timezone.utc)}
+
+    def may_touch(actor_role: str, *roles: str) -> None:
+        """Rule 3: an admin does not manage owners (invite, promote, demote, remove); only an owner does."""
+        if actor_role != "owner" and "owner" in roles:
+            raise Forbidden()
+
     @app.post("/v1/events", status_code=202)
     def post_events(body: EventsIn, st: State):
         accepted_count = 0
@@ -718,10 +790,15 @@ def create_app(
         return {"routes": rows, "default": "normal"}
 
     @app.post("/v1/decisions/{decision_id}/normal")
-    def post_normal(decision_id: str, st: AdminState):
+    def post_normal(decision_id: str, st: AdminState, person: Actor,
+                    x_veridian_project: Annotated[str | None, Header()] = None):
+        first_time = decision_id not in st.normal
         decision = st.mark_normal(decision_id)
         if decision is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
+        if first_time:
+            project = projects[x_veridian_project]  # AdminState already authorized this project
+            record(orgs[project.org_id], person, "decision.marked_normal", "decision", decision_id, project.id)
         return decision
 
     @app.get("/v1/users/{user_id}/profile")
@@ -759,13 +836,13 @@ def create_app(
             if org.deleted_at is not None:
                 continue
             if email in owners and not org.has_owner():
-                org.members[person.id] = "owner"
-            for inv in org.invitations:
-                if inv["email"] == email and inv["accepted_at"] is None and parse_iso(inv["expires_at"]) > datetime.now(timezone.utc):
+                org.add_member(person.id, "owner", stamp)
+            for inv in org.pending():
+                if inv["email"] == email and parse_iso(inv["expires_at"]) > datetime.now(timezone.utc):
                     inv["accepted_at"] = stamp
                     current = org.members.get(person.id)
                     if current is None or ROLE_RANK[inv["role"]] > ROLE_RANK[current]:
-                        org.members[person.id] = inv["role"]
+                        org.add_member(person.id, inv["role"], stamp)
         return {"person": person_public(person), "orgs": listing(person)}
 
     @app.get("/v1/me/orgs")
@@ -778,7 +855,7 @@ def create_app(
             raise Forbidden()
         oid = "org_" + secrets.token_hex(4)
         org = Organization(id=oid, name=body.name.strip(), created_at=now_iso())
-        org.members[person.id] = "owner"
+        org.add_member(person.id, "owner", org.created_at)
         orgs[oid] = org
         return org_view(org, person)
 
@@ -801,6 +878,94 @@ def create_app(
             return JSONResponse({"error": "org_not_empty"}, status_code=409)
         org.deleted_at = now_iso()
         return Response(status_code=204)
+
+    # --- contract 11: members and invitations of an organization -------------------------------------
+
+    def target_member(org: Organization, actor: Person, member_id: str) -> str:
+        """The target's current role, after rule 2 (nobody acts on themselves) and 404 for a stranger."""
+        if member_id not in org.members:
+            raise NotFound()
+        if member_id == actor.id:
+            raise Conflict("cannot_change_self")
+        return org.members[member_id]
+
+    @app.get("/v1/orgs/{org_id}/members")
+    def get_members(org_id: Annotated[str, Path()], person: Actor):
+        org = authorize_org(person, org_id, "viewer")
+        rows = sorted(org.members, key=lambda m: (-ROLE_RANK[org.members[m]], people[m].name.lower()))
+        return {"members": [member_view(org, m) for m in rows]}
+
+    @app.patch("/v1/orgs/{org_id}/members/{member_id}")
+    def patch_member(org_id: Annotated[str, Path()], member_id: Annotated[str, Path()], body: MemberPatch, person: Actor):
+        org = authorize_org(person, org_id, "admin")
+        current = target_member(org, person, member_id)
+        may_touch(org.members[person.id], current, body.role)
+        if current == "owner" and body.role != "owner" and org.owners() == 1:
+            raise Conflict("last_owner")  # rule 1; unreachable through the API, kept as the invariant
+        if current != body.role:
+            org.members[member_id] = body.role
+            target = people[member_id]
+            record(org, person, "member.role_changed", "person", member_id,
+                   meta={"email": target.email, "name": target.name, "from": current, "to": body.role})
+        return member_view(org, member_id)
+
+    @app.delete("/v1/orgs/{org_id}/members/{member_id}", status_code=204)
+    def delete_member(org_id: Annotated[str, Path()], member_id: Annotated[str, Path()], person: Actor):
+        org = authorize_org(person, org_id, "admin")
+        current = target_member(org, person, member_id)
+        may_touch(org.members[person.id], current)
+        if current == "owner" and org.owners() == 1:
+            raise Conflict("last_owner")
+        target = people[member_id]
+        del org.members[member_id]
+        record(org, person, "member.removed", "person", member_id,
+               meta={"email": target.email, "name": target.name, "role": current})
+        return Response(status_code=204)
+
+    @app.get("/v1/orgs/{org_id}/invitations")
+    def get_invitations(org_id: Annotated[str, Path()], person: Actor):
+        org = authorize_org(person, org_id, "viewer")
+        return {"invitations": [invitation_view(i) for i in org.pending()]}
+
+    @app.post("/v1/orgs/{org_id}/invitations", status_code=201)
+    def post_invitation(org_id: Annotated[str, Path()], body: InvitationIn, person: Actor):
+        org = authorize_org(person, org_id, "admin")
+        actor_role = org.members[person.id]
+        email = body.email.strip().lower()
+        replaced = next((i for i in org.pending() if i["email"] == email), None)
+        may_touch(actor_role, body.role, *([replaced["role"]] if replaced else []))
+        if any(people[m].email == email for m in org.members):
+            raise Conflict("already_member")
+        stamp = now_iso()
+        if replaced:
+            replaced["revoked_at"] = stamp  # inviting again renews: one pending invitation per email
+        expires = iso_of(datetime.now(timezone.utc) + timedelta(days=invite_days))
+        inv = org.invite(email, body.role, expires, invited_by=person.id)
+        record(org, person, "invitation.resent" if replaced else "invitation.created", "invitation", inv["id"],
+               meta={"email": email, "role": body.role})
+        return invitation_view(inv)
+
+    @app.delete("/v1/orgs/{org_id}/invitations/{inv_id}", status_code=204)
+    def delete_invitation(org_id: Annotated[str, Path()], inv_id: Annotated[str, Path()], person: Actor):
+        org = authorize_org(person, org_id, "admin")
+        inv = next((i for i in org.pending() if i["id"] == inv_id), None)
+        if inv is None:
+            raise NotFound()
+        may_touch(org.members[person.id], inv["role"])
+        inv["revoked_at"] = now_iso()
+        record(org, person, "invitation.revoked", "invitation", inv["id"], meta={"email": inv["email"], "role": inv["role"]})
+        return Response(status_code=204)
+
+    # --- contract 15: audit log (read only) ------------------------------------------------------------
+
+    @app.get("/v1/orgs/{org_id}/audit")
+    def get_audit(org_id: Annotated[str, Path()], person: Actor, project: str | None = None,
+                  limit: Annotated[int, Query(ge=1, le=200)] = 50, before: Annotated[int | None, Query(ge=1)] = None):
+        org = authorize_org(person, org_id, "admin")
+        rows = [e for e in reversed(org.audit)
+                if (project is None or e["project_id"] == project) and (before is None or e["seq"] < before)]
+        page = rows[:limit]
+        return {"entries": [audit_view(e) for e in page], "next_before": page[-1]["seq"] if len(rows) > limit else None}
 
     @app.get("/v1/orgs/{org_id}/projects")
     def get_org_projects(org_id: Annotated[str, Path()], person: Actor):
