@@ -1,0 +1,10 @@
+{
+  "name": "veridian-keepalive",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  // Cron only: no public URL.
+  "workers_dev": false,
+  // Render's free plan sleeps a service after 15 min without traffic.
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "observability": { "enabled": true }
+}
