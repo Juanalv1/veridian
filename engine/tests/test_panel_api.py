@@ -524,3 +524,41 @@ def test_sqlite_row_of_the_panel_credential_is_never_stored(client):
     finally:
         conn.close()
     assert PANEL_TOKEN not in dumped
+
+
+# --- contract 10: DELETE /v1/projects/{id} ---
+
+
+def test_only_an_owner_deletes_a_project(client):
+    viewer = member_as(client, "viewer", sub="s-v", email="v@example.com")
+    admin = member_as(client, "admin", sub="s-a", email="a@example.com")
+    creator, _ = other_org_project(client)
+    for actor in (viewer, admin, creator):
+        assert client.delete("/v1/projects/client_a", headers=acting(actor)).status_code == 403
+    assert audit(client, "project.delete") == []
+    response = client.delete("/v1/projects/client_a", headers=acting(owner(client)))
+    assert response.status_code == 204 and response.content == b""
+
+
+def test_a_deleted_project_disappears_from_reads_and_is_audited(client):
+    owner_id = owner(client)
+    assert client.delete("/v1/projects/client_a", headers=acting(owner_id)).status_code == 204
+    assert client.get("/v1/projects/client_a", headers=acting(owner_id)).status_code == 403
+    assert client.delete("/v1/projects/client_a", headers=acting(owner_id)).status_code == 403
+    listed = client.get(f"/v1/orgs/{DEMO_ORG_ID}/projects", headers=acting(owner_id)).json()["projects"]
+    assert "client_a" not in [p["id"] for p in listed]
+    [row] = audit(client, "project.delete")
+    assert (row["actor_person_id"], row["target_id"], row["project_id"]) == (owner_id, "client_a", "client_a")
+
+
+def test_a_deleted_project_rejects_its_sdk_keys(client):
+    assert client.delete("/v1/projects/client_a", headers=acting(owner(client))).status_code == 204
+    assert client.get("/v1/blocklist", headers=AUTH_A).status_code == 401
+    assert client.get("/v1/blocklist", headers=AUTH_B).status_code == 200
+
+
+def test_an_org_with_only_deleted_projects_can_be_deleted(client):
+    creator, project_id = other_org_project(client)
+    assert client.delete(f"/v1/projects/{project_id}", headers=acting(creator)).status_code == 204
+    org_id = client.get("/v1/me/orgs", headers=acting(creator)).json()["orgs"][0]["projects"]
+    assert org_id == []
