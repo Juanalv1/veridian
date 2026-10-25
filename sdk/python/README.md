@@ -91,6 +91,10 @@ If the engine is slow or down, your app is not delayed or broken: the middleware
 
 This includes `401` (key unknown or revoked) and `429` (rate limited): your app keeps serving requests, nothing is retried in a tight loop, the last blocklist and routes stay in use, and queued events are sent again on the next flush. With a revoked key the app is therefore not protected, so replace the key in the panel.
 
+## Installing with a coding agent
+
+Give your coding agent this prompt, or use the "Copiar prompt para tu agente" button in the panel or on the landing page: it points the agent to the [install guide](https://veridian-platanus.onrender.com/install.md) (source: `landing/install.md`). The API key is never part of the prompt: the agent reads it from `VERIDIAN_API_KEY`, so put it in your gitignored env file yourself.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

@@ -112,6 +112,7 @@ Akamai, Traceable o Salt lo hacen para grandes empresas. Nosotros, para startups
 | [docs/GUION.md](docs/GUION.md) | Guion hablado del pitch, slide por slide, y preguntas probables |
 | [docs/PENDIENTES.md](docs/PENDIENTES.md) | Qué falta construir, riesgos y preguntas abiertas |
 | [docs/REPARTO.md](docs/REPARTO.md) | Reparto del trabajo y contratos entre motor y middleware |
+| [landing/install.md](landing/install.md) | Guía de instalación para agentes de código (Claude Code, Cursor, Codex); la landing la sirve como `/install.md` y `/llms.txt`. El panel y la landing tienen el botón «Copiar prompt para tu agente» (la clave nunca va en el prompt) |
 
 ## Origen
 

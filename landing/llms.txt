@@ -1,0 +1,16 @@
+# Veridian
+
+> Veridian detects when someone other than the owner uses a credential, and blocks it. A middleware in the customer's app reports each access to the Veridian engine, a profile per user is learned, and blocked sessions, IPs or users get a 403. SDKs for Python (FastAPI, Starlette), Node (Express, Next.js route handlers).
+
+## Install
+
+- [Install guide for coding agents](https://veridian-platanus.onrender.com/install.md): step-by-step: detect the stack, install, add the middleware, wire the user from the app's auth, proxies, verify. The API key is read from VERIDIAN_API_KEY and is never pasted into a chat.
+
+## SDKs
+
+- [Python SDK (veridian-sdk)](https://github.com/Juanalv1/veridian/blob/main/sdk/python/README.md): ASGI middleware, options and fail-open behavior.
+- [Node SDK (veridian-sdk)](https://github.com/Juanalv1/veridian/blob/main/sdk/node/README.md): Express and Next.js middleware, options and route report.
+
+## Project
+
+- [Repository](https://github.com/Juanalv1/veridian): README and docs.

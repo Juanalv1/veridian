@@ -146,6 +146,10 @@ cd sdk/node && npm install && node --test
 
 The integration test (`test/quickstart.test.js`) starts `edge/fake_engine`, runs `examples/quickstart.js` unchanged and checks that it authenticates and sends events; it is skipped when `uv` is not installed.
 
+## Installing with a coding agent
+
+Give your coding agent this prompt, or use the "Copiar prompt para tu agente" button in the panel or on the landing page: it points the agent to the [install guide](https://veridian-platanus.onrender.com/install.md) (source: `landing/install.md`). The API key is never part of the prompt: the agent reads it from `VERIDIAN_API_KEY`, so put it in your gitignored env file yourself.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
