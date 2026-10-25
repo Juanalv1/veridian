@@ -95,6 +95,12 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
      - si un admin puede corregir una clase desde el panel (el `PUT` de U7) y si esa corrección sobrevive a la próxima clasificación.
    - **Contrato nuevo** en `REPARTO.md` para el envío de rutas (SDK → motor).
    - **Tests:** el SDK envía las rutas al arrancar; el motor las clasifica y las sirve por proyecto; una falla de la IA no borra la clasificación anterior; dos proyectos no ven las rutas del otro.
+7. **Pruebas y ajuste del funcionamiento** (pedido de Juan, 2026-10-25). Probar Veridian con casos variados y ajustar lo que falle, para que decida bien fuera del guion de la demo. El ensayo de la demo es de Carlos (su tarea 6); esto es todo lo demás.
+   - **Usos legítimos pero raros** que no deben bloquearse: el dueño de viaje (otra red), con un dispositivo nuevo, trabajando de noche, detrás de una VPN, con la IP que rota entre redes (ya visto en el ensayo: tres redes en minutos). Hoy hay un riesgo anotado en `docs/PENDIENTES.md`: el dueño con un dispositivo nuevo en una ruta crítica queda bloqueado.
+   - **Ataques** que sí deben bloquearse: otra persona desde otra red yendo a una ruta crítica, una descarga masiva de datos, un robo lento (pocas peticiones, repartidas), un script desde la misma red del dueño y una sesión robada.
+   - **Ajustar** según lo que salga: los umbrales del perfil y del ritmo (`rate_factor`, `rate_floor`, `VERIDIAN_LEARN_DELAY_MIN`), el prompt de la IA, los tiempos de la consulta síncrona y la regla de respaldo cuando la IA no responde.
+   - **Medir** en cada caso la decisión, si se repite igual en varias corridas y cuánto tarda. Anotar resultados y cambios en `docs/HALLAZGOS.md` (sección de validación) y los riesgos que queden en `docs/PENDIENTES.md`.
+   - **Tests:** cada ajuste va con un test que fije el caso que corrige.
 
 ### Maikol Aguilar: frontend (landing, backoffice y panel)
 
