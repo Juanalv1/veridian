@@ -18,7 +18,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "7"
+ASSET_VERSION = "8"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -58,22 +58,47 @@ def _decorate(d: dict) -> dict:
     d["path"] = " → ".join(str(p) for p in path) if path else ""
     took = _detected_in(d.get("ts"), access.get("ts"))
     d["detected"] = (f"Detectado y bloqueado en {took}" if d.get("decision") == "block" else f"Detectado en {took}") if took else ""
-    d["blocks_ip"] = access.get("ip") if d.get("decision") == "block" else None
+    # Contract 3 signals added later; anything unknown is ignored, wrong types are dropped.
+    rate = signals.get("rate_per_min")
+    d["rate"] = rate if isinstance(rate, (int, float)) and not isinstance(rate, bool) else None
+    d["rate_spike"] = signals.get("rate_spike") is True
+    d["unusual_hour"] = signals.get("unusual_hour") is True
+    d["new_transition"] = signals.get("new_transition") is True
     return d
 
 
-def _decorate_activity(a: dict, decisions: dict[str, dict]) -> dict:
+def _block_effect(access_ip: str | None, listed_ips: set[str] | None) -> str:
+    """What an open block does, from the engine's blocklist. The IP is named only
+    when it is listed; with no blocklist (fetch failed) nothing is claimed about it."""
+    if listed_ips is None:
+        return "La sesión está bloqueada."
+    if access_ip and access_ip in listed_ips:
+        return f"La sesión y la IP {access_ip} no pueden entrar. El dueño sigue trabajando."
+    if access_ip:
+        return "La sesión no puede seguir. La IP es la del dueño: no se bloquea."
+    return "La sesión no puede seguir."
+
+
+def _status_note(status) -> str:
+    """Suffix for a block row: what happened to that request. Empty if unknown."""
+    if not isinstance(status, int) or isinstance(status, bool):
+        return ""
+    if status == 403:
+        return "detenido (403)"
+    if 200 <= status < 400:
+        return f"pasó antes del bloqueo ({status})"
+    return str(status)
+
+
+def _decorate_activity(a: dict) -> dict:
     # An unknown verdict is shown as "Raro" rather than hidden as normal.
     word, kind = ACTIVITY_VERDICTS.get(a.get("verdict"), ACTIVITY_VERDICTS["review"])
     method, route = a.get("method"), a.get("route") or ""
-    decision = decisions.get(a.get("decision_id"))
     a["verdict_word"], a["verdict_kind"] = word, kind
     a["time"] = str(a.get("ts", ""))[11:19]
     a["action"] = f"{method} {route}" if method and route else route
-    # The contract has no status on activity rows: a block row that is not the
-    # access which triggered the decision is a request the middleware rejected.
-    a["rejected"] = bool(kind == "block" and decision is not None
-                         and a.get("event_id") not in (decision.get("event_ids") or []))
+    # The request's HTTP status says what the block did to it: stopped (403) or it passed first.
+    a["status_note"] = _status_note(a.get("status")) if kind == "block" else ""
     a["href"] = (f"/users/{quote(str(a.get('user_id') or ''), safe='')}/decisions/{quote(str(a['decision_id']), safe='')}"
                  if a.get("decision_id") and a.get("user_id") else None)
     return a
@@ -151,7 +176,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         except (ValueError, KeyError, TypeError, AttributeError):
             return [], "Respuesta inesperada del motor. Reintentando…"
 
-    async def load_activity(decisions: list[dict]) -> list[dict] | None:
+    async def load_activity() -> list[dict] | None:
         """None when the engine has no /v1/activity (or it fails): the panel then
         shows the decisions list, with no error."""
         try:
@@ -161,8 +186,17 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             items = [a for a in r.json()["activity"] if isinstance(a, dict)]
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
             return None
-        by_id = {d.get("id"): d for d in decisions}
-        return [_decorate_activity(a, by_id) for a in items]
+        return [_decorate_activity(a) for a in items]
+
+    async def load_blocked_ips() -> set[str] | None:
+        """IPs on the engine's blocklist, or None if it cannot be read."""
+        try:
+            r = await client.get(f"{base}/v1/blocklist", headers=headers)
+            if r.status_code != 200:
+                return None
+            return {str(ip) for ip in r.json()["ips"]}
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            return None
 
     async def load_profile(user_id: str) -> dict | None:
         try:
@@ -186,18 +220,23 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         decisions, engine_error = await load_decisions()
         for d in decisions:
             d["href"] = decision_url(d)
-        activity = await load_activity(decisions) if engine_error is None else None
+        activity = await load_activity() if engine_error is None else None
         by_user = [d for d in decisions if d.get("user_id") == user]
         current = (next((d for d in by_user if d.get("id") == decision_id), None)
                    or (by_user[0] if by_user else None)
                    or (decisions[0] if decisions else None))
         profile = None
+        if current is not None and current.get("decision") == "block" and not current["marked_normal"]:
+            current["block_effect"] = _block_effect((current.get("access") or {}).get("ip"),
+                                                    await load_blocked_ips())
         if current is not None:
             raw = await load_profile(current.get("user_id", ""))
             if raw is not None:
                 hours = raw.get("hours") or []
                 routes = list(raw.get("routes") or [])
-                profile = {**raw, "hours_text": _hours(hours) if hours else "",
+                usual = raw.get("usual_max_rate_per_min")
+                profile = {**raw, "usual_rate": usual if isinstance(usual, int) and not isinstance(usual, bool) and usual > 0 else None,
+                           "hours_text": _hours(hours) if hours else "",
                            "hours_utc": ",".join(str(int(h)) for h in hours),
                            "days_text": _days(raw.get("history_days")),
                            "routes_shown": routes[:MAX_PROFILE_ROUTES],

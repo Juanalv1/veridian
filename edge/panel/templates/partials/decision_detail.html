@@ -19,6 +19,6 @@
                 hx-post="/decisions/{{ d.id | urlencode }}/normal" hx-target="#live" hx-sync="#live:replace"
                 hx-disabled-elt="this">Esto era normal</button>
       </form>
-      <span class="consequence">{% if d.decision == 'block' %}La sesión{% if d.blocks_ip %} y la IP {{ d.blocks_ip }} no pueden{% else %} no puede{% endif %} entrar. El dueño sigue trabajando.{% else %}Veridian lo sumará al perfil de {{ d.user_id }}.{% endif %}</span>
+      <span class="consequence">{% if d.decision == 'block' %}{{ d.block_effect }}{% else %}Veridian lo sumará al perfil de {{ d.user_id }}.{% endif %}</span>
     {% endif %}
   </div>

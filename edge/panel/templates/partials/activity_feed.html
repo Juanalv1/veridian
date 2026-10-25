@@ -6,7 +6,8 @@
       {% endif %}
         <span class="t"><time class="ts" datetime="{{ a.ts }}">{{ a.time }} UTC</time></span>
         <span class="v {{ a.verdict_kind }}">{{ a.verdict_word }}</span>
-        <span class="what">{{ a.user_id }}{% if a.action %} · <span class="mono">{{ a.action }}</span>{% endif %}{% if a.rejected %} <span class="rejected">rechazado</span>{% endif %}</span>
+        <span class="what">{{ a.user_id }}{% if a.action %} · <span class="mono">{{ a.action }}</span>{% endif %}</span>
+        {% if a.status_note %}<span class="st">{{ a.status_note }}</span>{% endif %}
       {% if a.href %}</a>{% else %}</div>{% endif %}
     {% endfor %}
   </nav>

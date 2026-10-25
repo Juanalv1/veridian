@@ -23,23 +23,29 @@
   .item .v { font-size:15px; font-weight:700; }
   .item .what { grid-column:2; font-size:14px; color:var(--ink); overflow-wrap:anywhere; }
   .block { color:var(--state-block); } .alert { color:var(--state-review); } .allow { color:var(--state-normal); } .lifted { color:var(--muted); }
-  .feed { flex:1 1 360px; max-width:380px; min-width:0; display:flex; flex-direction:column; }
-  .row { text-decoration:none; color:inherit; display:grid; grid-template-columns:68px minmax(0, 1fr); gap:2px 10px; padding:9px 14px; border:1px solid transparent; border-left:2px solid transparent; border-radius:var(--radius-md); }
-  a.row { transition:background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out); }
+  .feed { flex:1 1 520px; max-width:600px; min-width:0; display:flex; flex-direction:column; container-type:inline-size; }
+  /* One flat list: every row has the same shape, separated by 1px lines. Only the word
+     (and its color) tells the verdicts apart. Columns: time | word | user · action | status. */
+  .row { text-decoration:none; color:inherit; display:grid; grid-template-columns:64px 104px minmax(0, 1fr) auto; grid-template-areas:"t v w s"; gap:2px 12px; align-items:baseline; padding:11px 12px; border-bottom:1px solid var(--line); }
+  .feed .nav-title + .row { border-top:1px solid var(--line); }
+  a.row { transition:background-color var(--duration-fast) var(--ease-out); }
   a.row:hover { background:var(--surface-hover); }
-  /* The selected row keeps its state-colored left edge: only the other sides get the line. */
-  a.row[aria-current] { background:var(--surface); border-top-color:var(--line); border-right-color:var(--line); border-bottom-color:var(--line); }
-  a.row[aria-current]:hover { background:var(--surface-hover); border-top-color:var(--line-hover); border-right-color:var(--line-hover); border-bottom-color:var(--line-hover); }
-  .row .t { font-family:var(--font-mono); font-size:13px; color:var(--muted); }
-  .row .v { font-size:14px; font-weight:600; }
-  .row .what { grid-column:2; font-size:14px; overflow-wrap:anywhere; }
+  a.row[aria-current] { background:var(--surface); border-radius:var(--radius-md); }
+  a.row[aria-current]:hover { background:var(--surface-hover); }
+  .row .t { grid-area:t; font-family:var(--font-mono); font-size:13px; color:var(--muted); }
+  .row .v { grid-area:v; font-size:14px; font-weight:400; color:var(--muted); }
+  .row .v::before { content:""; display:inline-block; width:8px; height:8px; border-radius:50%; background:currentColor; margin-right:8px; }
+  .row .what { grid-area:w; font-size:14px; overflow-wrap:anywhere; }
   .row .what .mono { font-size:13px; }
-  .row.k-normal .v { font-weight:400; color:var(--muted); }
+  .row .st { grid-area:s; font-family:var(--font-mono); font-size:13px; color:var(--muted); text-align:right; }
   .row.k-normal .what { color:var(--muted); }
-  .row.k-alert { border-left-color:var(--state-review); }
-  .row.k-block { border-left-color:var(--state-block); padding-top:13px; padding-bottom:13px; }
-  .row.k-block .v { font-size:15px; font-weight:700; }
-  .row .rejected { font-weight:600; color:var(--state-block); }
+  .row.k-alert .v { color:var(--state-review); font-weight:600; }
+  .row.k-block .v { color:var(--state-block); font-weight:600; }
+  @container (max-width: 560px) {
+    /* Narrow: same structure on two lines, status under the action. */
+    .row { grid-template-columns:64px 104px minmax(0, 1fr); grid-template-areas:"t v w" ". . s"; }
+    .row .st { text-align:left; }
+  }
   .note.calm { color:var(--ink); font-size:20px; line-height:1.4; padding:24px; }
   #detalle { flex:999 1 640px; min-width:0; display:flex; flex-direction:column; gap:28px; }
   .head { display:flex; flex-direction:column; gap:10px; }
@@ -64,6 +70,7 @@
   .sub { display:block; margin-top:2px; font-size:13px; font-weight:400; color:var(--muted); }
   .flag { font-family:var(--font-sans); font-weight:600; color:var(--state-block); margin-left:8px; }
   .flag.own { margin:6px 0 0; display:block; }
+  .flag.review { color:var(--state-review); }
   .actions { display:flex; flex-wrap:wrap; align-items:center; gap:16px 24px; }
   .actions form { margin:0; }
   .consequence { font-size:15px; color:var(--muted); }
@@ -77,9 +84,9 @@
   }
   @keyframes row-flash { from { background-color:color-mix(in srgb, var(--state-block) 16%, transparent); } }
   .row.is-new, .item.is-new { overflow:hidden; animation:row-in 220ms var(--ease-out); }
-  .k-block.is-new { animation:row-in 220ms var(--ease-out), row-flash 1.2s var(--ease-out); }
+  .row.k-block.is-new { animation:row-in 220ms var(--ease-out), row-flash 1.2s var(--ease-out); }
   @media (prefers-reduced-motion: reduce) {
-    .row.is-new, .item.is-new, .k-block.is-new { animation:none; }
+    .row.is-new, .item.is-new, .row.k-block.is-new { animation:none; }
   }
   @media (max-width:960px) {
     /* A long feed must not push the verdict below the fold when the columns stack. */

@@ -24,17 +24,24 @@
         <td class="normal">{% for n in (profile.routes_shown if profile else []) %}<span class="mono">{{ n }}</span>{% else %}—{% endfor %}{% if profile and profile.routes_more %}<span class="mono">+{{ profile.routes_more }}</span>{% endif %}</td>
         <td>{% if d.action %}<span class="mono">{{ d.action }}</span>{% else %}—{% endif %}{% if d.route_flag %}<span class="flag own">{{ d.route_flag }}</span>{% endif %}</td>
       </tr>
-      {% if d.path %}
+      {% if d.rate is not none %}
+      <tr>
+        <th scope="row">Ritmo</th>
+        <td class="normal">{% if profile and profile.usual_rate %}<span class="mono">hasta {{ profile.usual_rate }} por minuto</span>{% else %}—{% endif %}</td>
+        <td><span class="mono">{{ d.rate | int }} por minuto{% if d.rate_spike %}<span class="flag">pico</span>{% endif %}</span></td>
+      </tr>
+      {% endif %}
+      {% if d.path or d.new_transition %}
       <tr>
         <th scope="row">Recorrido</th>
         <td class="normal"></td>
-        <td><span class="mono">{{ d.path }}</span></td>
+        <td>{% if d.path %}<span class="mono">{{ d.path }}</span>{% endif %}{% if d.new_transition %}<span class="flag own">camino nuevo</span>{% endif %}</td>
       </tr>
       {% endif %}
       <tr>
         <th scope="row">Horario</th>
         <td class="normal">{% if profile and profile.hours_text %}<span data-utc-hours="{{ profile.hours_utc }}">{{ profile.hours_text }}</span>{% else %}—{% endif %}</td>
-        <td>{% if a.ts %}<time class="ts" data-hm datetime="{{ a.ts }}">{{ a.ts[11:16] }} UTC</time>{% else %}—{% endif %}</td>
+        <td>{% if a.ts %}<time class="ts" data-hm datetime="{{ a.ts }}">{{ a.ts[11:16] }} UTC</time>{% else %}—{% endif %}{% if d.unusual_hour %}<span class="flag own review">fuera de su horario</span>{% endif %}</td>
       </tr>
     </tbody>
   </table>

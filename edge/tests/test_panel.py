@@ -35,10 +35,13 @@ def decision_id(engine):
     return TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["id"]
 
 
-def stub_panel(decisions, profile=None, activity=None):
+def stub_panel(decisions, profile=None, activity=None, blocklist=None):
     """Panel over a canned engine: `profile` None means 404 (no profile yet);
-    `activity` None means the engine has no /v1/activity (404)."""
+    `activity` None means the engine has no /v1/activity (404); `blocklist` None
+    means /v1/blocklist fails (404)."""
     def handler(request):
+        if request.url.path == "/v1/blocklist" and blocklist is not None:
+            return httpx.Response(200, json={"version": 1, "users": [], **blocklist})
         if request.url.path == "/v1/activity" and activity is not None:
             return httpx.Response(200, json={"activity": activity})
         if request.url.path == "/v1/decisions":
@@ -114,9 +117,9 @@ def test_open_non_block_says_it_will_join_the_profile():
 
 
 def test_block_without_access_ip_omits_the_ip_part():
-    r = stub_panel([dec()]).get("/")
-    assert "La sesión no puede entrar. El dueño sigue trabajando." in r.text
-    assert "la IP" not in r.text
+    r = stub_panel([dec()], blocklist={"sessions": ["s_1"], "ips": []}).get("/")
+    assert "La sesión no puede seguir." in r.text
+    assert "la IP" not in r.text and "La IP es la del dueño" not in r.text
 
 
 def test_open_block_renders_mark_normal_button():
@@ -464,10 +467,10 @@ def test_detection_time_is_muted_evidence_not_the_accent():
 
 
 def act(event_id="e_1", user="u_1", method="GET", route="/invoices", verdict="normal",
-        decision_id=None, ts="2026-10-26T10:14:03Z"):
+        decision_id=None, ts="2026-10-26T10:14:03Z", **extra):
     return {"event_id": event_id, "ts": ts, "user_id": user, "session_id": "s_1", "ip": "1.2.3.4",
             "device_id": "d_1", "method": method, "route": route, "verdict": verdict,
-            "decision_id": decision_id}
+            "decision_id": decision_id, **extra}
 
 
 def feed(html):
@@ -511,17 +514,10 @@ def test_rows_with_a_decision_link_to_its_detail_and_others_do_not():
     assert 'hx-boost="true"' in re.search(r"<nav[^>]*>", feed(html)).group(0)
 
 
-def test_rejected_rows_say_rechazado_and_the_triggering_row_does_not():
-    acts = [act("e_r", verdict="block", decision_id="d_1", route="/invoices"),
-            act("e_t", verdict="block", decision_id="d_1", method="POST", route="/payouts/bank-account")]
-    r = rows(stub_panel([dec(event_ids=["e_t"])], activity=acts).get("/").text)
-    assert "rechazado" in r[0] and "rechazado" not in r[1]
-
-
 def test_rows_back_to_normal_after_marking_are_quiet_and_not_rejected():
     acts = [act("e_r", verdict="normal", decision_id="d_1"), act("e_t", verdict="normal", decision_id="d_1")]
     html = stub_panel([dec(status="marked_normal", event_ids=["e_t"])], activity=acts).get("/").text
-    assert all("rechazado" not in r and "Normal" in r for r in rows(html))
+    assert all("detenido" not in r and "pasó" not in r and "Normal" in r for r in rows(html))
 
 
 def test_unknown_verdict_is_shown_as_review_not_hidden_as_normal():
@@ -585,12 +581,13 @@ def test_end_to_end_owner_then_attacker_then_rejections_then_mark_normal():
                                             event(id="e_r2", method="GET", route="/invoices", status=403, bytes=21)]}, headers=AUTH)
     html = panel.get("/").text
     r = rows(html)
-    assert [("Bloqueado" in x, "rechazado" in x) for x in r] == [(True, True), (True, True), (True, False), (False, False)]
+    assert [("Bloqueado" in x, "detenido (403)" in x, "pasó antes del bloqueo (200)" in x) for x in r] == [
+        (True, True, False), (True, True, False), (True, False, True), (False, False, False)]
     assert "Normal" in r[3]
     did = decision_id(engine)
     panel.post(f"/decisions/{did}/normal", data={"user": "u_42"})
     r = rows(panel.get("/").text)
-    assert all("Normal" in x and "Bloqueado" not in x and "rechazado" not in x for x in r)
+    assert all("Normal" in x and "Bloqueado" not in x and "detenido" not in x for x in r)
 
 
 def test_lifted_block_is_listed_as_levantado_when_the_engine_has_no_activity():
@@ -598,12 +595,18 @@ def test_lifted_block_is_listed_as_levantado_when_the_engine_has_no_activity():
     assert "Levantado" in html and "Bloqueo levantado" in html
 
 
-def test_feed_css_keeps_normal_rows_quiet_and_block_rows_loud():
+def test_feed_css_is_one_flat_list_distinguished_only_by_the_word():
     css = TestClient(create_app("http://engine", TOKEN)).get("/static/panel.css").text
-    assert re.search(r"\.row\.k-normal \.what \{[^}]*color:var\(--muted\)", css)
-    assert re.search(r"\.row\.k-block \{[^}]*border-left-color:var\(--state-block\)", css)
-    assert re.search(r"\.row\.k-alert \{[^}]*var\(--state-review\)", css)
-    assert "box-shadow" not in css and "--viridian" not in css.split(".feed")[1]
+    feed_css = css.split(".feed {")[1].split("@media (max-width:960px)")[0]
+    assert re.search(r"\.row \{[^}]*border-bottom:1px solid var\(--line\)", feed_css)
+    assert "border-left" not in feed_css and "box-shadow" not in css
+    assert not re.search(r"\.row\.k-\w+ \{[^}]*background", feed_css)  # no tint at rest
+    assert re.search(r"\.row \.v \{[^}]*color:var\(--muted\)", feed_css)  # Normal is the quiet default
+    assert re.search(r"\.row\.k-block \.v \{[^}]*var\(--state-block\)[^}]*font-weight:600", feed_css)
+    assert re.search(r"\.row\.k-alert \.v \{[^}]*var\(--state-review\)", feed_css)
+    assert re.search(r"a\.row\[aria-current\] \{[^}]*background:var\(--surface\)[^}]*border-radius", feed_css)
+    assert re.search(r"a\.row:hover \{[^}]*var\(--surface-hover\)", feed_css)
+    assert "--viridian" not in feed_css
 
 
 # --- new rows enter smoothly -----------------------------------------------
@@ -635,3 +638,117 @@ def test_css_animates_new_rows_with_height_fade_slide_and_respects_reduced_motio
     assert re.search(r"\.k-block\.is-new \{[^}]*row-flash", css)
     reduced = css.split("prefers-reduced-motion: reduce")[1]
     assert "animation:none" in reduced.replace(" ", "")
+
+
+# --- status suffix on block rows ------------------------------------------
+
+
+def suffix_of(row):
+    m = re.search(r'<span class="st">(.*?)</span>', row, re.S)
+    return m.group(1).strip() if m else None
+
+
+def test_block_rows_say_what_happened_to_the_request_using_the_real_status():
+    acts = [act("e_4", verdict="block", decision_id="d_1", status=403),
+            act("e_3", verdict="block", decision_id="d_1", status=302),
+            act("e_2", verdict="block", decision_id="d_1", status=200),
+            act("e_1", verdict="block", decision_id="d_1", status=404)]
+    r = rows(stub_panel([dec()], activity=acts).get("/").text)
+    assert [suffix_of(x) for x in r] == ["detenido (403)", "pasó antes del bloqueo (302)",
+                                         "pasó antes del bloqueo (200)", "404"]
+    assert all("Bloqueado" in x for x in r)
+
+
+def test_block_row_without_status_has_no_suffix_and_normal_rows_none():
+    acts = [act("e_2", verdict="block", decision_id="d_1"), act("e_1", status=200)]
+    r = rows(stub_panel([dec()], activity=acts).get("/").text)
+    assert suffix_of(r[0]) is None and suffix_of(r[1]) is None
+    assert 'class="st"' not in r[0] and 'class="st"' not in r[1]
+
+
+def test_status_suffix_ignores_non_numeric_status():
+    r = rows(stub_panel([dec()], activity=[act(verdict="block", decision_id="d_1", status="ok")]).get("/").text)
+    assert suffix_of(r[0]) is None
+
+
+# --- consequence text follows the blocklist --------------------------------
+
+
+def block_dec(ip="203.0.113.9", **over):
+    return dec(access={"ip": ip, "session_id": "s_x"}, **over)
+
+
+def test_consequence_names_the_ip_only_when_it_is_on_the_blocklist():
+    html = stub_panel([block_dec()], blocklist={"sessions": ["s_x"], "ips": ["203.0.113.9"]}).get("/").text
+    assert "La sesión y la IP 203.0.113.9 no pueden entrar. El dueño sigue trabajando." in html
+
+
+def test_session_only_block_does_not_claim_the_ip_is_blocked():
+    html = stub_panel([block_dec("190.202.14.7")], blocklist={"sessions": ["s_x"], "ips": ["203.0.113.9"]}).get("/").text
+    assert "La sesión no puede seguir. La IP es la del dueño: no se bloquea." in html
+    assert "no pueden entrar" not in html
+
+
+def test_blocklist_failure_gives_a_generic_text_and_never_names_the_ip():
+    html = stub_panel([block_dec()], blocklist=None).get("/").text
+    assert "La sesión está bloqueada." in html
+    assert "203.0.113.9 no pueden" not in html and "La IP es la del dueño" not in html
+
+
+def test_blocklist_failure_does_not_show_an_engine_error():
+    html = stub_panel([block_dec()], blocklist=None).get("/").text
+    assert "note warn" not in html and "En vivo" in html
+
+
+# --- ritmo y camino in the comparison table --------------------------------
+
+
+def sig_panel(signals, access=None, profile=None):
+    d = dec(signals=signals, access=access or {"ts": "2026-10-26T10:14:03Z", "ip": "1.2.3.4",
+                                              "device_id": "d_1", "session_id": "s", "method": "GET", "route": "/x"})
+    return stub_panel([d], profile=profile or {"user_id": "u_1", "networks": [], "devices": [], "hours": [9, 13],
+                                               "routes": [], "history_days": 3, "usual_max_rate_per_min": 6}).get("/").text
+
+
+def row_of(html, name):
+    m = re.search(rf'<th scope="row">{name}</th>(.*?)</tr>', html, re.S)
+    return m.group(1) if m else None
+
+
+def test_rate_row_shows_usual_max_and_current_rate_with_pico():
+    html = sig_panel({"rate_per_min": 40, "usual_max_rate_per_min": 6, "rate_spike": True})
+    row = row_of(html, "Ritmo")
+    assert "hasta 6 por minuto" in row and "40 por minuto" in row
+    assert re.search(r'<span class="flag[^"]*">pico</span>', row)
+
+
+def test_rate_row_without_spike_has_no_pico_and_hides_when_absent():
+    html = sig_panel({"rate_per_min": 2, "rate_spike": False})
+    assert "2 por minuto" in row_of(html, "Ritmo") and "pico" not in html
+    assert row_of(sig_panel({}), "Ritmo") is None
+
+
+def test_rate_row_without_usual_rate_shows_dash_on_the_normal_side():
+    html = sig_panel({"rate_per_min": 5},
+                     profile={"user_id": "u_1", "networks": [], "devices": [], "hours": [], "routes": [],
+                              "usual_max_rate_per_min": 0})
+    row = row_of(html, "Ritmo")
+    assert "hasta" not in row and "—" in row and "5 por minuto" in row
+
+
+def test_unusual_hour_adds_fuera_de_su_horario_to_the_schedule_row():
+    assert "fuera de su horario" in row_of(sig_panel({"unusual_hour": True}), "Horario")
+    assert "fuera de su horario" not in sig_panel({"unusual_hour": False})
+
+
+def test_new_transition_adds_camino_nuevo_to_the_path_row():
+    html = sig_panel({"path": ["/login", "/x"], "new_transition": True})
+    assert "camino nuevo" in row_of(html, "Recorrido")
+    html = sig_panel({"new_transition": True})  # no path: the row still says it
+    assert "camino nuevo" in row_of(html, "Recorrido")
+    assert row_of(sig_panel({"path": ["/a", "/b"]}), "Recorrido") and "camino nuevo" not in sig_panel({"path": ["/a"]})
+
+
+def test_unknown_signal_keys_are_ignored():
+    html = sig_panel({"future_signal": 3, "rate_per_min": "many", "rate_spike": "yes"})
+    assert "future_signal" not in html and row_of(html, "Ritmo") is None and "pico" not in html
