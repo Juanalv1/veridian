@@ -52,3 +52,18 @@ VERIDIAN_TOKEN=dev py -3.12 engine/scripts/send_sample_events.py --base-url http
 ```
 
 It prints the blocklist (attacker session and IP) and the block decision.
+
+## Deploy (Render)
+
+`render.yaml` at the repo root declares the `veridian-engine` web service. In Render: **New → Blueprint**, pick this repo, and fill the secrets it asks for:
+
+- `VERIDIAN_TOKENS`: `client=token` for each customer app; the demo app's middleware uses that token as `VERIDIAN_TOKEN`.
+- `ANTHROPIC_API_KEY`: enables the AI judge.
+
+The service runs on the `starter` plan with a 1 GB disk at `/var/data`, where the SQLite file lives. Free instances cannot attach a disk, so every deploy would wipe the profiles, and they spin down after 15 minutes idle ([Render docs](https://render.com/docs/disks), [free tier](https://render.com/docs/free)). With a disk the service runs as one instance, and each deploy has a few seconds of downtime.
+
+Seed the demo history against the deployed engine:
+
+```bash
+py -3.12 engine/scripts/send_sample_events.py --base-url https://<service>.onrender.com --token <token>
+```

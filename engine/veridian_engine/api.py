@@ -32,6 +32,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONResponse:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
 
+    @app.get("/health")
+    def health() -> dict:
+        """Liveness probe for the hosting platform. No token: it reveals nothing."""
+        return {"status": "ok"}
+
     @app.post("/v1/events", status_code=202)
     def ingest_events(
         batch: EventBatch, background_tasks: BackgroundTasks, client_id: str = Depends(client_id_from_request)

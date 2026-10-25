@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: veridian-engine
+    runtime: python
+    rootDir: engine
+    buildCommand: pip install -r requirements.txt
+    # One process: SQLite writes are serialized by an in-process lock.
+    startCommand: uvicorn veridian_engine.api:create_app --factory --host 0.0.0.0 --port $PORT
+    # Paid plan: free instances cannot attach a disk and spin down after 15 min idle.
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    # Without a disk the filesystem is ephemeral and every deploy would wipe the profiles.
+    disk:
+      name: veridian-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: VERIDIAN_DB
+        value: /var/data/veridian.db
+      # "client=token,..." for each customer app (the demo app's middleware uses one).
+      - key: VERIDIAN_TOKENS
+        sync: false
+      # Unset: rule-only engine, no AI decisions.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VERIDIAN_LEARN_DELAY_MIN
+        value: "10"

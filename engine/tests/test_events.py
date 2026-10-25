@@ -70,3 +70,9 @@ def test_create_app_without_settings_reads_dotenv(tmp_path, monkeypatch):
     finally:
         for key in keys:
             os.environ.pop(key, None)
+
+
+def test_health_needs_no_token(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
