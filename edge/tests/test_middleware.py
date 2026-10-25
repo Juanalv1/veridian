@@ -774,3 +774,106 @@ async def test_background_loads_routes_on_startup(rec):
         await asyncio.sleep(0)
     assert ("POST", "/payouts/bank-account") in mw.critical
     await mw.aclose()
+
+
+# --- engine auth and rate-limit answers (401, 429) fail open ------------------
+
+
+class Rejecting:
+    """Engine stand-in that answers every request with one status and counts them."""
+
+    def __init__(self, status, headers=None):
+        self.status = status
+        self.headers = headers or {}
+        self.paths = []
+
+    async def handler(self, request: httpx.Request) -> httpx.Response:
+        self.paths.append(request.url.path)
+        error = "unauthorized" if self.status == 401 else "rate_limited"
+        return httpx.Response(self.status, json={"error": error}, headers=self.headers)
+
+    def client(self):
+        return httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
+
+
+REJECTIONS = [
+    pytest.param(401, {}, id="401"),
+    pytest.param(429, {"Retry-After": "30"}, id="429-retry-after"),
+    pytest.param(429, {}, id="429-no-header"),
+]
+
+
+@pytest.mark.parametrize("status, headers", REJECTIONS)
+async def test_check_rejected_by_the_engine_lets_the_request_through_without_retry(status, headers):
+    calls = []
+    engine = Rejecting(status, headers)
+    mw = make_mw(build_app(calls), engine.client())
+    mw.critical = {("POST", "/payouts/bank-account")}
+    r = await post_bank(mw)
+    assert r.status_code == 200 and calls == ["bank"]
+    assert engine.paths == ["/v1/check"]  # asked once, never retried
+
+
+@pytest.mark.parametrize("status, headers", REJECTIONS)
+async def test_blocklist_rejected_by_the_engine_keeps_the_last_list(status, headers, rec):
+    rec.version = 1
+    rec.blocklist["sessions"] = ["s_bad"]
+    mw = make_mw(build_app(), rec.client())
+    await mw.refresh_blocklist()
+    engine = Rejecting(status, headers)
+    mw.client = engine.client()
+    await mw.refresh_blocklist()  # must not raise
+    assert engine.paths == ["/v1/blocklist"]
+    assert mw.blocklist_version == 1
+    async with client_for(mw) as c:
+        ok = await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_ok"})
+        bad = await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_bad"})
+    assert ok.status_code == 200 and bad.status_code == 403
+
+
+@pytest.mark.parametrize("status, headers", REJECTIONS)
+async def test_blocklist_rejected_before_any_load_lets_everything_through(status, headers):
+    engine = Rejecting(status, headers)
+    mw = make_mw(build_app(), engine.client())
+    await mw.refresh_blocklist()
+    async with client_for(mw) as c:
+        r = await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_any"})
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize("status, headers", REJECTIONS)
+async def test_routes_rejected_by_the_engine_means_no_check(status, headers):
+    calls = []
+    engine = Rejecting(status, headers)
+    mw = make_mw(build_app(calls), engine.client())
+    await mw.refresh_routes()  # must not raise
+    r = await post_bank(mw)
+    assert r.status_code == 200 and calls == ["bank"]
+    assert engine.paths == ["/v1/routes"]
+
+
+@pytest.mark.parametrize("status, headers", REJECTIONS)
+async def test_events_rejected_by_the_engine_stay_queued_and_are_sent_later(status, headers, rec):
+    engine = Rejecting(status, headers)
+    mw = make_mw(build_app(), engine.client())
+    async with client_for(mw) as c:
+        r = await c.get("/items/1", cookies={"uid": "u_42"})
+    assert r.status_code == 200
+    await mw.flush()  # must not raise
+    assert engine.paths == ["/v1/events"] and len(mw.queue) == 1
+    mw.client = rec.client()
+    await mw.flush()
+    assert len(rec.events) == 1 and len(mw.queue) == 0
+
+
+async def test_background_tasks_do_not_hot_loop_on_429():
+    engine = Rejecting(429, {"Retry-After": "30"})
+    mw = make_mw(build_app(), engine.client(), background=True, flush_interval=0.05,
+                 poll_interval=0.05, routes_poll_interval=0.05)
+    async with client_for(mw) as c:
+        r = await c.get("/items/1", cookies={"uid": "u_42"})  # starts the background tasks
+        await asyncio.sleep(0.2)
+    await mw.aclose()
+    assert r.status_code == 200
+    # Three loops at 0.05 s over 0.2 s: about 12 calls; a hot loop would make thousands.
+    assert len(engine.paths) < 40
