@@ -1,4 +1,4 @@
-  :root { --ink:#1b2430; --muted:#6b7686; --line:#e3e8ef; --bg:#f5f7fa; --brand:#2457d6; --ok:#13795b; --warn:#a15c07; }
+  :root { --brand-hover:#1d47b3; --ink:#1b2430; --muted:#6b7686; --line:#e3e8ef; --bg:#f5f7fa; --brand:#2457d6; --ok:#13795b; --warn:#a15c07; }
   * { box-sizing: border-box; }
   body { margin:0; font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--ink); background:var(--bg); }
   header { background:#fff; border-bottom:1px solid var(--line); }
@@ -17,8 +17,14 @@
   a { color:var(--brand); }
   label { display:block; margin:14px 0 4px; font-weight:600; }
   input { width:100%; padding:10px 12px; border:1px solid #c9d1dc; border-radius:8px; font:inherit; }
-  button, .btn { display:inline-block; margin-top:18px; padding:10px 18px; border:0; border-radius:8px; background:var(--brand); color:#fff; font:inherit; font-weight:600; cursor:pointer; text-decoration:none; }
+  button, .btn { display:inline-block; margin-top:18px; padding:10px 18px; border:0; border-radius:8px; background:var(--brand); color:#fff; font:inherit; font-weight:600; cursor:pointer; text-decoration:none; transition:background-color 120ms ease-out, color 120ms ease-out, transform 80ms ease-out; }
+  button:hover, .btn:hover { background:var(--brand-hover); }
+  button:active, .btn:active { transform:scale(0.97); }
+  button:disabled, button[aria-busy="true"] { opacity:.6; cursor:progress; transform:none; }
   button.link { background:none; color:var(--muted); margin:0; padding:0; font-weight:400; }
+  button.link:hover { background:none; color:var(--ink); }
+  a:focus-visible, button:focus-visible, input:focus-visible { outline:2px solid var(--brand); outline-offset:3px; }
+  @media (prefers-reduced-motion: reduce) { button, .btn { transition:none; } button:active, .btn:active { transform:none; } }
   .badge { padding:2px 10px; border-radius:999px; font-size:.8rem; font-weight:600; }
   .Pagada { background:#dff5ec; color:var(--ok); } .Pendiente { background:#fdf0d9; color:var(--warn); }
   .msg { padding:10px 14px; border-radius:8px; margin-bottom:12px; }

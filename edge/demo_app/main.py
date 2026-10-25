@@ -28,8 +28,8 @@ COOKIE = "sid"
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
-# Cache-busting query for /static assets: bump when app.css changes.
-ASSET_VERSION = "1"
+# Cache-busting query for /static assets: bump when app.css or busy.js change.
+ASSET_VERSION = "2"
 
 USERS = {
     "ana@facturas.demo": {"id": "u_42", "name": "Ana Torres", "company": "Taller Torres C.A."},

@@ -14,8 +14,8 @@
     <label for="bank">Banco</label>
     <input id="bank" name="bank" required>
     <label for="account_number">Número de cuenta</label>
-    <input id="account_number" name="account_number" inputmode="numeric" required>
-    <button type="submit">Guardar cuenta</button>
+    <input id="account_number" name="account_number" inputmode="numeric" pattern="[0-9]{10,20}" title="Solo números, entre 10 y 20 dígitos" autocomplete="off" required>
+    <button type="submit" data-busy="Guardando…">Guardar cuenta</button>
   </form>
 </div>
 {% endblock %}
