@@ -22,7 +22,7 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, Path, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 DEV_TOKEN = "dev-token"
 
@@ -115,6 +115,10 @@ class MemberPatch(BaseModel):
 class InvitationIn(BaseModel):
     email: str = Field(max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     role: Role
+
+
+class ApiKeyIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 
 
 class ProjectIn(BaseModel):
@@ -465,6 +469,31 @@ class Project:
 
 
 @dataclass
+class ApiKey:
+    """An SDK key of one project. Only the SHA-256 of the token is kept (design, gap 1); `prefix` lets a
+    person tell keys apart. The 256-bit secret is why an unsalted fast hash is enough."""
+
+    id: str
+    project_id: str
+    name: str
+    prefix: str
+    key_hash: str
+    created_by: str
+    created_at: str
+    last_used_at: str | None = None
+    revoked_at: str | None = None
+    revoked_by: str | None = None
+
+
+KEY_PREFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
+DECOY_HASH = hashlib.sha256(b"veridian-decoy").hexdigest()  # compared when the key is unknown: same work as a hit
+
+
+def hash_key(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@dataclass
 class Organization:
     """Groups projects and holds the only member list: one role per person, valid for every project."""
 
@@ -563,10 +592,12 @@ def create_app(
 
     orgs: dict[str, Organization] = {}
     projects: dict[str, Project] = {}
-    by_token: dict[str, str] = {}  # SDK key -> project id
+    by_token: dict[str, str] = {}  # seeded SDK key (VERIDIAN_TOKENS) -> project id; created keys are in `api_keys`
     people: dict[str, Person] = {}  # person id -> person
     by_sub: dict[str, str] = {}  # google_sub -> person id
     audit_seq = itertools.count(1)
+    api_keys: dict[str, ApiKey] = {}  # id -> key
+    key_by_hash: dict[str, ApiKey] = {}
 
     def new_state() -> ClientState:
         return ClientState(routes=dict(route_map), learn_delay=delay, clock=clock)
@@ -588,6 +619,7 @@ def create_app(
     app = FastAPI(title="Veridian fake engine")
     app.state.projects = projects
     app.state.orgs = orgs
+    app.state.api_keys = api_keys
     app.state.project_id_for = by_token.__getitem__
     app.state.org_id_for = lambda token: projects[by_token[token]].org_id
 
@@ -620,12 +652,29 @@ def create_app(
     def is_panel(token: str) -> bool:
         return any(hmac.compare_digest(token.encode(), p.encode()) for p in panel_accepted)
 
+    def sdk_project(token: str, touch: bool = False) -> Project | None:
+        """The project of an SDK key: a seeded token, or a created key that is not revoked and whose project
+        and organization are alive. A revoked key is rejected exactly like an unknown one. `touch` records the use."""
+        if token in accepted:
+            return projects[by_token[token]]
+        digest = hash_key(token)
+        key = key_by_hash.get(digest)
+        same = hmac.compare_digest(digest.encode(), (key.key_hash if key else DECOY_HASH).encode())
+        if key is None or not same or key.revoked_at is not None:
+            return None
+        project = projects[key.project_id]
+        if project.deleted_at is not None or orgs[project.org_id].deleted_at is not None:
+            return None
+        if touch:
+            key.last_used_at = now_iso()
+        return project
+
     def kind_of(authorization: str | None) -> tuple[str, str]:
         """("panel" | "sdk", token); anything else is 401. The panel credential is checked first."""
         token = bearer_of(authorization)
         if is_panel(token):
             return "panel", token
-        if token in accepted:
+        if sdk_project(token) is not None:
             return "sdk", token
         raise Unauthorized()
 
@@ -659,7 +708,7 @@ def create_app(
         kind, token = kind_of(authorization)
         if kind != "sdk":
             raise Forbidden()
-        return projects[by_token[token]].state
+        return sdk_project(token, touch=True).state
 
     def panel_state(minimum: Role, allow_sdk: bool = False):
         def dep(authorization: Annotated[str | None, Header()] = None,
@@ -667,7 +716,7 @@ def create_app(
                 x_veridian_project: Annotated[str | None, Header()] = None) -> ClientState:
             kind, token = kind_of(authorization)
             if kind == "sdk" and allow_sdk:
-                return projects[by_token[token]].state
+                return sdk_project(token, touch=True).state
             person = actor_of(authorization, x_veridian_actor)
             if not x_veridian_project:
                 raise ProjectRequired()
@@ -955,6 +1004,53 @@ def create_app(
         inv["revoked_at"] = now_iso()
         record(org, person, "invitation.revoked", "invitation", inv["id"], meta={"email": inv["email"], "role": inv["role"]})
         return Response(status_code=204)
+
+    # --- contract 12: API keys of a project --------------------------------------------------------------
+
+    def key_view(key: ApiKey) -> dict:
+        creator, revoker = people.get(key.created_by), people.get(key.revoked_by or "")
+        return {"id": key.id, "name": key.name, "prefix": key.prefix,
+                "status": "revoked" if key.revoked_at else "active", "created_by": key.created_by,
+                "created_by_name": creator.name if creator else None, "created_at": key.created_at,
+                "last_used_at": key.last_used_at, "revoked_at": key.revoked_at,
+                "revoked_by_name": revoker.name if revoker else None}
+
+    def project_key(project: Project, key_id: str) -> ApiKey:
+        key = api_keys.get(key_id)
+        if key is None or key.project_id != project.id:
+            raise NotFound()
+        return key
+
+    @app.get("/v1/projects/{project_id}/api-keys")
+    def get_api_keys(project_id: Annotated[str, Path()], person: Actor):
+        project = authorize(person, project_id, "admin")
+        rows = [k for k in api_keys.values() if k.project_id == project.id]
+        return {"api_keys": [key_view(k) for k in reversed(rows)]}
+
+    @app.post("/v1/projects/{project_id}/api-keys", status_code=201)
+    def post_api_key(project_id: Annotated[str, Path()], body: ApiKeyIn, person: Actor):
+        project = authorize(person, project_id, "admin")
+        prefix = "vrd_" + "".join(secrets.choice(KEY_PREFIX_ALPHABET) for _ in range(8))
+        token = f"{prefix}_{secrets.token_urlsafe(32)}"  # 32 random bytes, base64url
+        key = ApiKey(id="key_" + secrets.token_hex(6), project_id=project.id, name=body.name, prefix=prefix,
+                     key_hash=hash_key(token), created_by=person.id, created_at=now_iso())
+        api_keys[key.id] = key
+        key_by_hash[key.key_hash] = key
+        record(orgs[project.org_id], person, "api_key.created", "api_key", key.id, project.id,
+               {"name": key.name, "prefix": key.prefix})
+        # The plaintext leaves the engine here and never again: not in the list, not in the audit.
+        return JSONResponse({"id": key.id, "name": key.name, "prefix": key.prefix, "key": token}, status_code=201,
+                            headers={"Cache-Control": "no-store"})
+
+    @app.post("/v1/projects/{project_id}/api-keys/{key_id}/revoke")
+    def revoke_api_key(project_id: Annotated[str, Path()], key_id: Annotated[str, Path()], person: Actor):
+        project = authorize(person, project_id, "admin")
+        key = project_key(project, key_id)
+        if key.revoked_at is None:
+            key.revoked_at, key.revoked_by = now_iso(), person.id  # immediate: nothing caches the lookup
+            record(orgs[project.org_id], person, "api_key.revoked", "api_key", key.id, project.id,
+                   {"name": key.name, "prefix": key.prefix})
+        return key_view(key)
 
     # --- contract 15: audit log (read only) ------------------------------------------------------------
 
