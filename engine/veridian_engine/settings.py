@@ -83,7 +83,10 @@ class Settings:
     panel_tokens: tuple[str, ...] = ()
     # Verified emails that, on login, become owner of every organization without an owner.
     bootstrap_owners: frozenset[str] = frozenset()
-    # Verified emails allowed to create organizations (open decision 2, provisional). Empty: nobody.
+    # Open signup (decision 2, resolved 2026-10-25): any signed-in person creates organizations, up to
+    # this many live ones they created. A design default against abuse, not a measured value.
+    max_orgs_per_person: int = 3
+    # Verified emails with no such limit (the team).
     org_creators: frozenset[str] = frozenset()
     # How long an invitation stays valid. A design default, not a measured value.
     invitation_days: int = 14
@@ -127,6 +130,7 @@ class Settings:
             ),
             bootstrap_owners=parse_emails(os.environ.get("VERIDIAN_BOOTSTRAP_OWNERS", "")),
             org_creators=parse_emails(os.environ.get("VERIDIAN_ORG_CREATORS", "")),
+            max_orgs_per_person=int(os.environ.get("VERIDIAN_MAX_ORGS_PER_PERSON", "3")),
             invitation_days=int(os.environ.get("VERIDIAN_INVITATION_DAYS", "14")),
             auto_classify=os.environ.get("VERIDIAN_AUTO_CLASSIFY", "on").strip().lower()
             not in ("off", "0", "false", "no"),

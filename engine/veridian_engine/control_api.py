@@ -142,11 +142,15 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
             return {"orgs": repository.list_orgs_for(conn, person_id)}
 
     @router.post("/v1/orgs", status_code=201)
-    def post_org(body: NameIn, person_id: str = Depends(panel_actor)) -> dict:
+    def post_org(body: NameIn, person_id: str = Depends(panel_actor)):
+        """Open signup: any signed-in person, up to max_orgs_per_person live orgs they created
+        (VERIDIAN_ORG_CREATORS have no limit)."""
         with write_lock, db.connect(settings.db_path) as conn:
             person = repository.get_person(conn, person_id)
-            if person["email"].strip().lower() not in settings.org_creators:
-                raise Forbidden()
+            unlimited = person["email"].strip().lower() in settings.org_creators
+            limit = settings.max_orgs_per_person
+            if not unlimited and repository.count_orgs_created_by(conn, person_id) >= limit:
+                return JSONResponse(status_code=409, content={"error": "org_limit_reached", "limit": limit})
             org_id = repository.create_organization(conn, creator_id=person_id, name=body.name.strip(), now=settings.clock())
             return org_view(conn, org_id, person_id)
 

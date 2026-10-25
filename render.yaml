@@ -43,6 +43,7 @@ services:
       # Email that owns org "Demo" (the legacy projects) on first login.
       - key: VERIDIAN_BOOTSTRAP_OWNERS
         sync: false
-      # Emails allowed to create organizations (provisional, open decision 2). Unset: nobody.
+      # Emails with no organization limit (the team). Anyone signed in may create up to
+      # VERIDIAN_MAX_ORGS_PER_PERSON (default 3) organizations.
       - key: VERIDIAN_ORG_CREATORS
         sync: false

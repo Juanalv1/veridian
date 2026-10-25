@@ -44,7 +44,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 4. **U13.** La parte 1 está hecha (`8ad03cb`): el hilo de purga y los endpoints del contrato 14.
    - El borrado por usuario es para admin+ y el borrado del proyecto, solo para owner. Así lo dice `DISENO-PRODUCTO.md` (contrato 14); este handoff decía "solo owner" para los dos.
    - **Falta:** eliminar `POST /v1/admin/reset` y `test_reset.py`, y cambiar los scripts de ensayo (`reset_client.py`, `test_rehearsal_scripts.py`) para que usen `DELETE /v1/projects/{id}/data` con el acceso del panel. Coordinarlo con la tarea 5 de Christian (preparar la demo).
-5. **Registro abierto** (decisión 2, resuelta por Juan el 2026-10-25): `POST /v1/orgs` lo puede usar cualquier persona autenticada, no solo los correos de `VERIDIAN_ORG_CREATORS`. Lo necesita el registro en un paso de Maikol.
+5. **Hecho en el motor real (2026-10-25): registro abierto.** `POST /v1/orgs` acepta a cualquier actor conocido; límite `VERIDIAN_MAX_ORGS_PER_PERSON` (3) de organizaciones vivas creadas por la persona, `409 {"error": "org_limit_reached", "limit"}`; `VERIDIAN_ORG_CREATORS` = sin límite. Contrato 10 actualizado. **Falta el mismo cambio en el motor falso (Maikol).** Lo que se pedía: (decisión 2, resuelta por Juan el 2026-10-25): `POST /v1/orgs` lo puede usar cualquier persona autenticada, no solo los correos de `VERIDIAN_ORG_CREATORS`. Lo necesita el registro en un paso de Maikol.
    - Poner un límite de organizaciones por persona para evitar abusos (decidir el número).
    - Actualizar el contrato 10 en `REPARTO.md` y los READMEs que describen `VERIDIAN_ORG_CREATORS`.
    - **Tests:** una persona sin invitación crea su organización y queda `owner`; pasado el límite recibe un error claro.

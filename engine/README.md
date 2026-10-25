@@ -44,7 +44,8 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_PANEL_TOKEN` | empty | Service credential of the panel (Bearer, compared in constant time). Empty: no panel can call the engine. The most sensitive secret: whoever holds it can act as any member whose `person_id` they know. Must differ from every project key |
 | `VERIDIAN_PANEL_TOKENS` | empty | Extra panel credentials, comma-separated, accepted together with `VERIDIAN_PANEL_TOKEN` (current and previous, to rotate without a cut) |
 | `VERIDIAN_BOOTSTRAP_OWNERS` | empty | Comma-separated emails. On login, such a person becomes owner of every organization that has no owner (for example org `Demo`, created for the legacy projects). An organization that already has an owner is never touched |
-| `VERIDIAN_ORG_CREATORS` | empty | Comma-separated emails allowed to create organizations (`POST /v1/orgs`). Empty: nobody. Provisional (open decision 2). Projects are created by the owners and admins of an organization, without this list |
+| `VERIDIAN_MAX_ORGS_PER_PERSON` | `3` | Open signup: any signed-in person creates organizations (`POST /v1/orgs`), up to this many live ones they created; past it, `409 org_limit_reached`. A design default against abuse, not measured |
+| `VERIDIAN_ORG_CREATORS` | empty | Comma-separated emails with no organization limit (the team). Projects are created by the owners and admins of an organization |
 | `VERIDIAN_INVITATION_DAYS` | `14` | Days an invitation stays valid (design default, not measured) |
 | `VERIDIAN_RETENTION` | `on` | `off` stops the retention worker (purge by each project's `retention_days`, wipe of deleted projects) |
 | `VERIDIAN_RETENTION_INTERVAL_S` | `3600` | Seconds between retention passes; the first pass runs one interval after start |
@@ -130,6 +131,7 @@ With `VERIDIAN_RESET_TOKEN` set on the engine (otherwise, or with a wrong secret
 - `ANTHROPIC_API_KEY`: enables the AI judge.
 - `VERIDIAN_PANEL_TOKEN`: the panel's service credential (the same value in the panel service).
 - `VERIDIAN_BOOTSTRAP_OWNERS`: the email that should own org `Demo` on first login.
+- `VERIDIAN_ORG_CREATORS`: the team's emails, with no organization limit (optional).
 - `VERIDIAN_ORG_CREATORS`: emails allowed to create organizations (optional).
 
 The service runs on the `starter` plan with a 1 GB disk at `/var/data`, where the SQLite file lives. Free instances cannot attach a disk, so every deploy would wipe the profiles, and they spin down after 15 minutes idle ([Render docs](https://render.com/docs/disks), [free tier](https://render.com/docs/free)). With a disk the service runs as one instance, and each deploy has a few seconds of downtime.

@@ -222,6 +222,16 @@ def create_organization(conn: sqlite3.Connection, *, creator_id: str, name: str,
     return org_id
 
 
+def count_orgs_created_by(conn: sqlite3.Connection, person_id: str) -> int:
+    """Live organizations this person created (every creation is audited as org.create in the same
+    transaction). Being made owner by an invitation or the bootstrap does not count."""
+    return conn.execute(
+        "SELECT COUNT(DISTINCT a.org_id) FROM audit_log a JOIN organization o ON o.id = a.org_id"
+        " WHERE a.action = 'org.create' AND a.actor_person_id = ? AND o.deleted_at IS NULL",
+        (person_id,),
+    ).fetchone()[0]
+
+
 def get_organization(conn: sqlite3.Connection, org_id: str) -> dict | None:
     row = conn.execute(
         "SELECT id, name, created_at FROM organization WHERE id = ? AND deleted_at IS NULL", (org_id,)

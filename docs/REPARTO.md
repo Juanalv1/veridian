@@ -360,7 +360,7 @@ Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app
 |---|---|---|
 | `POST /v1/people/login` `{"google_sub", "email", "name"?}` | solo credencial (sin actor) | `200 {"person": {"id", "email", "name"}, "orgs": [{"id", "name", "role", "projects": [{"id", "name"}]}]}` |
 | `GET /v1/me/orgs` | actor conocido | `{"orgs": [...]}`, igual que en el login |
-| `POST /v1/orgs` `{"name"}` | correo en `VERIDIAN_ORG_CREATORS` | `201`, la organización como en `orgs`, con el creador `owner` |
+| `POST /v1/orgs` `{"name"}` | actor conocido (registro abierto) | `201`, la organización como en `orgs`, con el creador `owner`. Pasado el límite: `409 {"error": "org_limit_reached", "limit"}` |
 | `GET /v1/orgs/{id}` | `viewer` | la organización con su `role`, `projects` y `created_at` |
 | `PATCH /v1/orgs/{id}` `{"name"?}` | `admin` | igual que `GET` |
 | `GET /v1/orgs/{id}/projects` | `viewer` | `{"projects": [proyecto]}` |
@@ -368,6 +368,7 @@ Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app
 | `GET /v1/projects/{id}` | `viewer` | proyecto |
 | `PATCH /v1/projects/{id}` `{"name"?, "retention_days"?, "enforcement"?, "ai_enabled"?}` | `admin` | proyecto; solo cambia lo enviado |
 
+- **Registro abierto** (decisión 2, resuelta el 2026-10-25): cualquier persona con sesión crea organizaciones, sin invitación. Límite: `VERIDIAN_MAX_ORGS_PER_PERSON` organizaciones vivas **creadas por esa persona** (3 por defecto, valor de diseño sin medir). Ser `owner` por invitación o por bootstrap no ocupa cupo, y una organización borrada libera el suyo. Los correos de `VERIDIAN_ORG_CREATORS` no tienen límite.
 - **Proyecto:** `{"id", "org_id", "name", "retention_days", "enforcement", "ai_enabled", "created_at", "role"}`; `role` es el del actor en la organización.
 - **Login:** alta o actualización por `google_sub` (el correo se guarda en minúsculas; sin `name` se conserva el anterior). Después: si el correo está en `VERIDIAN_BOOTSTRAP_OWNERS`, la persona pasa a `owner` de **cada organización sin owner** (nunca de una que ya lo tiene); y acepta las invitaciones vigentes de ese correo (una invitación nunca cambia el rol de quien ya es miembro).
 - **Organización `Demo`:** los proyectos que ya existían (y los que se crean al arrancar desde `VERIDIAN_TOKENS` o desde datos existentes) están en la organización `Demo` (`org_demo`), sin miembros hasta que entra un bootstrap owner.
