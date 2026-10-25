@@ -27,7 +27,7 @@ Mode: on. Runners: `uv run pytest -q` in `edge/`; engine suite in `engine/` (its
 
 ## Tasks
 
-- [ ] T1 Engine: optional `user_email` in events and check (contracts 1 and 9), last one stored per user and project; erasure and retention; `docs/privacidad/DATOS.md`. Route: delegated (writer A, engine).
+- [x] T1 Engine: optional `user_email` in events and check (contracts 1 and 9), last one stored per user and project; erasure and retention; `docs/privacidad/DATOS.md`. Route: delegated (writer A, engine).
 - [ ] T2 Engine: project brand fields + `self_unlock_enabled` with `PATCH`, logo URL validated like the webhook URL. Route: delegated (writer A).
 - [ ] T3 Engine: `Mailer.send` with `html`; branded template; email queued on each `block` (same outbox as webhook/U17), 15 min limit; token issue/hash/expiry. Route: delegated (writer A).
 - [ ] T4 Engine: token endpoints (read for the page, unlock `POST`), audit `decision.self_unlocked`. Route: delegated (writer A).
@@ -41,4 +41,6 @@ The spec's "Pruebas mínimas", all green, plus the existing suites.
 
 ## Progress
 
-Created 2026-10-25. Next: T1.
+Created 2026-10-25.
+
+- T1 done (commit 7dc68a9, migration 0012 `user_contact`): engine suite 709 baseline -> 720 passed. Invalid `user_email` is dropped, not a 422 (it must not cost the customer the batch). Route: delegated (writer A).
