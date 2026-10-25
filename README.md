@@ -42,8 +42,8 @@ app.add_middleware(
 
 Los robos digitales empiezan por contraseñas descuidadas y tardan meses en descubrirse.
 
-- **22 %** de los robos empiezan con credenciales robadas: la causa número uno ([Verizon DBIR 2025](https://www.verizon.com/business/resources/articles/credential-stuffing-attacks-2025-dbir-research/)).
-- **241 días** tarda en promedio detectarlos y contenerlos ([IBM 2025](https://newsroom.ibm.com/2025-07-30-ibm-report-13-of-organizations-reported-breaches-of-ai-models-or-applications,-97-of-which-reported-lacking-proper-ai-access-controls)).
+- **22 %** de las filtraciones de datos empiezan con una credencial robada: la causa número uno ([Verizon DBIR 2025](https://www.verizon.com/business/resources/articles/credential-stuffing-attacks-2025-dbir-research/)).
+- **241 días** tarda en promedio una empresa en detectar y contener una filtración ([IBM 2025](https://newsroom.ibm.com/2025-07-30-ibm-report-13-of-organizations-reported-breaches-of-ai-models-or-applications,-97-of-which-reported-lacking-proper-ai-access-controls)).
 
 Veridian corta el acceso en segundos.
 
