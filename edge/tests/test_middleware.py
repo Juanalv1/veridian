@@ -85,11 +85,17 @@ class Recorder:
         self.check_status = 200
         self.check_body = {"verdict": "allow", "decision_id": None}
         self.check_hang = None  # an asyncio.Event that is never set makes /v1/check hang
+        self.catalogs = []  # bodies received on PUT /v1/routes/catalog
+        self.catalog_status = 200
 
     async def handler(self, request: httpx.Request) -> httpx.Response:
         if self.fail:
             raise httpx.ConnectError("engine down")
         assert request.headers["authorization"] == f"Bearer {TOKEN}"
+        if request.url.path == "/v1/routes/catalog":
+            assert request.method == "PUT"
+            self.catalogs.append(json.loads(request.content))
+            return httpx.Response(self.catalog_status, json={"received": 0, "to_classify": 0})
         if request.url.path == "/v1/routes":
             return httpx.Response(self.routes_status, json={"routes": self.routes, "default": "normal"})
         if request.url.path == "/v1/check":
@@ -877,3 +883,99 @@ async def test_background_tasks_do_not_hot_loop_on_429():
     assert r.status_code == 200
     # Three loops at 0.05 s over 0.2 s: about 12 calls; a hot loop would make thousands.
     assert len(engine.paths) < 40
+
+
+# --- route report (contract 16) ---------------------------------------------
+
+
+def build_documented_app():
+    app = FastAPI()
+
+    @app.post("/transfers", summary="Send money")
+    async def transfers():
+        """Moves funds to another account."""
+        return {}
+
+    @app.get("/static/logo")
+    async def logo():
+        return {}
+
+    @app.get("/items/{item_id}")
+    async def item(item_id: str):
+        return {}
+
+    return app
+
+
+async def test_report_sends_method_route_and_openapi_text_only(rec):
+    mw = make_mw(build_documented_app(), rec.client())
+    assert await mw.report_routes() is True
+    [body] = rec.catalogs
+    routes = {(r["method"], r["route"]): r for r in body["routes"]}
+    assert routes[("POST", "/transfers")] == {
+        "method": "POST", "route": "/transfers", "summary": "Send money",
+        "description": "Moves funds to another account.",
+    }
+    assert ("GET", "/items/{item_id}") in routes
+    assert all(set(r) == {"method", "route", "summary", "description"} for r in body["routes"])
+
+
+async def test_report_skips_excluded_paths(rec):
+    mw = make_mw(build_documented_app(), rec.client())
+    await mw.report_routes()
+    assert all(not r["route"].startswith("/static") for r in rec.catalogs[0]["routes"])
+
+
+async def test_report_finds_the_openapi_through_wrapped_apps(rec):
+    inner = build_documented_app()
+
+    class Wrapper:
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            await self.app(scope, receive, send)
+
+    mw = make_mw(Wrapper(inner), rec.client())
+    assert await mw.report_routes() is True
+    assert rec.catalogs
+
+
+async def test_an_app_without_openapi_reports_nothing(rec):
+    async def bare(scope, receive, send):
+        return None
+
+    mw = make_mw(bare, rec.client())
+    assert await mw.report_routes() is True  # nothing to report counts as done
+    assert rec.catalogs == []
+
+
+async def test_a_failed_report_returns_false_and_never_raises(rec):
+    mw = make_mw(build_documented_app(), rec.client())
+    rec.fail = True
+    assert await mw.report_routes() is False
+    rec.fail = False
+    rec.catalog_status = 500
+    assert await mw.report_routes() is False
+
+
+async def test_the_report_runs_once_in_the_background_at_startup(rec):
+    mw = make_mw(build_documented_app(), rec.client(), background=True, flush_interval=3600, poll_interval=3600,
+                 routes_poll_interval=3600)
+    mw._ensure_background()
+    for _ in range(50):
+        if rec.catalogs:
+            break
+        await asyncio.sleep(0)
+    await mw.aclose()
+    assert len(rec.catalogs) == 1
+
+
+async def test_the_report_can_be_turned_off(rec):
+    mw = make_mw(build_documented_app(), rec.client(), background=True, flush_interval=3600, poll_interval=3600,
+                 routes_poll_interval=3600, report_routes=False)
+    mw._ensure_background()
+    for _ in range(50):
+        await asyncio.sleep(0)
+    await mw.aclose()
+    assert rec.catalogs == []

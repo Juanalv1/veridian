@@ -19,11 +19,12 @@ Branch: `main` (no PRs). Delivery: work-unit commits. Tests: `engine/.venv/bin/p
 | ID | Specs | Route | Status |
 |---|---|---|---|
 | T1 | Engine: catalog table, contract 16 endpoint, classifier worker, source-aware rules, panel catalog read, prompt fix | inline | [x] RED 22 failed, GREEN 684 passed (3 failing are Dev A U13 WIP) |
-| T2 | SDK: report routes from the app's OpenAPI at startup; fake engine accepts it | inline | [ ] |
-| T3 | Docs: contract 16 in `REPARTO.md`, HANDOFF | inline | [ ] |
+| T2 | SDK: report routes from the app's OpenAPI at startup; fake engine accepts it | inline | [x] RED 7 failed, GREEN edge 697 passed |
+| T3 | Docs: contract 16 in `REPARTO.md`, HANDOFF, SDK README | inline | [x] |
 
 ## Log
 
 - L1 (2026-10-25, user, verbatim): "tarea nueva en el HANDOFF (Dev B, punto 6): clasificación automática de rutas. [...] Depende de U7 de Maikol (route_rules por proyecto), así que coordinalo con él antes de arrancar. Hay dos cosas por decidir: qué pasa si la IA falla (hoy la ruta queda normal y se apaga la regla de bloqueo) y si las correcciones del admin sobreviven a una nueva clasificación. [...] El pitch ya lo presenta como automático, así que es importante para la demo."
 - L2 (2026-10-25, user): "dale guaya" — accepted S4 and S5 as proposed.
 - L3: U7 is already on `main` (`route_rules`, `PUT /v1/projects/{id}/routes`), so this builds on it without blocking Dev A.
+- L4: T1 commit `d7add64` (engine). T2+T3 in the next commit. Engine suite: 684 passed, 3 failing are Dev A's U13 work in progress (erasure tests and the isolation list missing the erasure endpoints). Pending outside this feature: panel view of the catalog (Dev 3).

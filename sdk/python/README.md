@@ -54,6 +54,7 @@ app.add_middleware(
 | `exclude_paths` | `("/static",)` | Path prefixes that pass straight through with no event and no blocklist check. |
 | `routes_poll_interval` | `30.0` s | How often the critical routes are read from the engine. |
 | `check_timeout` | `12.0` s | How long a critical request waits for the engine's verdict. |
+| `report_routes` | `True` | Send the app's routes (method, route template, OpenAPI summary and description) once at startup, so the engine classifies them. Retried every `routes_poll_interval` until accepted. |
 
 Middleware order: in Starlette, the middleware added last runs first. If your login puts the user in `request.state` from another middleware, add that one after Veridian's.
 
@@ -78,9 +79,11 @@ One event per request, sent in the background in batches: `id`, `ts`, `user_id`,
 
 The middleware also sets its own device cookie (`vrd_did`) in the user's browser.
 
+At startup, once: the app's routes from its OpenAPI document (`method`, `route`, `summary`, `description`), so the engine can classify them. Apps without an OpenAPI document (anything that is not FastAPI) send nothing, and their routes are classified in the panel.
+
 ## What is never sent
 
-Request and response bodies, and passwords, are never read into events.
+Request and response bodies, and passwords, are never read into events. Source code is never sent: the route report only carries what the OpenAPI document says.
 
 ## Fail-open
 

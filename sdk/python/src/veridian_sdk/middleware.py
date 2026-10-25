@@ -30,6 +30,10 @@ MAX_BATCH = 200
 DEFAULT_EXCLUDE_PATHS = ("/static",)
 CHECK_TIMEOUT = 12.0  # contract 9: the engine's judge may take up to ~10 s on a gray deviation
 ROUTES_POLL_INTERVAL = 30.0
+# Route report (contract 16): what the engine accepts.
+REPORTED_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+MAX_REPORTED_ROUTES = 1000
+MAX_ROUTE_TEXT = 2000
 DEFAULT_BASE_URL = "https://veridian-engine.onrender.com"
 API_KEY_ENV = "VERIDIAN_API_KEY"
 URL_ENV = "VERIDIAN_URL"
@@ -195,6 +199,7 @@ class VeridianMiddleware:
         background: bool = True,
         exclude_paths: tuple[str, ...] = DEFAULT_EXCLUDE_PATHS,
         *,
+        report_routes: bool = True,
         token: str | None = None,
         user_id=None,
         session_id=None,
@@ -228,8 +233,15 @@ class VeridianMiddleware:
         POST /v1/check before the app runs; a `block` verdict answers 403 and
         the app is never called. Every other outcome (error, non-200, unknown
         verdict, more than `check_timeout` seconds) lets the request through,
-        and with no routes loaded nothing is checked."""
+        and with no routes loaded nothing is checked.
+
+        With `report_routes` (default), the app's routes are sent once at
+        startup to PUT /v1/routes/catalog so the engine classifies them: only
+        method, route template and the OpenAPI summary and description, never
+        code. It is retried every `routes_poll_interval` seconds until the
+        engine accepts it. Apps without an OpenAPI document send nothing."""
         self.app = app
+        self._report_routes = report_routes
         self.token = _resolve_key(_one_of(api_key, token, "api_key", "token"))
         self.base_url = _resolve_url(base_url)
         user = _check_callable(_one_of(user, user_id, "user", "user_id"), "user")
@@ -409,6 +421,53 @@ class VeridianMiddleware:
         except Exception:
             log.exception("veridian: could not record event")
 
+    # --- route report (contract 16) -----------------------------------------
+
+    def _reported_routes(self) -> list[dict] | None:
+        """Method, route and OpenAPI text of every route, or None without an OpenAPI document."""
+        app = self.app
+        for _ in range(16):
+            openapi = getattr(app, "openapi", None)
+            if callable(openapi):
+                break
+            app = getattr(app, "app", None)
+            if app is None:
+                return None
+        else:
+            return None
+        routes = []
+        for path, operations in (openapi().get("paths") or {}).items():
+            if self._is_excluded(path) or not isinstance(operations, dict):
+                continue
+            for method, operation in operations.items():
+                if method.upper() not in REPORTED_METHODS or not isinstance(operation, dict):
+                    continue
+                routes.append({
+                    "method": method.upper(),
+                    "route": path,
+                    "summary": str(operation.get("summary") or "")[:MAX_ROUTE_TEXT],
+                    "description": str(operation.get("description") or "")[:MAX_ROUTE_TEXT],
+                })
+        return routes[:MAX_REPORTED_ROUTES]
+
+    async def report_routes(self) -> bool:
+        """Send the app's routes once. True when done (or nothing to send); never raises."""
+        try:
+            routes = self._reported_routes()
+            if routes is None:
+                return True
+            r = await self.client.put(
+                f"{self.base_url}/v1/routes/catalog", json={"routes": routes}, headers=self._auth()
+            )
+            return r.status_code == 200
+        except Exception as exc:
+            log.warning("veridian: route report failed: %s", exc)
+            return False
+
+    async def _report_until_accepted(self) -> None:
+        while not await self.report_routes():
+            await asyncio.sleep(self.routes_poll_interval)
+
     # --- critical routes ---------------------------------------------------
 
     async def refresh_routes(self) -> None:
@@ -492,6 +551,8 @@ class VeridianMiddleware:
             loop.create_task(self._loop(self.refresh_blocklist, self.poll_interval)),
             loop.create_task(self._loop(self.refresh_routes, self.routes_poll_interval)),
         ]
+        if self._report_routes:
+            self._tasks.append(loop.create_task(self._report_until_accepted()))
 
     @staticmethod
     async def _loop(fn, interval: float) -> None:

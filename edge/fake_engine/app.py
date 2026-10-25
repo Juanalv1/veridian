@@ -827,6 +827,15 @@ def create_app(
     def get_users(st: ReadState):
         return {"users": st.users()}
 
+    @app.put("/v1/routes/catalog")
+    def put_route_catalog(body: dict, st: State):
+        """Contract 16: the SDK's route report. The fake engine has no AI: it accepts the report
+        and keeps its fixed classification."""
+        routes = body.get("routes") if isinstance(body, dict) else None
+        if not isinstance(routes, list):
+            return JSONResponse({"error": "invalid_body"}, status_code=422)
+        return {"received": len(routes), "to_classify": 0}
+
     @app.get("/v1/routes")
     def get_routes(st: SharedState):
         """Contract 8: classified routes only, critical first, then by route and method."""

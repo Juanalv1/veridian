@@ -76,7 +76,7 @@ Lo que Maikol ya cerró en el motor queda en `main`: el contrato 11 (`45f965a`) 
      - Lo que hace falta: que la preparación de la demo verifique que la app ya no bloquea, o que reinicie la app.
 
 
-6. **Clasificación automática de rutas** (pedido de Juan, 2026-10-25). Hoy es manual: `engine/scripts/classify_openapi.py` genera un borrador de `routes.yaml` que alguien revisa y sube. Debe ser automático, porque el pitch lo presenta así.
+6. **Hecho (2026-10-25): clasificación automática de rutas** (contrato 16 en `REPARTO.md`; seguimiento en `odd/tasks/route-auto-classification.md`). Si la IA falla, la ruta conserva su última clase y se reintenta en el próximo envío; las correcciones del admin y `routes.yaml` mandan sobre la IA. El prompt ya no marca el login como `critical`. Falta en el panel (Dev 3): mostrar `GET /v1/projects/{id}/routes/catalog` (estado y motivo de cada ruta). Lo que se pedía: Hoy es manual: `engine/scripts/classify_openapi.py` genera un borrador de `routes.yaml` que alguien revisa y sube. Debe ser automático, porque el pitch lo presenta así.
    - **Flujo:** al arrancar, el SDK envía al motor las rutas de la app (método, ruta y descripción, sacadas del OpenAPI que ya expone FastAPI). El motor las clasifica con la IA (`veridian_engine.openapi.classify`), guarda el resultado por proyecto y lo sirve en `GET /v1/routes`, que el middleware ya consulta.
    - **Solo rutas, nunca código fuente.**
    - **Depende de U7 (Carlos):** la tabla `route_rules` por proyecto. Coordinar con Carlos: construirlo encima de U7 o acordar quién arma la tabla. El panel que muestra la clasificación es de Maikol.

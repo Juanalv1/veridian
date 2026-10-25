@@ -413,6 +413,30 @@ Solo `panel`, rol `admin` de la organización del proyecto de la ruta. Un proyec
 - **Prueba:** envía en el momento un evento `webhook.test` (cabecera `X-Veridian-Event: webhook.test`), firmado igual que un bloqueo: `{"id", "type": "webhook.test", "created_at", "project": {"id", "name"}}`. No pasa por la cola, no se reintenta y no aparece en `deliveries`. Un receptor que falla no es un error de la API: `delivered: false` con el motivo.
 - **Auditoría:** `webhook.set` (con la URL, nunca el secreto), `webhook.enable`, `webhook.delete` y `webhook.test` quedan en `audit_log` con el actor.
 
+### 16. Clasificación automática de rutas: SDK → motor
+
+Al arrancar, el SDK manda las rutas de la app; el motor clasifica con la IA las nuevas o cambiadas y las escribe en la clasificación del proyecto (contrato 8), la misma que lee el middleware.
+
+`PUT /v1/routes/catalog` (solo clave `sdk`; el proyecto es el de la clave):
+
+```json
+{"routes": [{"method": "POST", "route": "/transfers", "summary": "Send money", "description": "Moves funds out."}]}
+```
+
+- **Solo texto del OpenAPI:** `method` (mayúsculas), `route` (la plantilla, empieza con `/`), `summary` y `description` (opcionales, hasta 2000 caracteres). Nunca código. Hasta 1000 rutas; una ruta repetida da `422 {"error": "duplicate_route"}`.
+- **Respuesta:** `200 {"received", "to_classify"}`; `to_classify` cuenta las que quedaron pendientes.
+- **Solo lo que cambió:** una ruta con el mismo método, ruta, `summary` y `description` que la vez anterior no se vuelve a clasificar. Una ruta que falló se reintenta en el próximo envío. Una ruta que deja de venir sale del catálogo, pero su regla se mantiene.
+- **Clasificación:** un hilo del motor (`VERIDIAN_AUTO_CLASSIFY`, encendido por defecto) manda las pendientes a la IA (`VERIDIAN_MODEL`). Sin `ANTHROPIC_API_KEY`, todas quedan `failed`.
+- **Si la IA falla** (decisión del usuario, 2026-10-25): la regla no se toca. La ruta conserva su última clase, o queda `normal` si nunca tuvo una, y en el catálogo aparece `failed` con el motivo.
+- **Quién manda** (decisión del usuario, 2026-10-25): la IA solo escribe rutas sin regla de un admin ni de `routes.yaml`. Un `PUT /v1/projects/{id}/routes` es la palabra del admin sobre **toda** la lista: las rutas del catálogo que deja afuera quedan `normal` por decisión del admin, y la IA no las vuelve a subir. Las rutas que llegan después sí se clasifican.
+- **Login:** el prompt dice que entrar, salir, registrarse y renovar la sesión son `normal`, porque bloquearlas deja afuera al dueño en una red nueva. Cambiar credenciales sigue siendo `critical`.
+
+`GET /v1/projects/{id}/routes/catalog` (panel, `viewer`) → `{"routes": [{"method", "route", "summary", "status", "class", "source", "ai_class", "ai_reason", "last_error", "classified_at"}]}`.
+- `status`: `pending`, `classified` o `failed`.
+- `class`: la clase que se aplica.
+- `source`: quién la puso (`ai`, `admin`, `template` o `null` si no hay regla).
+- `ai_class` y `ai_reason`: la última respuesta de la IA, aunque no se haya aplicado.
+
 ### Correo de bloqueo y preferencia (U17): panel → motor
 
 Cada `block` encola un correo para cada `owner` y `admin` de la organización del proyecto con `notify_email` activo (por defecto, sí). Usa la misma cola que el webhook, con una fila por destinatario (así un correo que falla se reintenta solo para esa persona) y no necesita webhook. El correo lleva el proyecto, el `user_id`, la ruta, la hora, el motivo y el enlace al panel; **nunca la IP**. En `observe` agrega una línea que dice que el bloqueo no se aplicó. Antes de enviar se vuelve a revisar la preferencia: si alguien la apagó, o ya no es owner ni admin, su correo queda `failed` sin enviarse. Los correos no aparecen en `webhook/deliveries`.

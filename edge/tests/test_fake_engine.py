@@ -764,3 +764,10 @@ def test_check_is_isolated_per_client(client):
     check(client, attack())
     other = {"Authorization": "Bearer tok-b"}
     assert client.get("/v1/blocklist", headers=other).json()["sessions"] == []
+
+
+def test_the_route_report_is_accepted_and_changes_nothing(client):
+    before = client.get("/v1/routes", headers=AUTH).json()
+    response = client.put("/v1/routes/catalog", json={"routes": [{"method": "GET", "route": "/x"}]}, headers=AUTH)
+    assert response.status_code == 200 and response.json() == {"received": 1, "to_classify": 0}
+    assert client.get("/v1/routes", headers=AUTH).json() == before
