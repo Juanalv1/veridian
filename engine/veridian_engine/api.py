@@ -14,6 +14,7 @@ from .control_plane.legacy import seed_legacy
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
+from .notifications.sender import build_webhook_sender, webhook_lifespan
 from .project_settings import get_project_flags
 from .profile import build_profile, is_blocked
 from .route_classes import RouteClasses
@@ -32,11 +33,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         seed_legacy(conn, settings.tokens, settings.clock())
     route_classes = RouteClasses.load(settings.routes_file)
 
-    app = FastAPI(title="Veridian engine")
+    app = FastAPI(title="Veridian engine", lifespan=webhook_lifespan)
     app.state.settings = settings
     app.state.route_classes = route_classes
     app.state.auth = ApiKeyAuth(settings)
     write_lock = threading.Lock()  # single process: serialize writes that read-then-write
+    # Signed block webhooks (U12): started and stopped with the app; None when off.
+    app.state.webhook_sender = build_webhook_sender(settings, write_lock)
 
     @app.exception_handler(Unauthorized)
     async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONResponse:

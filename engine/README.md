@@ -38,6 +38,9 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_SYNC_MODEL` | `claude-haiku-5-5` | Model for the judge inside `POST /v1/check`, where the request waits |
 | `VERIDIAN_SYNC_JUDGE_TIMEOUT_S` | `10` | Seconds `POST /v1/check` waits for the judge on a gray deviation before its fallback decides |
 | `VERIDIAN_RESET_TOKEN` | empty | Secret that enables `POST /v1/admin/reset`, sent as header `X-Veridian-Reset-Token` (demo rehearsals only; empty = endpoint hidden) |
+| `VERIDIAN_SECRET_KEY` | empty | Fernet key (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) that encrypts webhook signing secrets at rest. Empty: webhooks cannot be configured (clear error); the engine still runs. Losing or changing it makes stored secrets unreadable: their deliveries fail until the endpoint is set again. Never log it |
+| `VERIDIAN_WEBHOOKS` | `on` | `off` stops the background webhook sender (block notifications stay queued in `notifications`) |
+| `VERIDIAN_PANEL_URL` | empty | Panel base URL, used for `panel_url` in the webhook payload |
 
 They can also live in a `.env` file (git-ignored), found by searching upward from the working directory. Real environment variables take precedence.
 
@@ -55,6 +58,12 @@ Each `project` row carries `enforcement` (`observe` | `enforce`) and `ai_enabled
 
 - `observe`: detection, decisions, activity and the panel stay exactly as in `enforce`; only enforcement is suppressed. `GET /v1/blocklist` returns empty `users`/`sessions`/`ips` with the current version, and `POST /v1/check` answers `allow` with the `decision_id` of the decision it would have enforced (the stored status is not rewritten to 403). Activity still shows accesses after a recorded block as `block`: it reflects decisions, not enforcement. Changing `enforcement` bumps the blocklist version, so middlewares polling with `since` refresh.
 - `ai_enabled = 0`: rule-only for that project, as without `ANTHROPIC_API_KEY`: neither the background nor the synchronous judge is called (no `ai_judgments` rows); rule blocks still apply, subject to enforcement.
+
+## Webhooks
+
+When a `block` decision is created (rule or AI, `/v1/events` or `/v1/check`), `create_decision` inserts a row in the `notifications` outbox in the same transaction, if the project has an enabled endpoint in `webhook_endpoint`. Only `block` notifies (decision 8), and `observe` projects are notified too. A background thread (`notifications/sender.py`, started and stopped with the app, polling every 5 s) sends due rows as a signed `POST` (`X-Veridian-Signature: t=<unix>,v1=HMAC-SHA256(secret, "<t>.<raw body>")`, `X-Veridian-Event`, `X-Veridian-Delivery`); the payload is the one in `docs/DISENO-PRODUCTO.md` and never carries the IP. Only a `2xx` counts as delivered; anything else retries after 1 min, 5 min, 30 min, 2 h and 6 h (unmeasured starting point), then `failed`. The URL must be `https` to a public address, checked again on every attempt, and redirects are not followed. A send failure never affects ingestion or `/v1/check`; delivery is at least once (deduplicate by `X-Veridian-Delivery`).
+
+The endpoint is set with `webhook_store.set_webhook_endpoint` (validates the URL, returns the signing secret once, stores it encrypted with `VERIDIAN_SECRET_KEY`) and removed with `clear_webhook_endpoint`. No HTTP endpoint yet (contract 13 is pending).
 
 ## Activity feed
 

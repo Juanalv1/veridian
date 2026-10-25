@@ -40,7 +40,7 @@ def test_0003_upgrades_a_legacy_database_and_keeps_its_rows(tmp_path):
 
     db.init_db(str(path))
 
-    assert applied_versions(path)[-1] == 3
+    assert 3 in applied_versions(path)
     assert CONTROL_TABLES <= table_names(path)
     assert len(query(path, "SELECT * FROM events")) == 4
 

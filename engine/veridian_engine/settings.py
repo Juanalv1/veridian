@@ -55,6 +55,14 @@ class Settings:
     auth_failure_window_s: float = 60.0
     # Proxies in front of the engine that append to X-Forwarded-For. 0: use the connection's address.
     trusted_proxies: int = 0
+    # Background sender of signed block webhooks (U12). Off unless set: from_env turns it on
+    # (VERIDIAN_WEBHOOKS=off disables). Tests inject a fake transport and resolver.
+    webhooks: bool = False
+    webhook_transport: Any = None  # None: HttpxTransport
+    webhook_resolver: Callable[[str, int], list[str]] | None = None  # None: real DNS
+    webhook_poll_s: float = 5.0
+    # Base URL of the panel, for the payload's panel_url.
+    panel_base_url: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -79,6 +87,8 @@ class Settings:
             auth_max_failures_per_prefix=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_PREFIX", "10")),
             auth_failure_window_s=float(os.environ.get("VERIDIAN_AUTH_FAILURE_WINDOW_S", "60")),
             trusted_proxies=int(os.environ.get("VERIDIAN_TRUSTED_PROXIES", "0")),
+            webhooks=os.environ.get("VERIDIAN_WEBHOOKS", "on").strip().lower() not in ("off", "0", "false", "no"),
+            panel_base_url=os.environ.get("VERIDIAN_PANEL_URL", "").strip(),
         )
 
 

@@ -1,8 +1,8 @@
 """Webhook signing secret: generation and encryption at rest.
 
 The engine needs the plain secret to sign, so it is stored encrypted with a server key
-(`VERIDIAN_SECRET_KEY`), not hashed. Encryption uses Fernet from `cryptography`, which is
-not yet in `engine/requirements.txt`: until it is added, encrypt/decrypt raise
+(`VERIDIAN_SECRET_KEY`), not hashed. Encryption uses Fernet from `cryptography`
+(pinned in `engine/requirements.txt`); if it is missing, encrypt/decrypt raise
 `SecretEncryptionUnavailable` instead of storing the secret in clear.
 """
 

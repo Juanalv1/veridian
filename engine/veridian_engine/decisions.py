@@ -3,6 +3,8 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
+from .notifications.outbox import enqueue_block_notification
+
 
 def format_decision_ts(value: datetime) -> str:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -42,6 +44,9 @@ def create_decision(
         "INSERT INTO decision_events (project_id, decision_id, event_id) VALUES (?, ?, ?)",
         [(project_id, decision_id, event_id) for event_id in event_ids],
     )
+    if decision == "block":
+        # Outbox, same transaction (decision 8: only blocks notify). Sending happens later.
+        enqueue_block_notification(conn, project_id, decision_id, ts)
     return decision_id
 
 
