@@ -63,6 +63,19 @@ class Run:
     tag: str = field(default_factory=lambda: secrets.token_hex(3))
     events: list = field(default_factory=list)
 
+    def ip(self, first: int, last: int, shift: int = 0) -> str:
+        """An address of this run only, so one run's IP block never reaches another run."""
+        a, b = int(self.tag[:2], 16), (int(self.tag[2:4], 16) + shift) % 256
+        return f"{first}.{a}.{b}.{last}"
+
+    @property
+    def travel_ip(self) -> str:
+        return self.ip(181, 14)
+
+    @property
+    def attacker_ip(self) -> str:
+        return self.ip(203, 45)
+
     @property
     def user(self) -> str:
         return f"u_{self.case.lower()}_{self.tag}"
@@ -98,15 +111,15 @@ def other_hours(now: datetime) -> list[int]:
 
 def travel(r, now):  # owner abroad: other network, own device, reads invoices
     s = f"s_trip_{r.tag}"
-    return [r.event(now, ("POST", "/login"), ip="181.55.20.14", session=s),
-            r.event(now + timedelta(seconds=20), ip="181.55.20.14", session=s),
-            r.event(now + timedelta(seconds=40), ("GET", "/invoices/{id}"), ip="181.55.20.14", session=s)], []
+    return [r.event(now, ("POST", "/login"), ip=r.travel_ip, session=s),
+            r.event(now + timedelta(seconds=20), ip=r.travel_ip, session=s),
+            r.event(now + timedelta(seconds=40), ("GET", "/invoices/{id}"), ip=r.travel_ip, session=s)], []
 
 
 def travel_bank(r, now):  # owner abroad changes the payout account (first time)
     s = f"s_tripb_{r.tag}"
-    return [r.event(now, ("POST", "/login"), ip="181.55.20.14", session=s)], \
-        [r.event(now + timedelta(seconds=30), BANK, ip="181.55.20.14", session=s)]
+    return [r.event(now, ("POST", "/login"), ip=r.travel_ip, session=s)], \
+        [r.event(now + timedelta(seconds=30), BANK, ip=r.travel_ip, session=s)]
 
 
 def new_device(r, now):  # owner at home on a new laptop
@@ -129,33 +142,33 @@ def night(r, now):  # owner at home with their device, hours never seen before
 
 def vpn(r, now):  # owner behind a commercial VPN (datacenter IP), own device
     s = f"s_vpn_{r.tag}"
-    return [r.event(now, ("POST", "/login"), ip="45.83.91.20", session=s),
-            r.event(now + timedelta(seconds=20), ip="45.83.91.20", session=s)], []
+    return [r.event(now, ("POST", "/login"), ip=r.ip(45, 20), session=s),
+            r.event(now + timedelta(seconds=20), ip=r.ip(45, 20), session=s)], []
 
 
 def rotating_ip(r, now):  # CGNAT: the owner's IP rotates across three networks in minutes
     s = f"s_rot_{r.tag}"
-    ips = ["38.121.211.40", "186.167.82.140", "186.167.53.9"]
+    ips = [r.ip(38, 40), r.ip(186, 140), r.ip(186, 9, shift=1)]
     return [r.event(now + timedelta(seconds=40 * i), route, ip=ip, session=s)
             for i, (ip, route) in enumerate(zip(ips, [("POST", "/login"), ("GET", "/invoices"),
                                                        ("GET", "/invoices/{id}")]))], []
 
 
-ATT_IP, ATT_DEVICE = "203.0.113.45", "d_attacker"
+ATT_DEVICE = "d_attacker"
 
 
 def attacker_bank(r, now):  # someone else, other network and device, straight to the bank account
     s = f"s_att_{r.tag}"
-    return [r.event(now, ("POST", "/login"), ip=ATT_IP, device=ATT_DEVICE, session=s)], \
-        [r.event(now + timedelta(seconds=10), BANK, ip=ATT_IP, device=ATT_DEVICE, session=s)]
+    return [r.event(now, ("POST", "/login"), ip=r.attacker_ip, device=ATT_DEVICE, session=s)], \
+        [r.event(now + timedelta(seconds=10), BANK, ip=r.attacker_ip, device=ATT_DEVICE, session=s)]
 
 
 def bulk_download(r, now):  # someone else downloading every invoice in a minute
     s = f"s_bulk_{r.tag}"
-    events = [r.event(now, ("POST", "/login"), ip=ATT_IP, device=ATT_DEVICE, session=s)]
-    events += [r.event(now + timedelta(seconds=1 + i), ("GET", "/invoices/{id}"), ip=ATT_IP, device=ATT_DEVICE,
+    events = [r.event(now, ("POST", "/login"), ip=r.attacker_ip, device=ATT_DEVICE, session=s)]
+    events += [r.event(now + timedelta(seconds=1 + i), ("GET", "/invoices/{id}"), ip=r.attacker_ip, device=ATT_DEVICE,
                        session=s) for i in range(45)]
-    events.append(r.event(now + timedelta(seconds=50), ("GET", "/invoices/export"), ip=ATT_IP, device=ATT_DEVICE,
+    events.append(r.event(now + timedelta(seconds=50), ("GET", "/invoices/export"), ip=r.attacker_ip, device=ATT_DEVICE,
                           session=s))
     return events, []
 
@@ -163,10 +176,10 @@ def bulk_download(r, now):  # someone else downloading every invoice in a minute
 def slow_theft(r, now):  # someone else, a few reads spread over minutes, ending in an export
     s = f"s_slow_{r.tag}"
     start = now - timedelta(minutes=8)  # inside the learn delay: nothing of it is learned yet
-    events = [r.event(start, ("POST", "/login"), ip=ATT_IP, device=ATT_DEVICE, session=s)]
-    events += [r.event(start + timedelta(minutes=1 + i), ("GET", "/invoices/{id}"), ip=ATT_IP, device=ATT_DEVICE,
+    events = [r.event(start, ("POST", "/login"), ip=r.attacker_ip, device=ATT_DEVICE, session=s)]
+    events += [r.event(start + timedelta(minutes=1 + i), ("GET", "/invoices/{id}"), ip=r.attacker_ip, device=ATT_DEVICE,
                        session=s) for i in range(6)]
-    events.append(r.event(now, ("GET", "/invoices/export"), ip=ATT_IP, device=ATT_DEVICE, session=s))
+    events.append(r.event(now, ("GET", "/invoices/export"), ip=r.attacker_ip, device=ATT_DEVICE, session=s))
     return events, []
 
 
@@ -180,8 +193,8 @@ def stolen_session(r, now):  # the owner's live session replayed from another ne
     s = f"s_live_{r.tag}"
     owner = [r.event(now - timedelta(minutes=2), ("POST", "/login"), session=s),
              r.event(now - timedelta(minutes=1), session=s)]
-    thief = [r.event(now, ip=ATT_IP, device=ATT_DEVICE, session=s)]
-    return owner + thief, [r.event(now + timedelta(seconds=20), BANK, ip=ATT_IP, device=ATT_DEVICE, session=s)]
+    thief = [r.event(now, ip=r.attacker_ip, device=ATT_DEVICE, session=s)]
+    return owner + thief, [r.event(now + timedelta(seconds=20), BANK, ip=r.attacker_ip, device=ATT_DEVICE, session=s)]
 
 
 CASES = {
