@@ -227,18 +227,20 @@
     navigate(location.pathname + location.search, { push: false, ttl: HISTORY_MS });
   }, true);
 
-  // Menu button (narrow screens: the sidebar becomes a top bar).
+  // Menu button (narrow screens: the sidebar is a drawer from the left).
   var menuBtn = document.querySelector(".menu-btn"), side = document.getElementById("side");
-  function closeMenu() {
+  function setMenu(open, focusToggle) {
     if (!menuBtn || !side) return;
-    side.removeAttribute("data-open");
-    menuBtn.setAttribute("aria-expanded", "false");
+    if (open) side.setAttribute("data-open", ""); else side.removeAttribute("data-open");
+    menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    menuBtn.setAttribute("aria-label", open ? "Cerrar menú" : "Abrir menú");
+    if (!open && focusToggle) menuBtn.focus();
   }
+  function closeMenu() { if (side && side.hasAttribute("data-open")) setMenu(false, true); }
   if (menuBtn && side) {
-    menuBtn.addEventListener("click", function () {
-      var open = side.hasAttribute("data-open");
-      if (open) closeMenu(); else { side.setAttribute("data-open", ""); menuBtn.setAttribute("aria-expanded", "true"); }
-    });
+    menuBtn.addEventListener("click", function () { setMenu(!side.hasAttribute("data-open"), false); });
+    var backdrop = document.querySelector(".backdrop");
+    if (backdrop) backdrop.addEventListener("click", closeMenu);
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMenu(); });
   }
 

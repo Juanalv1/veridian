@@ -70,7 +70,7 @@ def _tiles(summary, activity, decisions, today, open_blocks, blocklist) -> list[
         value = len(open_blocks)
         sessions = len(blocklist.get("sessions") or []) if blocklist is not None else None
         ips = len(blocklist.get("ips") or []) if blocklist is not None else None
-    sub = f"{count(sessions, 'sesión', 'sesiones')} y {count(ips, 'IP', 'IPs')}" if sessions is not None else ""
+    sub = f"{count(sessions, 'sesión', 'sesiones')} y {count(ips, 'IP', 'IPs')}" if sessions is not None and value > 0 else ""
     tiles.append({"label": "Bloqueos activos", "value": value, "sub": sub, "tone": "block" if value else ""})
     if summary is not None:
         reviewed, seen = summary["reviewed_by_ai"], summary["accesses"]

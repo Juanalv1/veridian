@@ -12,13 +12,16 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&amp;family=IBM+Plex+Sans:wght@400;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
 <link rel="stylesheet" href="/static/tokens.css?v={{ asset_version }}">
 <link rel="stylesheet" href="/static/panel.css?v={{ asset_version }}">
-<noscript><style>.side { display:flex !important; } .menu-btn { display:none !important; }</style></noscript>
+<noscript><style>.side { position:static !important; transform:none !important; visibility:visible !important; width:auto !important; height:auto !important; } .menu-btn, .backdrop { display:none !important; }</style></noscript>
 </head>
 <body hx-ext="preload">
 <div class="shell">
   <header class="topbar">
     <a class="wordmark-link" href="/"><img src="/static/mark.svg?v={{ asset_version }}" alt="" width="26" height="26"><span class="wordmark">Veridian</span></a>
-    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="side">Menú</button>
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="side" aria-label="Abrir menú">
+      <svg class="icon-open" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+      <svg class="icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+    </button>
   </header>
   <aside id="side" class="side">
     <div class="brand">
@@ -40,6 +43,7 @@
       {% if last_access and not engine_error %}<span class="last-access">último acceso hace <span class="ago">…</span></span>{% endif %}
     </div>
   </aside>
+  <div class="backdrop" aria-hidden="true"></div>
   <div class="content">
 {% block content %}{% endblock %}
   </div>

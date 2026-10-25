@@ -156,9 +156,11 @@ def test_connection_card_when_engine_is_down():
 
 def test_menu_button_for_narrow_screens():
     html = full().panel().get("/").text
-    assert re.search(r'<button[^>]*class="menu-btn"[^>]*aria-expanded="false"[^>]*aria-controls="side"', html) or \
-        re.search(r'<button[^>]*aria-controls="side"[^>]*aria-expanded="false"', html)
-    assert 'id="side"' in html
+    btn = re.search(r'<button[^>]*class="menu-btn"[^>]*>(.*?)</button>', html, re.S)
+    assert btn and 'aria-expanded="false"' in btn.group(0) and 'aria-controls="side"' in btn.group(0)
+    assert 'aria-label="Abrir menú"' in btn.group(0)
+    assert text(btn.group(1)).strip() == "" and btn.group(1).count("<svg") == 2  # icon only, no "Menú" text
+    assert 'id="side"' in html and 'class="backdrop"' in html
 
 
 def test_every_page_polls_its_own_url_and_has_a_noscript_refresh():
@@ -214,6 +216,13 @@ def test_tiles_show_the_engine_numbers_and_nothing_hardcoded():
     assert ai == "5 por 137 accesos vigilados" and "% de los accesos" not in html
     assert "Revisados por la IA" not in html
     assert 'class="kpi-value block"' in html  # active blocks use the block color
+
+
+def test_blocks_tile_shows_sessions_and_ips_only_when_there_are_blocks():
+    one = Engine(summary_body=summary(blocks_active={"decisions": 1, "sessions": 1, "ips": 1}), users=USERS)
+    assert tile(one.panel().get("/").text, "Bloqueos activos") == "1 1 sesión y 1 IP"
+    none = Engine(decisions=[], summary_body=summary(blocks_active={"decisions": 0, "sessions": 0, "ips": 0}), users=USERS)
+    assert tile(none.panel().get("/").text, "Bloqueos activos") == "0"
 
 
 def test_blocks_tile_is_quiet_without_blocks():
@@ -398,3 +407,16 @@ def test_unknown_event_falls_back_to_the_default_selection():
     html = two_rows_one_decision().panel().get("/actividad/e_nope").text
     assert selected_rows(html) == ["ev-e_403"] or len(selected_rows(html)) == 1
     assert "<h1" in html
+
+
+def test_mobile_drawer_css_starts_closed_slides_and_respects_reduced_motion():
+    css = full().panel().get("/static/panel.css").text
+    mobile = css[css.index("@media (max-width:900px)"):]
+    side = re.search(r"\.side \{([^}]*)\}", mobile).group(1)
+    assert "position:fixed" in side and "translateX(-100%)" in side and "min(80vw, 300px)" in side
+    assert "transition:transform 200ms var(--ease-out)" in side and "visibility:hidden" in side
+    assert re.search(r"\.side\[data-open\] \{[^}]*transform:none[^}]*visibility:visible", mobile)
+    assert "rgba(0, 0, 0, 0.5)" in css or "rgba(0,0,0,.5)" in css
+    assert re.search(r"\.menu-btn \{[^}]*width:44px[^}]*height:44px", css)
+    reduced = css[css.rindex("prefers-reduced-motion"):]
+    assert "transition:none" in reduced.replace(" ", "")

@@ -26,7 +26,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "14"
+ASSET_VERSION = "15"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
