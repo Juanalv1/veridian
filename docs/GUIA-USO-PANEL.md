@@ -18,7 +18,7 @@ Mapa de cada menú del panel y para qué sirve. Capturas tomadas del panel despl
 │   Resumen                    │ → Estado del día en cifras
 │   Actividad                  │ → Cada acceso y la decisión del motor
 │   Usuarios                   │ → Usuarios vistos y su perfil
-│   Rutas críticas             │ → Qué rutas son críticas o sensibles
+│   Rutas críticas             │ → Marcar rutas críticas o sensibles
 │ PROYECTO                     │
 │   Claves de API              │ → Clave del middleware + estado de conexión
 │   Webhook                    │ → Aviso firmado a tu sistema al bloquear
@@ -58,7 +58,9 @@ Mapa de cada menú del panel y para qué sirve. Capturas tomadas del panel despl
 ![Rutas críticas](guia-panel/04-rutas.jpg)
 - **Críticas** → rutas de máximo riesgo (p. ej. `POST /payouts/bank-account`).
 - **Sensibles** → rutas que exponen datos (p. ej. `GET /invoices/export`).
-- El resto se trata como normal. **Solo lectura:** la clasificación se configura en el motor.
+- **Agregar ruta** → método + plantilla tal como la declara tu app (`/payouts/{id}`, no una URL con valores) + clase → Agregar.
+- **Cambiar** → reclasifica una ruta (crítica ↔ sensible). **Quitar** → vuelve a ser normal.
+- El middleware toma los cambios en menos de un minuto. El resto de rutas se trata como normal.
 
 ## PROYECTO: conectar tu aplicación
 
