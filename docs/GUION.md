@@ -1,5 +1,7 @@
 # Guion del pitch
 
+Slides 1 a 4: 45-50 s (medido en voz alta: 48,5 s, 2026-10-25).
+
 **[Slide 1: Portada]**
 
 > Una de cada cinco filtraciones de datos comienza con una credencial robada.
