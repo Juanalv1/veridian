@@ -107,17 +107,51 @@
     <section class="wrap block install">
       <div class="section-head">
         <p class="eyebrow">Instalación</p>
-        <h2>Tres líneas. Sin equipo de seguridad.</h2>
+        <h2>Un middleware. Sin equipo de seguridad.</h2>
         <p class="lead">Si Veridian se cae, tu app sigue funcionando: el middleware nunca frena una petición.</p>
       </div>
-      <pre class="code"><span class="c"># pip install veridian</span>
-<span class="k">from</span> veridian <span class="k">import</span> VeridianMiddleware
+      <div class="codecard">
+        <div class="codecard-head">
+          <div role="tablist" aria-label="Lenguaje" class="tabs">
+            <button type="button" role="tab" id="tab-python" aria-selected="true" aria-controls="panel-python" tabindex="0">Python</button>
+          </div>
+          <a class="ver" href="https://pypi.org/project/veridian-sdk/" rel="noopener">v0.2.0</a>
+        </div>
+        <div role="tabpanel" id="panel-python" aria-labelledby="tab-python" class="panel">
+          <div class="codestep">
+            <div class="codestep-head">
+              <span class="stepname"><b>1</b> Instala</span>
+              <button type="button" class="copy" data-copy="pip install veridian-sdk">Copiar</button>
+            </div>
+            <pre class="code"><code><span class="c">$</span> pip install veridian-sdk</code></pre>
+          </div>
+          <div class="codestep">
+            <div class="codestep-head">
+              <span class="stepname"><b>2</b> Envuelve tu app</span>
+              <button type="button" class="copy" data-copy-from="snippet-python">Copiar</button>
+            </div>
+            <pre class="code"><code id="snippet-python"><span class="k">import</span> os
+
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> veridian_sdk <span class="k">import</span> VeridianMiddleware
+
+app = FastAPI()
 
 app.add_middleware(
     VeridianMiddleware,
     token=os.environ[<span class="s">"VERIDIAN_TOKEN"</span>],
-    user_id=<span class="k">lambda</span> request: request.state.user.id,
-)</pre>
+    base_url=os.environ[<span class="s">"VERIDIAN_URL"</span>],
+    user_id=<span class="k">lambda</span> request: <span class="k">getattr</span>(request.state, <span class="s">"user_id"</span>, <span class="k">None</span>),
+    session_id=<span class="k">lambda</span> request: request.cookies.get(<span class="s">"sid"</span>),
+)</code></pre>
+          </div>
+        </div>
+        <div class="codecard-foot">
+          <span>FastAPI · Starlette · cualquier app ASGI</span>
+          <a href="https://github.com/Juanalv1/veridian/tree/main/sdk/python" rel="noopener">Ver documentación →</a>
+        </div>
+        <p class="sr-only" role="status" aria-live="polite" id="copy-status"></p>
+      </div>
     </section>
   </div>
 
@@ -133,5 +167,6 @@ app.add_middleware(
   </div>
 </footer>
 
+<script src="install.js" defer></script>
 </body>
 </html>
