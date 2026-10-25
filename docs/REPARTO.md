@@ -238,6 +238,50 @@ Los últimos accesos del cliente, **todos**, no solo los que generaron una decis
   Así el panel muestra cuál pasó y cuál se detuvo.
 - **Lo que no incluye:** `user_agent` ni `bytes`; nunca cuerpos ni datos de clientes, igual que el contrato 1.
 
+### 6. Resumen: motor → panel (propuesto por Dev 2, pendiente de Dev 1)
+
+`GET /v1/summary?since=<ISO>&until=<ISO>`
+
+Los números de la portada del panel. El panel pide su "hoy" local (por ejemplo `since=2026-10-26T04:00:00Z` para Caracas); sin parámetros, las últimas 24 h.
+
+```json
+{
+  "since": "2026-10-26T04:00:00Z",
+  "until": "2026-10-27T04:00:00Z",
+  "accesses": 46,
+  "users": 2,
+  "reviewed_by_ai": 2,
+  "decisions": {"allow": 0, "alert": 1, "step_up": 0, "block": 1},
+  "blocks_active": {"decisions": 1, "sessions": 1, "ips": 1},
+  "by_hour": [
+    {"hour": "2026-10-26T13:00:00Z", "accesses": 3, "blocks": 0},
+    {"hour": "2026-10-26T14:00:00Z", "accesses": 11, "blocks": 1}
+  ]
+}
+```
+
+- **`accesses`:** todos los eventos del rango, incluidos los rechazados con `403`.
+- **`reviewed_by_ai`:** los accesos que llegaron al juez de IA (los desvíos). Es el argumento del costo: la mayoría nunca llega a la IA.
+- **`blocks_active`:** el estado actual, no el del rango: decisiones `block` con `status: open`, y cuántas sesiones e IPs hay en la lista de bloqueos.
+- **`by_hour`:** una fila por hora UTC del rango que tenga accesos, en orden; `blocks` cuenta las decisiones `block` creadas en esa hora. El panel convierte a hora local.
+- **Tiempo de detección:** no va aquí; el panel lo calcula de cada decisión (`ts` − `access.ts`).
+
+### 7. Usuarios: motor → panel (propuesto por Dev 2, pendiente de Dev 1)
+
+`GET /v1/users`
+
+```json
+{
+  "users": [
+    {"user_id": "u_42", "state": "blocked", "history_days": 14, "networks": 1, "devices": 1, "last_seen": "2026-10-26T14:14:03Z", "open_blocks": 1},
+    {"user_id": "u_17", "state": "normal", "history_days": 9, "networks": 2, "devices": 1, "last_seen": "2026-10-26T13:40:10Z", "open_blocks": 0}
+  ]
+}
+```
+
+- **Orden:** primero los que tienen bloqueos abiertos, después por `last_seen` de la más nueva a la más vieja.
+- **`state`:** el mismo del contrato 4. `networks` y `devices` son cantidades; el detalle está en `GET /v1/users/{user_id}/profile`.
+
 ### Solo para ensayos: reinicio
 
 `POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_ALLOW_RESET=true`; si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
