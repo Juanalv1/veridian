@@ -4,6 +4,8 @@
 
 Una regla ve lo raro; la IA entiende si es un robo.
 
+**Agentes: empiecen por [INIT.md](INIT.md).**
+
 Versión visual de esta idea: [docs/idea.html](docs/idea.html) · [artifact](https://claude.ai/artifact/MZkn4qVsPeF57aByu2f94u)
 
 ## Problema
