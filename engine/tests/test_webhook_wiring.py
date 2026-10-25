@@ -2,7 +2,7 @@
 with the app, and a failing receiver never affects ingestion or POST /v1/check."""
 
 import pytest
-from conftest import AUTH_A, NOW, make_event, make_settings
+from conftest import AUTH_A, NOW, as_panel, make_event, make_settings
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from test_ai_wiring import FakeJudge
@@ -146,7 +146,7 @@ def test_webhooks_off_starts_no_sender(tmp_path, clock):
     settings = make_settings(tmp_path, clock, webhooks=False)
     with TestClient(create_app(settings)) as client:
         assert client.app.state.webhook_sender is None
-        assert client.get("/v1/decisions", headers=AUTH_A).status_code == 200
+        assert client.get("/v1/decisions", headers=as_panel(client, AUTH_A)).status_code == 200
 
 
 def test_from_env_turns_webhooks_on_by_default_and_off_on_request(monkeypatch):

@@ -21,7 +21,17 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
 
 ### Dev A: acceso, rutas y datos
 
-1. **U6 (organizaciones, acceso del panel, roles).** Lo está haciendo un agente en la máquina de Juan; ver "En curso". Al aterrizar, A lo revisa contra el motor falso del Dev 2 (`edge/fake_engine/`) y prueba el panel real contra el motor real.
+1. **Revisar U6** (ya en `main`) con el panel real contra el motor real. Diferencias conocidas con el motor falso del Dev 2:
+   - todos los proyectos legacy quedan en una sola organización "Demo" (`org_demo`), mientras el falso arma una por token;
+   - los ids son `prj_` y `org_`, no `p_`;
+   - una invitación no cambia el rol de quien ya es miembro;
+   - `mark_normal` devuelve `{id, normal, version}`;
+   - la invitación vence a los 7 días, y el diseño dice 14.
+
+   Falta además:
+   - el contrato 11 (miembros e invitaciones por organización; el falso todavía no lo tiene);
+   - `DELETE /v1/projects/{id}`;
+   - el endpoint de auditoría (contrato 15).
 2. **U7: rutas por proyecto.**
    - Qué hace: tabla `route_rules`, sembrada desde `engine/routes.yaml`, con `PUT` para admin+.
    - Cambios en el motor: `GET /v1/routes` responde por proyecto, y `/v1/check` y las reglas leen la clasificación del proyecto, no la global.
@@ -53,15 +63,6 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
    - poner `VERIDIAN_SECRET_KEY` (Fernet) para el webhook.
 4. **REPARTO.md:** documentar en neutral los contratos 13, 14 y 15 a medida que aterricen.
 
-## En curso: agentes en la máquina de Juan
-
-Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integra a `main` cuando terminan, con tests en verde. Si no se integraron cuando llegues:
-- pídele a Juan que haga `git push origin worktree-agent-<id>`, o que las integre;
-- no las rehagas desde cero.
-
-| Unidad | Rama local | Qué hace |
-|---|---|---|
-| U6 | `worktree-agent-a53044581f721d52c` | Migración `0004` (organización; miembros, invitaciones y auditoría por organización; datos actuales en la organización "Demo"), acceso del panel, guarda de rol, endpoints con las formas del motor falso del Dev 2, claves de API (contrato 12), `mark_normal` con rol y auditoría |
 
 ## Ya está en `main`
 
@@ -71,6 +72,14 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
   - claves con hash SHA-256 y comparación en tiempo constante;
   - `429` con `Retry-After` por IP real y por prefijo;
   - los tokens de `VERIDIAN_TOKENS` se importan como claves `legacy`, así que la demo sigue autenticando.
+- [x] **U6:**
+  - migración `0004` (organización; miembros, invitaciones y auditoría por organización);
+  - acceso del panel: `VERIDIAN_PANEL_TOKEN` + `X-Veridian-Actor` + `X-Veridian-Project`;
+  - las claves del SDK **ya no leen** los endpoints del panel (`403`);
+  - contrato 10 (login, organizaciones, proyectos con `observe`/`ai_enabled`) y contrato 12 (claves de API);
+  - `mark_normal` exige admin y queda auditado; la decisión 3 es `roles.VIEWER_CAN_MARK_NORMAL = False`.
+
+  Probé el orden real de producción (`0005` ya aplicada, `0004` después) sobre una base con datos: migra bien.
 - [x] **U12, conexión:** migración `0005`, notificación en cada `block`, hilo de envío (`VERIDIAN_WEBHOOKS`, `VERIDIAN_PANEL_URL`), `cryptography` en `requirements.txt`. Sin endpoints.
 - [x] **U14:** `enforcement` (`observe`/`enforce`) y `ai_enabled` por proyecto (`project_settings.py`). Sin endpoints: los expone U6 con `PATCH /v1/projects/{id}`.
 - [x] **Módulos listos, todavía sin conectar:**
@@ -84,7 +93,7 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
   - señales de ritmo y recorrido;
   - actividad, resumen, usuarios;
   - clasificador OpenAPI como borrador.
-- Suite completa: **398 passed** (`cd engine && .venv/Scripts/python -m pytest -q`).
+- Suite completa: **480 passed** (`cd engine && .venv/Scripts/python -m pytest -q`).
 
 ## Enfoques fallidos (no repetir)
 
@@ -145,7 +154,7 @@ Trabajan en worktrees locales. **Sus ramas no están en GitHub.** Juan las integ
    .venv/Scripts/pip install -r requirements.txt
    .venv/Scripts/python -m pytest -q
    ```
-   - Esperado: todo en verde (398 o más).
+   - Esperado: todo en verde (480 o más).
 2. **Levantar en local:**
    ```
    VERIDIAN_TOKEN=dev .venv/Scripts/uvicorn veridian_engine.api:create_app --factory --reload
@@ -244,6 +253,10 @@ Anota los resultados en `docs/PENDIENTES.md` (sección "Por medir"), con fecha, 
 
 ## Advertencias
 
+- **El panel desplegado necesita `VERIDIAN_PANEL_TOKEN`.** Desde U6, la clave del SDK recibe `403` en decisiones, actividad, resumen, usuarios y perfil. Hay que configurarlo en el motor de Render, con el mismo valor en el panel. Sin eso, el panel recibe `401`. Configurar también:
+  - `VERIDIAN_BOOTSTRAP_OWNERS`: los correos del equipo;
+  - `VERIDIAN_ORG_CREATORS`, opcional.
+- **Los scripts de ensayo** (`seed_demo_history.py`, `send_sample_events.py`) siguen enviando bien. Pero al final, cuando leen el perfil y las decisiones, ahora muestran `403`: hay que pasarlos al acceso del panel.
 - **Cada push a `main` despliega el motor en Render,** con unos segundos de `502`: el disco impide desplegar sin corte.
 - **No hay vuelta atrás automática de las migraciones.** Volver a código viejo exige restaurar la copia `.pre-NNNN` del disco.
 - **`VERIDIAN_TRUSTED_PROXIES=3` no está medido para el motor.** Si en realidad hay menos proxies, la IP del límite de fallos sale del valor de la conexión (compartido). Si hay más, sale de una entrada que el cliente controla.
