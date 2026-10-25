@@ -384,9 +384,9 @@
 .tm-invite { margin:0; display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; }
 .tm-grow { flex:1 1 280px; }
 .tm-role { flex:0 1 180px; }
-.field input[type=email], .field input[type=search] { width:100%; min-height:44px; padding:10px 12px; background:var(--ground); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius-md); font-family:inherit; font-size:16px; }
-.field input[type=email]:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
-.field.invalid input[type=email] { border-color:var(--state-block); }
+.field input[type=email], .field input[type=url], .field input[type=search] { width:100%; min-height:44px; padding:10px 12px; background:var(--ground); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius-md); font-family:inherit; font-size:16px; }
+.field input[type=email]:focus-visible, .field input[type=url]:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
+.field.invalid input[type=email], .field.invalid input[type=url] { border-color:var(--state-block); }
 select { min-height:44px; padding:8px 12px; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius-md); font-family:inherit; font-size:15px; }
 .tm-card select { background:var(--ground); }
 select:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
