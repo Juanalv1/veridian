@@ -8,7 +8,7 @@ API contracts: `docs/REPARTO.md` ("Contratos").
 ```bash
 cd engine
 py -3.12 -m venv .venv            # python3.12 -m venv .venv on macOS/Linux
-.venv/Scripts/python -m pip install -r requirements.txt   # .venv/bin/python on macOS/Linux
+.venv/Scripts/python -m pip install -r requirements-dev.txt   # requirements.txt alone in production; .venv/bin/python on macOS/Linux
 ```
 
 ## Run

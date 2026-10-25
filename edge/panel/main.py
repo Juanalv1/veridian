@@ -35,6 +35,13 @@ from .brand import Brand
 from .team import Team
 from .unlock import SelfUnlock, UnlockPathFilter
 
+SECURITY_HEADERS = {
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
+
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
@@ -245,6 +252,14 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     client = http_client or httpx.AsyncClient(timeout=3.0)
     templates.env.globals["asset_version"] = ASSET_VERSION
     app = FastAPI(title="Veridian panel", docs_url=None, redoc_url=None, openapi_url=None)
+
+    # The panel lifts blocks and issues keys: never framed (clickjacking), never content-sniffed.
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        for name, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        return response
     auth = auth_module.install(app, settings, templates, client, google_transport, github_transport)
     # Registered on the routers below, in this order: configured -> session (+CSRF) -> project.
     app.router.dependencies.append(Depends(auth.configured_guard))

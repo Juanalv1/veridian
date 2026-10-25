@@ -43,3 +43,14 @@ services:
       # VERIDIAN_MAX_ORGS_PER_PERSON (default 3) organizations.
       - key: VERIDIAN_ORG_CREATORS
         sync: false
+      # Fernet key that encrypts webhook secrets. Unset: setting or testing a webhook answers 503.
+      - key: VERIDIAN_SECRET_KEY
+        sync: false
+      # Both set: block alerts and self-unlock emails go out through Resend. Unset: email stays off.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: VERIDIAN_MAIL_FROM
+        sync: false
+      # Panel base URL, used for the links in webhooks and emails.
+      - key: VERIDIAN_PANEL_URL
+        sync: false

@@ -64,7 +64,7 @@ app.use(
 app.listen(3000);
 ```
 
-La sesión se detecta sola y Veridian solo recibe un hash, nunca el valor. Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones. `trusted_proxies` (`trustedProxies` en Node) es cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1); con 0 se ignora X-Forwarded-For, que cualquiera puede escribir. Para comprobar la conexión, entra a tu app con un usuario: en unos segundos aparece en Actividad.
+La sesión se detecta sola y Veridian solo recibe un hash, nunca el valor. Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones. `trusted_proxies` (`trustedProxies` en Node) es cuántos proxies tuyos hay delante de la app (un balanceador propio: 1; en Render medimos 2 para el motor y 3 para la app demo, así que mídelo en tu despliegue); con 0 se ignora X-Forwarded-For, que cualquiera puede escribir. Para comprobar la conexión, entra a tu app con un usuario: en unos segundos aparece en Actividad.
 
 ## Impacto
 
