@@ -115,6 +115,23 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
   - una invitación no cambia el rol de quien ya es miembro.
 - Para que el panel desplegado funcione contra el motor real, hay que configurar `VERIDIAN_PANEL_TOKEN` en los dos servicios de Render, con el mismo valor.
 
+**Nuevo (pedido de Juan):**
+- **SDK para npm, además del de Python.** Un paquete de Node (por ejemplo `veridian-sdk`, para Express y Next.js) con el mismo comportamiento que `sdk/python/`:
+  - envía los eventos en lotes cada ~2 s, en segundo plano;
+  - consulta `/v1/blocklist` con `since`;
+  - lee las rutas críticas de `/v1/routes` y consulta `POST /v1/check` antes de ejecutarlas, con timeout de 12 s y *fail-open*;
+  - usa la cookie de dispositivo `vrd_did`;
+  - toma la IP real con `trusted_proxies`;
+  - deja pasar las peticiones ante `401` o `429`.
+
+  Mismos contratos (1, 2, 8 y 9 de `REPARTO.md`) y tests equivalentes a los del SDK de Python. Documentarlo junto al de Python en el panel, la landing y los READMEs.
+- **Mejorar el snippet de instalación,** que hoy se ve feo. Está en `edge/panel/templates/claves.html` (página de claves), `landing/index.html`, `README.md` y `sdk/python/README.md`. Que tenga:
+  - pestañas Python / Node;
+  - resaltado de sintaxis;
+  - botón de copiar;
+  - en el panel, la clave recién creada ya puesta en el snippet (se muestra una sola vez);
+  - el mismo estilo que los mockups aprobados.
+
 **Ojo:** el último push del Dev 2 fue a las 06:02. Si dejó cambios sin commit en su laptop después de esa hora, no están en el repo.
 
 ## Ya está en `main`
@@ -224,11 +241,9 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
    - un commit con Conventional Commits, sin atribución a IA y con la línea `Status: done|in-progress`;
    - actualizar `odd/tasks/engine-productization.md`.
    - Los hooks de `.claude/` hacen pull y push solos.
-5. **Push:** configura los dos destinos, para que tus commits lleguen al repo que evalúan:
-   ```
-   git remote set-url --add --push origin https://github.com/Juanalv1/veridian.git
-   git remote set-url --add --push origin https://github.com/platanus-hack/platanus-hack-26-ve-team-21.git
-   ```
+5. **Push: solo al repo personal** (`https://github.com/Juanalv1/veridian.git`), que es el `origin` por defecto al clonar. Render despliega desde ahí.
+   - **No hagas push directo** al repo de la organización (`platanus-hack/platanus-hack-26-ve-team-21`). Ese es solo un espejo para los jueces, y lo actualiza la máquina de Juan, que sube a los dos.
+   - Subir a los dos repos desde varias máquinas causó carreras de push y commits que estaban en un repo y no en el otro.
 
 ## Configuración (Render, servicio `veridian-engine`)
 
