@@ -33,3 +33,14 @@ class RouteClasses:
 
     def classify(self, method: str, route: str) -> str:
         return self.mapping.get(route_key(method, route), "normal")
+
+    def listing(self) -> list[dict]:
+        """Classified routes only (never "normal"), critical first, then by route and method."""
+        rows = []
+        for key, route_class in self.mapping.items():
+            if route_class == "normal":
+                continue
+            method, route = key.split(" ", 1)
+            rows.append({"method": method, "route": route, "class": route_class})
+        order = {name: rank for rank, name in enumerate(ROUTE_CLASSES)}
+        return sorted(rows, key=lambda r: (order[r["class"]], r["route"], r["method"]))

@@ -74,6 +74,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with db.connect(settings.db_path) as conn:
             return {"users": list_users(conn, client_id, settings.clock(), settings.learn_delay_min)}
 
+    @app.get("/v1/routes")
+    def get_routes(client_id: str = Depends(client_id_from_request)) -> dict:
+        """The loaded classification. Global to the engine: every client sees the same list."""
+        return {"routes": route_classes.listing(), "default": "normal"}
+
     @app.get("/v1/users/{user_id}/profile")
     def get_profile(user_id: str, client_id: str = Depends(client_id_from_request)) -> dict:
         with db.connect(settings.db_path) as conn:

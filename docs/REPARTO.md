@@ -286,6 +286,28 @@ Los números de la portada del panel. El panel pide su "hoy" local (por ejemplo 
 - **Orden:** primero los que tienen bloqueos abiertos, después por `last_seen` de la más nueva a la más vieja.
 - **`state`:** el mismo del contrato 4. `networks` y `devices` son cantidades; el detalle está en `GET /v1/users/{user_id}/profile`.
 
+### 8. Rutas: motor → panel
+
+`GET /v1/routes`
+
+La clasificación de rutas que el motor está usando, para que el panel la muestre. Solo lectura.
+
+```json
+{
+  "routes": [
+    {"method": "POST", "route": "/payouts/bank-account", "class": "critical"},
+    {"method": "GET", "route": "/invoices/export", "class": "sensitive"},
+    {"method": "GET", "route": "/payouts/bank-account", "class": "sensitive"}
+  ],
+  "default": "normal"
+}
+```
+
+- **Mismo contenido para todos los clientes:** hoy la clasificación es una sola (`routes.yaml`) y es global al motor. El token se exige igual que en los otros endpoints, pero no cambia la respuesta.
+- **Orden:** primero `critical`, después `sensitive`; dentro de cada clase, por ruta y luego por método.
+- **Solo lo clasificado:** las rutas `normal` no se listan. Cualquier ruta que no aparezca recibe la clase `default`.
+- **`route`:** la plantilla, igual que en el contrato 1. El panel no puede editar la clasificación.
+
 ### Solo para ensayos: reinicio
 
 `POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_ALLOW_RESET=true`; si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
