@@ -4,6 +4,7 @@ so the panel works against either. Roles are the actor's role in the organizatio
 """
 
 import threading
+from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -13,7 +14,14 @@ from pydantic import BaseModel, Field
 from . import db, webhook_store
 from .auth import Caller, caller_from_request
 from .control_plane import repository
-from .control_plane.repository import NotFound, PermissionDenied
+from .control_plane.repository import (
+    AlreadyMember,
+    InvitationUnavailable,
+    LastOwnerError,
+    NotFound,
+    PermissionDenied,
+    SelfChangeError,
+)
 from .control_plane.roles import can
 from .notifications.outbox import list_notifications, new_notification_id
 from .notifications.secret_box import SecretEncryptionError, decrypt_secret
@@ -57,6 +65,18 @@ class ProjectPatch(BaseModel):
     retention_days: int | None = Field(default=None, ge=1)
     enforcement: Literal["observe", "enforce"] | None = None
     ai_enabled: bool | None = None
+
+
+Role = Literal["owner", "admin", "viewer"]
+
+
+class RoleIn(BaseModel):
+    role: Role
+
+
+class InvitationIn(BaseModel):
+    email: str = Field(max_length=254, pattern=r"^\s*[^@\s]+@[^@\s]+\.[^@\s]+\s*$")
+    role: Role
 
 
 NOT_FOUND = {"error": "not_found"}
@@ -167,6 +187,57 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
         with write_lock, db.connect(settings.db_path) as conn:
             repository.delete_project(conn, actor_id=project.person_id, project_id=project.project_id,
                                       now=settings.clock())
+        return Response(status_code=204)
+
+    # --- contract 11: members and invitations of the organization ---
+    # The router only checks membership and the coarse action; which roles an actor may touch,
+    # self-changes and the last owner are domain rules in the repository.
+
+    @router.get("/v1/orgs/{org_id}/members")
+    def get_members(org_id: str, person_id: str = Depends(panel_actor)) -> dict:
+        with db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "view")
+            return {"members": repository.list_members(conn, org_id)}
+
+    @router.patch("/v1/orgs/{org_id}/members/{member_id}")
+    def patch_member(org_id: str, member_id: str, body: RoleIn, person_id: str = Depends(panel_actor)) -> dict:
+        with write_lock, db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "manage_members")
+            repository.set_member_role(conn, actor_id=person_id, org_id=org_id, person_id=member_id,
+                                       role=body.role, now=settings.clock())
+            return repository.get_member(conn, org_id, member_id)
+
+    @router.delete("/v1/orgs/{org_id}/members/{member_id}", status_code=204)
+    def delete_member(org_id: str, member_id: str, person_id: str = Depends(panel_actor)) -> Response:
+        with write_lock, db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "manage_members")
+            repository.remove_member(conn, actor_id=person_id, org_id=org_id, person_id=member_id,
+                                     now=settings.clock())
+        return Response(status_code=204)
+
+    @router.get("/v1/orgs/{org_id}/invitations")
+    def get_invitations(org_id: str, person_id: str = Depends(panel_actor)) -> dict:
+        with db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "view")
+            return {"invitations": repository.list_pending_invitations(conn, org_id, settings.clock())}
+
+    @router.post("/v1/orgs/{org_id}/invitations", status_code=201)
+    def post_invitation(org_id: str, body: InvitationIn, person_id: str = Depends(panel_actor)) -> dict:
+        now = settings.clock()
+        with write_lock, db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "manage_members")
+            invitation_id = repository.create_invitation(
+                conn, actor_id=person_id, org_id=org_id, email=body.email, role=body.role, now=now,
+                ttl=timedelta(days=settings.invitation_days),
+            )
+            return repository.get_invitation(conn, org_id, invitation_id, now)
+
+    @router.delete("/v1/orgs/{org_id}/invitations/{invitation_id}", status_code=204)
+    def delete_invitation(org_id: str, invitation_id: str, person_id: str = Depends(panel_actor)) -> Response:
+        with write_lock, db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "manage_members")
+            repository.revoke_invitation(conn, actor_id=person_id, org_id=org_id, invitation_id=invitation_id,
+                                         now=settings.clock())
         return Response(status_code=204)
 
     # --- contract 12: API keys ---
@@ -283,6 +354,23 @@ def install_error_handlers(app) -> None:
     @app.exception_handler(ProjectRequired)
     async def project_required_handler(request: Request, exc: ProjectRequired) -> JSONResponse:
         return JSONResponse(status_code=400, content={"error": "project_required"})
+
+    @app.exception_handler(NotFound)
+    @app.exception_handler(InvitationUnavailable)
+    async def not_found_handler(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=404, content=NOT_FOUND)
+
+    @app.exception_handler(SelfChangeError)
+    async def self_change_handler(request: Request, exc: SelfChangeError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"error": "cannot_change_self"})
+
+    @app.exception_handler(LastOwnerError)
+    async def last_owner_handler(request: Request, exc: LastOwnerError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"error": "last_owner"})
+
+    @app.exception_handler(AlreadyMember)
+    async def already_member_handler(request: Request, exc: AlreadyMember) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"error": "already_member"})
 
     @app.exception_handler(PermissionDenied)
     async def permission_denied_handler(request: Request, exc: PermissionDenied) -> JSONResponse:

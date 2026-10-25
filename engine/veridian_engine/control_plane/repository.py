@@ -24,7 +24,7 @@ from typing import Iterator
 from ..keys import generate_key
 from .roles import can, can_manage_role
 
-INVITATION_TTL = timedelta(days=7)
+INVITATION_TTL = timedelta(days=14)  # design default; VERIDIAN_INVITATION_DAYS overrides it (not measured)
 DEFAULT_RETENTION_DAYS = 90
 ENFORCEMENT_MODES = ("observe", "enforce")
 
@@ -39,6 +39,14 @@ class PermissionDenied(ControlPlaneError):
 
 class LastOwnerError(ControlPlaneError):
     """An organization must always keep at least one owner."""
+
+
+class SelfChangeError(ControlPlaneError):
+    """Nobody changes their own role or removes themselves."""
+
+
+class AlreadyMember(ControlPlaneError):
+    """The invited email already belongs to a member of the organization."""
 
 
 class NotFound(ControlPlaneError):
@@ -357,18 +365,51 @@ def delete_project(conn: sqlite3.Connection, *, actor_id: str, project_id: str, 
 # --- members ---
 
 
+_MEMBER_SELECT = (
+    "SELECT p.id, p.email, p.name, m.role, m.created_at FROM membership m JOIN person p ON p.id = m.person_id"
+)
+_ROLE_ORDER = "CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END"
+
+
+def _member_dict(row) -> dict:
+    return {"person_id": row[0], "email": row[1], "name": row[2], "role": row[3], "joined_at": row[4]}
+
+
+def list_members(conn: sqlite3.Connection, org_id: str) -> list[dict]:
+    """The only member list of the organization: owners first, then by name."""
+    rows = conn.execute(
+        f"{_MEMBER_SELECT} WHERE m.org_id = ? ORDER BY {_ROLE_ORDER}, lower(p.name), p.id", (org_id,)
+    ).fetchall()
+    return [_member_dict(row) for row in rows]
+
+
+def get_member(conn: sqlite3.Connection, org_id: str, person_id: str) -> dict | None:
+    row = conn.execute(f"{_MEMBER_SELECT} WHERE m.org_id = ? AND m.person_id = ?", (org_id, person_id)).fetchone()
+    return _member_dict(row) if row else None
+
+
+def _target_role(conn, org_id: str, actor_id: str, person_id: str) -> str:
+    """The target's role, after 404 for a stranger and the rule that nobody acts on themselves."""
+    current = get_role(conn, org_id, person_id)
+    if current is None:
+        raise NotFound("membership")
+    if person_id == actor_id:
+        raise SelfChangeError(person_id)
+    return current
+
+
 def set_member_role(
     conn: sqlite3.Connection, *, actor_id: str, org_id: str, person_id: str, role: str, now: datetime
 ) -> None:
     with atomic(conn):
-        current = get_role(conn, org_id, person_id)
-        if current is None:
-            raise NotFound("membership")
+        current = _target_role(conn, org_id, actor_id, person_id)
         actor_role = get_role(conn, org_id, actor_id)
         if not (can_manage_role(actor_role, current) and can_manage_role(actor_role, role)):
             raise PermissionDenied("manage_members")
         if current == "owner" and role != "owner" and _owner_count(conn, org_id) <= 1:
             raise LastOwnerError(org_id)
+        if role == current:
+            return
         conn.execute("UPDATE membership SET role = ? WHERE org_id = ? AND person_id = ?", (role, org_id, person_id))
         _audit_person(conn, actor_id, "member.role", "person", person_id, now, org_id=org_id,
                       meta={"from": current, "to": role})
@@ -376,9 +417,7 @@ def set_member_role(
 
 def remove_member(conn: sqlite3.Connection, *, actor_id: str, org_id: str, person_id: str, now: datetime) -> None:
     with atomic(conn):
-        current = get_role(conn, org_id, person_id)
-        if current is None:
-            raise NotFound("membership")
+        current = _target_role(conn, org_id, actor_id, person_id)
         if not can_manage_role(get_role(conn, org_id, actor_id), current):
             raise PermissionDenied("manage_members")
         if current == "owner" and _owner_count(conn, org_id) <= 1:
@@ -390,21 +429,66 @@ def remove_member(conn: sqlite3.Connection, *, actor_id: str, org_id: str, perso
 # --- invitations ---
 
 
+_PENDING = "accepted_at IS NULL AND revoked_at IS NULL"
+
+
 def create_invitation(
-    conn: sqlite3.Connection, *, actor_id: str, org_id: str, email: str, role: str, now: datetime
+    conn: sqlite3.Connection, *, actor_id: str, org_id: str, email: str, role: str, now: datetime,
+    ttl: timedelta = INVITATION_TTL,
 ) -> str:
-    if not can_manage_role(get_role(conn, org_id, actor_id), role):
-        raise PermissionDenied("manage_members")
+    """Invite an email with a role. Inviting the same email again replaces its pending invitation
+    ("resend"), so there is at most one pending invitation per email and organization."""
+    email = email.strip().lower()
+    actor_role = get_role(conn, org_id, actor_id)
     invitation_id = new_id("inv")
     with atomic(conn):
+        replaced = conn.execute(
+            f"SELECT id, role FROM invitation WHERE org_id = ? AND email = ? AND {_PENDING}", (org_id, email)
+        ).fetchall()
+        if not all(can_manage_role(actor_role, r) for r in [role, *(row[1] for row in replaced)]):
+            raise PermissionDenied("manage_members")
+        member = conn.execute(
+            "SELECT 1 FROM membership m JOIN person p ON p.id = m.person_id WHERE m.org_id = ? AND lower(p.email) = ?",
+            (org_id, email),
+        ).fetchone()
+        if member:
+            raise AlreadyMember(email)
+        for old_id, _ in replaced:
+            conn.execute("UPDATE invitation SET revoked_at = ? WHERE id = ?", (format_ts(now), old_id))
         conn.execute(
             "INSERT INTO invitation (id, org_id, email, role, invited_by, created_at, expires_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (invitation_id, org_id, email.strip().lower(), role, actor_id, format_ts(now), format_ts(now + INVITATION_TTL)),
+            (invitation_id, org_id, email, role, actor_id, format_ts(now), format_ts(now + ttl)),
         )
         _audit_person(conn, actor_id, "invitation.create", "invitation", invitation_id, now, org_id=org_id,
                       meta={"role": role})
     return invitation_id
+
+
+_INVITATION_COLUMNS = ("id", "email", "role", "invited_by", "created_at", "expires_at")
+
+
+def _invitation_dict(row, now: datetime) -> dict:
+    view = dict(zip(_INVITATION_COLUMNS, row))
+    view["expired"] = view["expires_at"] <= format_ts(now)
+    return view
+
+
+def get_invitation(conn: sqlite3.Connection, org_id: str, invitation_id: str, now: datetime) -> dict | None:
+    row = conn.execute(
+        f"SELECT {', '.join(_INVITATION_COLUMNS)} FROM invitation WHERE id = ? AND org_id = ?", (invitation_id, org_id)
+    ).fetchone()
+    return _invitation_dict(row, now) if row else None
+
+
+def list_pending_invitations(conn: sqlite3.Connection, org_id: str, now: datetime) -> list[dict]:
+    """Not accepted nor revoked, expired ones included (flagged), oldest first."""
+    rows = conn.execute(
+        f"SELECT {', '.join(_INVITATION_COLUMNS)} FROM invitation WHERE org_id = ? AND {_PENDING}"
+        " ORDER BY created_at, id",
+        (org_id,),
+    ).fetchall()
+    return [_invitation_dict(row, now) for row in rows]
 
 
 def revoke_invitation(conn: sqlite3.Connection, *, actor_id: str, org_id: str, invitation_id: str, now: datetime) -> None:

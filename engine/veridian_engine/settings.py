@@ -81,6 +81,8 @@ class Settings:
     bootstrap_owners: frozenset[str] = frozenset()
     # Verified emails allowed to create organizations (open decision 2, provisional). Empty: nobody.
     org_creators: frozenset[str] = frozenset()
+    # How long an invitation stays valid. A design default, not a measured value.
+    invitation_days: int = 14
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -112,6 +114,7 @@ class Settings:
             ),
             bootstrap_owners=parse_emails(os.environ.get("VERIDIAN_BOOTSTRAP_OWNERS", "")),
             org_creators=parse_emails(os.environ.get("VERIDIAN_ORG_CREATORS", "")),
+            invitation_days=int(os.environ.get("VERIDIAN_INVITATION_DAYS", "14")),
         )
 
 

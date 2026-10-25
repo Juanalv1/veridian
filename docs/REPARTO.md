@@ -366,7 +366,12 @@ Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app
 - **Validación:** `name` de 1 a 80 caracteres; `retention_days >= 1`; `enforcement` `observe` | `enforce`; si no, `422`.
 - **Auditoría:** crear organización o proyecto, renombrar, cambiar un proyecto y el bootstrap quedan en `audit_log` con el actor.
 - `DELETE /v1/projects/{id}` (solo owner): borrado lógico (`deleted_at`), responde `204` sin cuerpo y se anota en la auditoría (`project.delete`). El proyecto desaparece de las lecturas y sus claves del SDK reciben `401`. Los datos quedan hasta la purga de U13.
-- **Pendiente:** el contrato 11 (miembros e invitaciones de la organización) aún no tienen endpoint; las invitaciones existen en la base y se aceptan al entrar.
+- Contrato 11 (miembros e invitaciones de la organización): el motor implementa las formas de `DISENO-PRODUCTO.md` ("Formas de respuesta de 11, 12 y 15"), igual que el fake engine.
+  - `GET .../members` y `GET .../invitations`: cualquier miembro.
+  - `PATCH`/`DELETE .../members/{person_id}`, `POST`/`DELETE .../invitations`: admin; solo un owner toca owners.
+  - Errores: `404 not_found`, `409 cannot_change_self`, `409 last_owner`, `409 already_member`.
+  - Reinvitar el mismo correo reemplaza la pendiente. La vigencia es `VERIDIAN_INVITATION_DAYS` (14 por defecto, no medido).
+  - **Diferencia pendiente con el fake engine:** los nombres de las acciones de auditoría (`member.role`, `member.remove`, `invitation.create`, `invitation.revoke` en el motor; `member.role_changed`, `member.removed`, `invitation.created`, `invitation.resent`, `invitation.revoked` en el fake). Se alinean con el contrato 15.
 
 ### 12. Claves de API: panel → motor
 

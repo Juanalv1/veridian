@@ -4,6 +4,7 @@ and mark-normal with role and audit. Wire shapes follow the fake engine (edge/fa
 import json
 import re
 import sqlite3
+from datetime import timedelta
 
 import pytest
 from conftest import (
@@ -562,3 +563,204 @@ def test_a_deleted_project_leaves_the_org_listings(client):
     assert client.delete(f"/v1/projects/{project_id}", headers=acting(creator)).status_code == 204
     [org] = client.get("/v1/me/orgs", headers=acting(creator)).json()["orgs"]
     assert org["projects"] == []
+
+
+# --- contract 11: members and invitations of the organization (shapes: docs/DISENO-PRODUCTO.md) ---
+
+
+def members_url(org_id=DEMO_ORG_ID):
+    return f"/v1/orgs/{org_id}/members"
+
+
+def invitations_url(org_id=DEMO_ORG_ID):
+    return f"/v1/orgs/{org_id}/invitations"
+
+
+def invite(client, actor, email, role="viewer"):
+    return client.post(invitations_url(), json={"email": email, "role": role}, headers=acting(actor))
+
+
+def test_any_member_lists_the_members_owners_first(client):
+    owner_id = owner(client)
+    viewer = member_as(client, "viewer")
+    response = client.get(members_url(), headers=acting(viewer))
+    assert response.status_code == 200
+    members = response.json()["members"]
+    assert [m["person_id"] for m in members] == [owner_id, viewer]
+    assert (members[0]["role"], members[0]["email"]) == ("owner", TEST_OWNER_EMAIL)
+    assert set(members[1]) == {"person_id", "email", "name", "role", "joined_at"}
+
+
+def test_a_non_member_cannot_see_or_manage_members_or_invitations(client):
+    owner_id = owner(client)
+    creator, _ = other_org_project(client)
+    for method, url, body in (
+        ("GET", members_url(), None),
+        ("PATCH", f"{members_url()}/{owner_id}", {"role": "viewer"}),
+        ("DELETE", f"{members_url()}/{owner_id}", None),
+        ("GET", invitations_url(), None),
+        ("POST", invitations_url(), {"email": "x@example.com", "role": "viewer"}),
+        ("DELETE", f"{invitations_url()}/inv_nope", None),
+    ):
+        assert client.request(method, url, json=body, headers=acting(creator)).status_code == 403
+    assert client.get(members_url("org_nope"), headers=acting(creator)).status_code == 403
+
+
+def test_a_viewer_lists_invitations_but_cannot_invite_or_manage(client):
+    owner_id = owner(client)
+    viewer = member_as(client, "viewer")
+    invitation = invite(client, owner_id, "x@example.com").json()
+    assert [i["id"] for i in client.get(invitations_url(), headers=acting(viewer)).json()["invitations"]] == [invitation["id"]]
+    assert invite(client, viewer, "y@example.com").status_code == 403
+    assert client.delete(f"{invitations_url()}/{invitation['id']}", headers=acting(viewer)).status_code == 403
+    assert client.patch(f"{members_url()}/{owner_id}", json={"role": "admin"}, headers=acting(viewer)).status_code == 403
+
+
+def test_an_admin_invites_viewers_and_admins_but_not_owners(client):
+    admin = member_as(client, "admin")
+    response = invite(client, admin, " New@Example.com ", "admin")
+    assert response.status_code == 201
+    invitation = response.json()
+    assert set(invitation) == {"id", "email", "role", "invited_by", "created_at", "expires_at", "expired"}
+    assert (invitation["email"], invitation["role"], invitation["invited_by"], invitation["expired"]) == (
+        "new@example.com", "admin", admin, False)
+    assert invitation["id"].startswith("inv_")
+    assert invite(client, admin, "o@example.com", "owner").status_code == 403
+    assert audit(client, "invitation.create")[-1]["target_id"] == invitation["id"]
+
+
+def test_an_invitation_lasts_fourteen_days_by_default(client):
+    invitation = invite(client, owner(client), "x@example.com").json()
+    assert invitation["created_at"] == repository.format_ts(NOW)
+    assert invitation["expires_at"] == repository.format_ts(NOW + timedelta(days=14))
+
+
+def test_the_invitation_lifetime_is_a_setting(tmp_path, clock):
+    with TestClient(create_app(make_settings(tmp_path, clock, invitation_days=5))) as app_client:
+        invitation = invite(app_client, owner(app_client), "x@example.com").json()
+    assert invitation["expires_at"] == repository.format_ts(NOW + timedelta(days=5))
+
+
+def test_inviting_the_same_email_again_replaces_the_pending_invitation(client):
+    owner_id = owner(client)
+    first = invite(client, owner_id, "x@example.com").json()
+    second = invite(client, owner_id, "X@example.com", "admin").json()
+    listed = client.get(invitations_url(), headers=acting(owner_id)).json()["invitations"]
+    assert [(i["id"], i["role"]) for i in listed] == [(second["id"], "admin")]
+    assert first["id"] != second["id"]
+
+
+def test_an_admin_cannot_replace_an_owner_invitation(client):
+    owner_id = owner(client)
+    admin = member_as(client, "admin")
+    invite(client, owner_id, "o@example.com", "owner")
+    assert invite(client, admin, "o@example.com", "viewer").status_code == 403
+
+
+def test_inviting_a_member_is_409(client):
+    owner(client)
+    admin = member_as(client, "admin", email="a@example.com")
+    response = invite(client, admin, "A@example.com")
+    assert response.status_code == 409 and response.json() == {"error": "already_member"}
+
+
+def test_the_invitation_list_keeps_expired_ones_and_drops_used_ones(client, clock):
+    owner_id = owner(client)
+    pending = invite(client, owner_id, "p@example.com").json()
+    revoked = invite(client, owner_id, "r@example.com").json()
+    invite(client, owner_id, "a@example.com")
+    assert client.delete(f"{invitations_url()}/{revoked['id']}", headers=acting(owner_id)).status_code == 204
+    login(client, "sub-a", "a@example.com")
+    listed = client.get(invitations_url(), headers=acting(owner_id)).json()["invitations"]
+    assert [(i["id"], i["expired"]) for i in listed] == [(pending["id"], False)]
+    assert audit(client, "invitation.revoke")[-1]["target_id"] == revoked["id"]
+    clock.now = NOW + timedelta(days=15)
+    listed = client.get(invitations_url(), headers=acting(owner_id)).json()["invitations"]
+    assert [(i["id"], i["expired"]) for i in listed] == [(pending["id"], True)]
+
+
+def test_revoking_an_unknown_or_already_revoked_invitation_is_404(client):
+    owner_id = owner(client)
+    assert client.delete(f"{invitations_url()}/inv_nope", headers=acting(owner_id)).status_code == 404
+    invitation = invite(client, owner_id, "x@example.com").json()
+    assert client.delete(f"{invitations_url()}/{invitation['id']}", headers=acting(owner_id)).status_code == 204
+    assert client.delete(f"{invitations_url()}/{invitation['id']}", headers=acting(owner_id)).status_code == 404
+
+
+def test_an_admin_cannot_revoke_an_owner_invitation(client):
+    owner_id = owner(client)
+    admin = member_as(client, "admin")
+    invitation = invite(client, owner_id, "o@example.com", "owner").json()
+    assert client.delete(f"{invitations_url()}/{invitation['id']}", headers=acting(admin)).status_code == 403
+
+
+@pytest.mark.parametrize("body", [
+    {"email": "x@example.com", "role": "god"}, {"email": "", "role": "viewer"},
+    {"email": "not-an-email", "role": "viewer"}, {},
+])
+def test_invitation_creation_validates_the_body(client, body):
+    assert client.post(invitations_url(), json=body, headers=acting(owner(client))).status_code == 422
+
+
+def test_an_admin_changes_a_viewer_role_and_it_is_audited(client):
+    owner(client)
+    admin = member_as(client, "admin", sub="s-a", email="a@example.com")
+    viewer = member_as(client, "viewer", sub="s-v", email="v@example.com")
+    response = client.patch(f"{members_url()}/{viewer}", json={"role": "admin"}, headers=acting(admin))
+    assert response.status_code == 200
+    assert set(response.json()) == {"person_id", "email", "name", "role", "joined_at"}
+    assert (response.json()["person_id"], response.json()["role"]) == (viewer, "admin")
+    [row] = audit(client, "member.role")
+    assert (row["actor_person_id"], row["target_id"]) == (admin, viewer)
+
+
+def test_setting_the_same_role_writes_no_audit(client):
+    owner_id = owner(client)
+    viewer = member_as(client, "viewer")
+    assert client.patch(f"{members_url()}/{viewer}", json={"role": "viewer"}, headers=acting(owner_id)).status_code == 200
+    assert audit(client, "member.role") == []
+
+
+def test_an_admin_does_not_manage_owners(client):
+    owner_id = owner(client)
+    admin = member_as(client, "admin", sub="s-a", email="a@example.com")
+    viewer = member_as(client, "viewer", sub="s-v", email="v@example.com")
+    assert client.patch(f"{members_url()}/{owner_id}", json={"role": "viewer"}, headers=acting(admin)).status_code == 403
+    assert client.patch(f"{members_url()}/{viewer}", json={"role": "owner"}, headers=acting(admin)).status_code == 403
+    assert client.delete(f"{members_url()}/{owner_id}", headers=acting(admin)).status_code == 403
+
+
+def test_an_owner_promotes_and_removes_another_owner(client):
+    owner_id = owner(client)
+    admin = member_as(client, "admin")
+    response = client.patch(f"{members_url()}/{admin}", json={"role": "owner"}, headers=acting(owner_id))
+    assert response.status_code == 200 and response.json()["role"] == "owner"
+    assert client.delete(f"{members_url()}/{owner_id}", headers=acting(admin)).status_code == 204
+
+
+def test_nobody_changes_their_own_role_or_removes_themselves(client):
+    owner_id = owner(client)
+    member_as(client, "owner", sub="s-o", email="o2@example.com")
+    admin = member_as(client, "admin")
+    for actor, role in ((owner_id, "admin"), (admin, "viewer")):
+        response = client.patch(f"{members_url()}/{actor}", json={"role": role}, headers=acting(actor))
+        assert response.status_code == 409 and response.json() == {"error": "cannot_change_self"}
+        response = client.delete(f"{members_url()}/{actor}", headers=acting(actor))
+        assert response.status_code == 409 and response.json() == {"error": "cannot_change_self"}
+    assert audit(client, "member.role") == [] and audit(client, "member.remove") == []
+
+
+def test_removing_a_member_takes_away_their_access(client):
+    owner_id = owner(client)
+    viewer = member_as(client, "viewer")
+    assert client.delete(f"{members_url()}/{viewer}", headers=acting(owner_id)).status_code == 204
+    assert client.get("/v1/projects/client_a", headers=acting(viewer)).status_code == 403
+    assert audit(client, "member.remove")[-1]["target_id"] == viewer
+    assert client.delete(f"{members_url()}/{viewer}", headers=acting(owner_id)).status_code == 404
+    assert client.patch(f"{members_url()}/{viewer}", json={"role": "admin"}, headers=acting(owner_id)).status_code == 404
+
+
+def test_patching_a_member_validates_the_role(client):
+    owner_id = owner(client)
+    viewer = member_as(client, "viewer")
+    assert client.patch(f"{members_url()}/{viewer}", json={"role": "god"}, headers=acting(owner_id)).status_code == 422

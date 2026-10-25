@@ -8,10 +8,11 @@ import pytest
 from veridian_engine import db
 from veridian_engine.control_plane import repository
 from veridian_engine.control_plane.repository import (
+    AlreadyMember,
     InvitationUnavailable,
-    LastOwnerError,
     NotFound,
     PermissionDenied,
+    SelfChangeError,
 )
 from veridian_engine.keys import hash_key, key_prefix
 
@@ -176,14 +177,16 @@ def test_deleted_project_or_org_grants_no_role(conn, owner, org, project):
 # --- last owner rule, per org ---
 
 
-def test_cannot_remove_last_owner(conn, owner, org):
-    with pytest.raises(LastOwnerError):
+# Only an owner manages owners and nobody acts on themselves, so the last owner can never be
+# removed or demoted: SelfChangeError comes first. The LastOwnerError guard stays as the invariant.
+def test_the_last_owner_cannot_remove_themselves(conn, owner, org):
+    with pytest.raises(SelfChangeError):
         repository.remove_member(conn, actor_id=owner, org_id=org, person_id=owner, now=T0)
     assert repository.get_role(conn, org, owner) == "owner"
 
 
-def test_cannot_demote_last_owner(conn, owner, org):
-    with pytest.raises(LastOwnerError):
+def test_the_last_owner_cannot_demote_themselves(conn, owner, org):
+    with pytest.raises(SelfChangeError):
         repository.set_member_role(conn, actor_id=owner, org_id=org, person_id=owner, role="admin", now=T0)
     assert repository.get_role(conn, org, owner) == "owner"
 
@@ -192,7 +195,7 @@ def test_owner_can_leave_when_another_owner_exists(conn, owner, org, add_member)
     second = add_member(org, owner, "sam", "owner")
     repository.remove_member(conn, actor_id=second, org_id=org, person_id=owner, now=T0)
     assert repository.get_role(conn, org, owner) is None
-    with pytest.raises(LastOwnerError):
+    with pytest.raises(SelfChangeError):
         repository.set_member_role(conn, actor_id=second, org_id=org, person_id=second, role="viewer", now=T0)
 
 
@@ -205,8 +208,9 @@ def test_admin_cannot_invite_or_touch_owners(conn, owner, org, add_member):
         repository.create_invitation(conn, actor_id=admin, org_id=org, email="x@example.com", role="owner", now=T0)
     with pytest.raises(PermissionDenied):
         repository.remove_member(conn, actor_id=admin, org_id=org, person_id=owner, now=T0)
+    viewer = add_member(org, owner, "vic", "viewer")
     with pytest.raises(PermissionDenied):
-        repository.set_member_role(conn, actor_id=admin, org_id=org, person_id=admin, role="owner", now=T0)
+        repository.set_member_role(conn, actor_id=admin, org_id=org, person_id=viewer, role="owner", now=T0)
 
 
 def test_admin_manages_viewers(conn, owner, org, add_member):
@@ -316,9 +320,10 @@ def test_revoked_invitation_cannot_be_accepted(conn, owner, org, make_person):
         repository.revoke_invitation(conn, actor_id=owner, org_id=org, invitation_id=invitation, now=T0)
 
 
-def test_invitation_does_not_downgrade_existing_member(conn, owner, org):
-    repository.create_invitation(conn, actor_id=owner, org_id=org, email="olga@example.com", role="viewer", now=T0)
-    assert repository.accept_pending_invitations(conn, person_id=owner, verified_email="olga@example.com", now=T0) == []
+def test_inviting_an_existing_member_is_refused(conn, owner, org, add_member):
+    admin = add_member(org, owner, "ada", "admin")
+    with pytest.raises(AlreadyMember):
+        repository.create_invitation(conn, actor_id=admin, org_id=org, email="Olga@example.com", role="viewer", now=T0)
     assert repository.get_role(conn, org, owner) == "owner"
 
 
