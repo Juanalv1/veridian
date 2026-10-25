@@ -16,19 +16,31 @@ Se lee en voz alta a ritmo normal (unas 2,5 palabras por segundo). Cada bloque i
 
 > Hola, somos Veridian.
 
-## 2. Problema (~20 s)
+## 2. Problema (~22 s)
 
 **Pantalla:** «Un sistema no sabe si quien entra es realmente el dueño de la cuenta», con las tarjetas «Contraseña filtrada», «Código 2FA robado» y «Sesión robada».
 
-> Cuando entras a un sistema, este revisa tus credenciales, pero no sabe si de verdad eres tú. Y una vez dentro, no vuelve a preguntarlo.
->
-> Si alguien consigue tu contraseña, te roba el código de verificación o copia tu sesión, el sistema lo trata como si fueras tú. Hasta que alguien se da cuenta.
+**Escena** (es un ejemplo, no un caso real; es el mismo ataque que muestra la demo):
+
+> Son las 3 de la mañana. Alguien entra a tu sistema con la contraseña de tu contadora y cambia la cuenta donde cobras. Para el sistema, es ella.
+
+**Título:**
+
+> Porque un sistema no sabe si quien entra es realmente el dueño de la cuenta. Y una vez dentro, no vuelve a comprobar quién eres.
+
+**Tarjetas:**
+
+> Y no importa cuánto protejas la entrada: la contraseña se filtra, el código de verificación se roba, la sesión se copia. En los tres casos, el sistema ve credenciales válidas y deja pasar.
+
+Son unas 55 palabras. Si hay que recortar para llegar a 20 s, se quita «Y una vez dentro, no vuelve a comprobar quién eres», que ya está escrita en la slide.
+
+**Apertura alternativa (no definitiva):** en lugar de la escena, una pregunta al público: «¿Cuántos saben si alguien más está usando su cuenta ahora mismo?». Riesgo: puede abrir el tema de las cuentas compartidas.
 
 ## 3. Solución (~25 s)
 
 **Pantalla:** «Veridian aprende cómo trabajas y nota cuando no eres tú».
 
-> Veridian cambia eso. Aprende cómo usa cada persona su cuenta: desde dónde entra, a qué hora y qué partes del sistema usa.
+> Por eso creamos Veridian. Aprende cómo usa cada persona su cuenta: desde dónde entra, a qué hora y qué partes del sistema usa.
 >
 > Cuando algo no encaja, una IA mira el contexto y decide si es otra persona o solo un día distinto. Si es otra persona, le corta el acceso.
 >
