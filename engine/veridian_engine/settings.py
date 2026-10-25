@@ -70,8 +70,8 @@ class Settings:
     webhook_resolver: Callable[[str, int], list[str]] | None = None  # None: real DNS
     webhook_poll_s: float = 5.0
     # Block alert email (U17), sent by a second worker under the same `webhooks` switch.
-    # None: NullMailer, the emails are marked failed ("no email provider configured"):
-    # the provider is open decision 4.
+    # None: NullMailer, the emails are marked failed ("no email provider configured").
+    # from_env picks the Resend mailer when RESEND_API_KEY and VERIDIAN_MAIL_FROM are set.
     mailer: Any = None
     # Base URL of the panel, for the payload's panel_url.
     panel_base_url: str = ""
@@ -99,6 +99,8 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        from .resend_mailer import mailer_from_env  # imported here: it needs httpx only when configured
+
         tokens = parse_tokens(os.environ.get("VERIDIAN_TOKENS", ""))
         single = os.environ.get("VERIDIAN_TOKEN", "").strip()
         if not tokens and single:
@@ -119,6 +121,8 @@ class Settings:
             auth_max_failures_per_prefix=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_PREFIX", "10")),
             auth_failure_window_s=float(os.environ.get("VERIDIAN_AUTH_FAILURE_WINDOW_S", "60")),
             trusted_proxies=int(os.environ.get("VERIDIAN_TRUSTED_PROXIES", "0")),
+            # Resend when RESEND_API_KEY and VERIDIAN_MAIL_FROM are set, else the NullMailer.
+            mailer=mailer_from_env(os.environ),
             webhooks=os.environ.get("VERIDIAN_WEBHOOKS", "on").strip().lower() not in ("off", "0", "false", "no"),
             panel_base_url=os.environ.get("VERIDIAN_PANEL_URL", "").strip(),
             panel_tokens=parse_panel_tokens(

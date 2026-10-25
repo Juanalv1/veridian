@@ -1,6 +1,6 @@
 """Block-alert email to a project's admins, behind a provider-agnostic Mailer.
 
-The provider is an open decision, so only a null and a fake implementation exist.
+The real provider (Resend) is `resend_mailer.py`, selected by configuration; without it the NullMailer stays.
 Members and the decision are plain data; database wiring belongs to the caller.
 """
 
