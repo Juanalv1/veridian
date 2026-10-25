@@ -36,6 +36,10 @@ class Engine:
     def count(self, path):
         return self.calls.count(path)
 
+    def data_calls(self, calls=None):
+        """Paths the page itself reads: the sidebar card's own lookups (me/orgs, the project) are left out."""
+        return [c for c in (self.calls if calls is None else calls) if c != "/v1/me/orgs" and not c.startswith("/v1/projects/")]
+
 
 class Clock:
     def __init__(self):
@@ -58,7 +62,7 @@ def test_engine_calls_overlap_when_the_user_is_in_the_url():
     r = panel.get("/users/u_1/decisions/d_1")
     took = time.perf_counter() - start
     assert r.status_code == 200 and "Bloqueado" in r.text
-    assert sorted(set(engine.calls)) == ["/v1/activity", "/v1/blocklist", "/v1/decisions", "/v1/users/u_1/profile"]
+    assert sorted(set(engine.data_calls())) == ["/v1/activity", "/v1/blocklist", "/v1/decisions", "/v1/users/u_1/profile"]
     assert took < 0.4, f"4 engine calls of 200 ms took {took:.2f} s: they are not concurrent"
 
 
@@ -109,7 +113,7 @@ def test_mark_normal_invalidates_everything():
     before = list(engine.calls)
     panel.get("/users/u_1/decisions/d_1")
     fetched = engine.calls[len(before):]
-    assert sorted(set(fetched)) == ["/v1/activity", "/v1/blocklist", "/v1/decisions", "/v1/users/u_1/profile"]
+    assert sorted(set(engine.data_calls(fetched))) == ["/v1/activity", "/v1/blocklist", "/v1/decisions", "/v1/users/u_1/profile"]
 
 
 def test_failed_engine_answers_are_not_cached():

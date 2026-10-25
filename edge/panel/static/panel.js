@@ -70,7 +70,7 @@
   var HISTORY_MS = 60000;   // back/forward accept older copies: the next poll refreshes them within 2 s
   var MAX_ENTRIES = 30;
   var ROW_LINKS = "#live nav a[data-row][href]";
-  var SECTION_LINKS = "#side nav a[href]";
+  var SECTION_LINKS = "#side nav a[href]:not([data-full])";  // data-full: a page outside the live shell (Proyectos)
   var cache = new Map();    // "/path?query" -> record, or {promise} while a prefetch is in flight
   var generation = 0;       // bumped to drop everything (mark-normal): older answers are never stored
   var navToken = 0, navigating = false, navAbort = null;

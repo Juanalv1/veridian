@@ -27,16 +27,32 @@
   <aside id="side" class="side">
     <div class="brand">
       <a class="wordmark-link" href="/"><img src="/static/mark.svg?v={{ asset_version }}" alt="" width="26" height="26"><span class="wordmark">Veridian</span></a>
-      <span class="app">Panel</span>
     </div>
+    <a class="switcher" href="/proyectos" hx-boost="false" aria-label="Cambiar de organización o de proyecto" aria-describedby="sw-now" title="Cambiar de organización o de proyecto">
+      <span id="sw-now" class="sw-text">
+        {% if switcher %}
+        <span class="sw-org">{{ switcher.org }} · {{ switcher.role }}</span>
+        <span class="sw-project">{{ switcher.project }}</span>
+        {% if switcher.mode %}<span class="sw-mode mode-{{ switcher.mode_kind }}">{{ switcher.mode }}</span>{% endif %}
+        {% else %}
+        <span class="sw-project">Cambiar de proyecto</span>
+        {% endif %}
+      </span>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9l4-4 4 4M8 15l4 4 4-4"></path></svg>
+    </a>
     <nav aria-label="Secciones" class="sections" hx-boost="true" hx-target="#live" hx-select="#live" hx-swap="outerHTML"
          hx-sync="closest a:replace" preload="mouseenter">
-      {% for key, href, label in sections %}
-        <a class="nav-link" data-nav="{{ key }}" href="{{ href }}" title="{{ label }}"{% if key == section %} aria-current="page"{% endif %}>
+      {% for title, items in nav_groups %}
+      <div class="nav-group">
+        <span class="nav-group-title">{{ title }}</span>
+        {% for key, href, label, full_page in items %}
+        <a class="nav-link" data-nav="{{ key }}" href="{{ href }}" title="{{ label }}"{% if full_page %} hx-boost="false" data-full{% endif %}{% if key == section %} aria-current="page"{% endif %}>
           {{ nav_icon(key) }}
           <span class="nav-label">{{ label }}</span>
           {% if key == 'actividad' %}<span id="nav-badge">{% if nav_blocks %}<span class="badge" aria-hidden="true">{{ nav_blocks }}</span><span class="vh">{{ nav_blocks_text }}</span>{% endif %}</span>{% endif %}
         </a>
+        {% endfor %}
+      </div>
       {% endfor %}
     </nav>
     <div id="conn" class="conn-card conn{% if engine_error %} down{% endif %}" role="status"{% if last_access and not engine_error %} data-last-access="{{ last_access }}"{% endif %}>
@@ -51,6 +67,7 @@
   </aside>
   <div class="backdrop" aria-hidden="true"></div>
   <div class="content">
+{% if flash %}<div class="note flash {{ flash.kind }}" role="status">{{ flash.text }}</div>{% endif %}
 {% block content %}{% endblock %}
   </div>
 {# Inert until panel.js copies it into #detalle while a decision loads. Same shape as decision_detail.html. #}

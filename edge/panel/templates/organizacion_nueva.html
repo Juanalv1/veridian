@@ -1,0 +1,28 @@
+{% extends "account_base.html" %}
+{% block title %}Crear organización{% endblock %}
+{% block content %}
+<main class="acct-narrow">
+  <div class="acct-head">
+    <a class="back" href="/proyectos">← Tus organizaciones</a>
+    <h1 class="acct-title">Crear organización</h1>
+    <p class="acct-lead">Tu empresa o equipo. Agrupa los proyectos y las personas que los cuidan. Quedas como owner.</p>
+  </div>
+  {% if pilot %}<div class="note warn" role="alert">{{ pilot_text }}</div>{% endif %}
+  <form class="acct-form" method="post" action="/organizaciones/nueva">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field{% if error %} invalid{% endif %}">
+      <label for="org-name">Nombre</label>
+      <input id="org-name" type="text" name="name" value="{{ name }}" maxlength="80" required autocomplete="organization"{% if error %} aria-invalid="true" aria-describedby="org-name-error"{% endif %}>
+      {% if error %}<span id="org-name-error" class="field-error" role="alert">{{ error }}</span>{% endif %}
+    </div>
+    <div class="info-box">
+      <span class="info-title">Cómo funcionan los roles</span>
+      <span class="info-text">Cada persona tiene un rol en la organización y vale para todos sus proyectos. Owner: todo, incluido borrar. Admin: proyectos, claves, miembros y ajustes. Viewer: solo mira.</span>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Crear organización</button>
+      <a class="btn btn-ghost" href="/proyectos">Cancelar</a>
+    </div>
+  </form>
+</main>
+{% endblock %}

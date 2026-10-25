@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from . import accounts as accounts_module
 from . import auth as auth_module
 from .cache import TTLCache
 from .config import Settings
@@ -32,7 +33,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "22"
+ASSET_VERSION = "23"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -163,8 +164,13 @@ def _days(n) -> str:
     return f"{n} día de historial" if n == 1 else f"{n} días de historial"
 
 
-SECTIONS = (("resumen", "/", "Resumen"), ("actividad", "/actividad", "Actividad"),
-            ("usuarios", "/usuarios", "Usuarios"), ("rutas", "/rutas", "Rutas críticas"))
+# Sidebar groups: (title, [(key, href, label, full_page)]). `full_page` links leave the live shell, so the
+# boosted/instant navigation skips them. Miembros, Claves, Auditoría and Ajustes join when their pages exist.
+NAV_GROUPS = (
+    ("ACCESOS", (("resumen", "/", "Resumen", False), ("actividad", "/actividad", "Actividad", False),
+                 ("usuarios", "/usuarios", "Usuarios", False), ("rutas", "/rutas", "Rutas críticas", False))),
+    ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True),)),
+)
 DEFAULT_UTC_OFFSET_MIN = -240  # Caracas, until the browser tells its own (cookie `vtz`, minutes east of UTC)
 NO_USERS = "El motor todavía no entrega la lista de usuarios."
 NO_ROUTES_ENDPOINT = "Este motor no expone su clasificación de rutas."
@@ -211,11 +217,13 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, session_cookie="session",
                            max_age=auth_module.SESSION_MAX_AGE_S, same_site="lax",
                            https_only=settings.public_url.startswith("https"))
+    cache = TTLCache(clock)
+    accounts = accounts_module.Accounts(base, bearer, client, templates, cache, auth.session_guard)
     app.include_router(auth.public_router())
     app.include_router(auth.session_router())
-    panel = APIRouter(dependencies=[Depends(auth.session_guard), Depends(auth.project_guard)])
-
-    cache = TTLCache(clock)
+    app.include_router(accounts.router())
+    panel = APIRouter(dependencies=[Depends(auth.session_guard), Depends(auth.project_guard),
+                                    Depends(accounts.switcher_guard)])
 
     def engine_headers() -> dict[str, str]:
         who = auth_module.current.get()
@@ -324,9 +332,12 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     def decision_url(d: dict) -> str:
         return f"{user_url(d.get('user_id'))}/decisions/{quote(str(d.get('id', '')), safe='')}"
 
-    def page(request: Request, template: str, section: str, ctx: dict, engine_ms: float, t0_render: float):
+    async def page(request: Request, template: str, section: str, ctx: dict, engine_ms: float, t0_render: float):
+        lookup = getattr(request.state, "switcher", None)  # started by the guard, ran alongside the page's reads
+        switcher = await lookup if lookup is not None else None
         response = templates.TemplateResponse(request, template, {
-            "refresh": REFRESH_SECONDS, "sections": SECTIONS, "section": section,
+            "refresh": REFRESH_SECONDS, "nav_groups": NAV_GROUPS, "section": section,
+            "switcher": switcher, "flash": request.session.pop("flash", None),
             "csrf": request.session.get("csrf", ""), "email": request.session.get("email", ""), **ctx})
         response.headers["Server-Timing"] = (
             f"engine;dur={engine_ms:.1f}, render;dur={(time.perf_counter() - t0_render) * 1000:.1f}")
@@ -403,7 +414,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             refresh_url = row["href"]
         else:
             refresh_url = decision_url(current) if current else "/actividad"
-        return page(request, "actividad.html", "actividad", {
+        return await page(request, "actividad.html", "actividad", {
             "decisions": decisions, "activity": activity, "access": row if current is None else None,
             "watching": _watching(activity) if activity is not None else "", "engine_error": engine_error,
             "current": current, "profile": profile, "notice": MARK_ERROR if error else None,
@@ -421,7 +432,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         overview = build_overview(summary=summary, users=users, activity=activity, decisions=decisions,
                                   blocklist=blocklist, since=since, until=until, offset_min=offset,
                                   engine_error=engine_error)
-        return page(request, "resumen.html", "resumen", {
+        return await page(request, "resumen.html", "resumen", {
             "overview": overview, "engine_error": engine_error, "refresh_url": "/",
             **_shell(decisions, activity)}, engine_ms, t1)
 
@@ -432,7 +443,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         t1 = time.perf_counter()
         open_blocks = [d for d in decisions if d.get("decision") == "block" and not d.get("marked_normal")]
         rows = user_rows(users, decisions, activity, open_blocks) if users is not None else None
-        return page(request, "usuarios.html", "usuarios", {
+        return await page(request, "usuarios.html", "usuarios", {
             "rows": rows, "no_users": NO_USERS, "engine_error": engine_error, "refresh_url": "/usuarios",
             **_shell(decisions, activity)}, engine_ms, t1)
 
@@ -443,7 +454,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         groups = None if routes is None else [
             (label, rows) for cls, label in ROUTE_GROUPS
             if (rows := [f"{x.get('method')} {x.get('route')}" for x in routes if x["class"] == cls])]
-        return page(request, "rutas.html", "rutas", {
+        return await page(request, "rutas.html", "rutas", {
             "groups": groups, "no_endpoint": NO_ROUTES_ENDPOINT, "engine_error": engine_error, "refresh_url": "/rutas",
             **_shell(decisions, activity)}, engine_ms, time.perf_counter())
 

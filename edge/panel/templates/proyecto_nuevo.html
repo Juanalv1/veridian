@@ -1,0 +1,51 @@
+{% extends "account_base.html" %}
+{% block title %}Crear proyecto{% endblock %}
+{% block content %}
+<main class="acct-narrow">
+  <div class="acct-head">
+    <a class="back" href="/proyectos?org={{ org.id|urlencode }}">← Proyectos de {{ org.name }}</a>
+    <h1 class="acct-title">Crear proyecto en {{ org.name }}</h1>
+    <p class="acct-lead">Un proyecto por app. Todos los miembros de {{ org.name }} lo ven con su rol de la organización.</p>
+  </div>
+  <form class="acct-form" method="post" action="/proyectos/nuevo">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="org" value="{{ org.id }}">
+    <div class="field{% if error %} invalid{% endif %}">
+      <label for="name">Nombre</label>
+      <input id="name" type="text" name="name" value="{{ name }}" maxlength="80" required{% if error %} aria-invalid="true" aria-describedby="form-error"{% endif %}>
+      {% if error %}<span id="form-error" class="field-error" role="alert">{{ error }}</span>{% endif %}
+    </div>
+
+    <fieldset class="field choices">
+      <legend>Cómo empieza</legend>
+      <label class="choice">
+        <input type="radio" name="enforcement" value="observe"{% if enforcement != 'enforce' %} checked{% endif %}>
+        <span class="choice-body">
+          <span class="choice-title">Solo observa (recomendado)</span>
+          <span class="choice-text">Veridian aprende y registra lo que bloquearía, sin bloquear a nadie. Pasas a bloquear cuando revises sus decisiones.</span>
+        </span>
+      </label>
+      <label class="choice">
+        <input type="radio" name="enforcement" value="enforce"{% if enforcement == 'enforce' %} checked{% endif %}>
+        <span class="choice-body">
+          <span class="choice-title">Bloquea desde el inicio</span>
+          <span class="choice-text">Los usuarios todavía no tienen historial, así que habrá más decisiones raras al principio.</span>
+        </span>
+      </label>
+    </fieldset>
+
+    <label class="check">
+      <input type="checkbox" name="ai_enabled"{% if ai_enabled %} checked{% endif %}>
+      <span class="choice-body">
+        <span class="choice-title">Usar IA para explicar y decidir</span>
+        <span class="choice-text">Envía señales y el perfil del usuario a Anthropic. Sin IA, Veridian decide solo con reglas.</span>
+      </span>
+    </label>
+
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Crear proyecto</button>
+      <a class="btn btn-ghost" href="/proyectos?org={{ org.id|urlencode }}">Cancelar</a>
+    </div>
+  </form>
+</main>
+{% endblock %}

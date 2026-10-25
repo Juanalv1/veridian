@@ -1,0 +1,90 @@
+{% extends "account_base.html" %}
+{% block title %}Proyectos{% endblock %}
+{% block top_right %}
+  <div class="acct-user">
+    <span class="who">{{ email }}</span>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn btn-ghost" type="submit">Cerrar sesión</button>
+    </form>
+  </div>
+{% endblock %}
+{% block content %}
+{% if engine_error %}
+<main class="acct-narrow"><div class="note warn" role="alert">{{ engine_error }}</div></main>
+{% else %}
+<div class="acct-wrap">
+  <nav class="acct-orgs" aria-labelledby="orgs-title">
+    <h2 id="orgs-title" class="eyebrow">TUS ORGANIZACIONES</h2>
+    {% for o in orgs %}
+    <a class="org" href="/proyectos?org={{ o.id|urlencode }}"{% if o.current %} aria-current="page"{% endif %}>
+      <span class="org-name">{{ o.name }}</span>
+      <span class="org-meta">{{ o.role_label }} · {{ o.count }}</span>
+    </a>
+    {% endfor %}
+    <a class="btn btn-ghost org-new" href="/organizaciones/nueva">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      Crear organización
+    </a>
+  </nav>
+
+  <main class="acct-main">
+    {% if flash %}<div class="note flash {{ flash.kind }}" role="{{ 'alert' if flash.kind == 'err' else 'status' }}">{{ flash.text }}</div>{% endif %}
+    <div class="acct-head-row">
+      <div class="acct-head">
+        <h1 class="acct-title">Proyectos de {{ org.name }}</h1>
+        <p class="acct-lead">Tu rol en {{ org.name }} es <span class="acct-strong">{{ role_label }}</span> y vale para todos sus proyectos.</p>
+      </div>
+      {% if can_create_project %}
+      <a class="btn btn-primary" href="/proyectos/nuevo?org={{ org.id|urlencode }}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        Crear proyecto
+      </a>
+      {% endif %}
+    </div>
+
+    {% if projects %}
+    <ul class="proj-list">
+      {% for p in projects %}
+      <li>
+        <form method="post" action="/proyectos/abrir">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="project_id" value="{{ p.id }}">
+          <button class="proj" type="submit">
+            <span class="proj-main">
+              <span class="proj-title"><span class="proj-name">{{ p.name }}</span>{% if p.current %}<span class="eyebrow">ABIERTO AHORA</span>{% endif %}</span>
+              <span class="proj-id">{{ p.id }}</span>
+            </span>
+            {% if p.mode %}<span class="pill mode-{{ p.mode[1] }}"><span class="pill-dot" aria-hidden="true"></span>{{ p.mode[0] }}</span>{% endif %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+          </button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="acct-lead">{{ org.name }} todavía no tiene proyectos.</p>
+    {% endif %}
+
+    {% if is_viewer %}
+    <p class="acct-small">Como viewer ves todos los proyectos de {{ org.name }}; crearlos o configurarlos lo hace un admin u owner.</p>
+    {% endif %}
+
+    {% if can_delete %}
+    <section class="danger" aria-labelledby="del-title">
+      <h2 id="del-title">Eliminar organización</h2>
+      <p class="acct-small">{{ org.name }} no tiene proyectos. Si la eliminas, deja de aparecer para todos sus miembros. Para confirmar, escribe su nombre: <span class="acct-strong">{{ org.name }}</span></p>
+      <form method="post" action="/organizaciones/{{ org.id|urlencode }}/eliminar" class="danger-form">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="field">
+          <label for="confirm">Nombre de la organización</label>
+          <input id="confirm" type="text" name="confirm" autocomplete="off" required>
+        </div>
+        <button class="btn btn-danger" type="submit">Eliminar organización</button>
+      </form>
+    </section>
+    {% endif %}
+  </main>
+</div>
+{% endif %}
+{% endblock %}

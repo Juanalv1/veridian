@@ -253,7 +253,7 @@ def test_a_person_without_projects_gets_the_no_projects_page():
         r = panel.get(path)
         assert r.status_code == 303 and r.headers["location"] == "/sin-proyectos", path
     page = panel.get("/sin-proyectos")
-    assert page.status_code == 200 and "Sin proyectos" in page.text and EMAIL in page.text
+    assert page.status_code == 200 and "Todavía no perteneces a ninguna organización" in page.text and EMAIL in page.text
     assert 'action="/logout"' in page.text and 'name="csrf"' in page.text
     assert engine.requests == []
 
@@ -318,7 +318,7 @@ def test_the_panel_uses_the_first_project_of_the_first_org():
     assert seen and set(seen) == {"p_a1"}
 
 
-def test_an_org_without_projects_is_skipped_and_no_projects_at_all_means_no_projects_page():
+def test_an_org_without_projects_is_skipped_an_org_alone_sends_to_the_selector_and_no_org_to_the_no_org_page():
     seen = []
 
     def handler(request):
@@ -330,6 +330,9 @@ def test_an_org_without_projects_is_skipped_and_no_projects_at_all_means_no_proj
     assert set(seen) == {"p_b1"}
     empty = org_engine(handler, [("org_a", "owner", [])])
     r = make_panel(empty).get("/actividad", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/proyectos"
+    nothing = org_engine(handler, [])
+    r = make_panel(nothing).get("/actividad", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/sin-proyectos"
 
 

@@ -11,7 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fake_engine import create_app as create_engine
-from tests.panel_support import EMAIL, PANEL_TOKEN, google_transport, make_panel, session_of, stub_client
+from tests.panel_support import (EMAIL, PANEL_TOKEN, google_transport, login_answer, make_panel, session_of, sign_in,
+                                 stub_client)
 
 TOKEN_A, TOKEN_B = "tok-a", "tok-b"  # two demo organizations, "Demo 1" and "Demo 2", one project each
 FUTURE = "2999-01-01T00:00:00Z"
@@ -60,11 +61,6 @@ def member_panel(engine, org_id, role, email=OTHER, sub="g-2", **kw):
     return panel_of(engine, email=email, sub=sub, **kw)
 
 
-def go(panel, path, **kw):
-    r = panel.post(path, **kw)
-    return r
-
-
 def open_project(panel, project_id):
     return panel.post("/proyectos/abrir", data={"project_id": project_id})
 
@@ -92,9 +88,6 @@ def test_login_errors_use_the_mockup_messages_with_a_lead_in(code, message):
 def test_no_organization_page_follows_the_mockup():
     engine = new_engine(owners=())
     panel = panel_of(engine, email="nobody@example.com", login=False)
-    r = panel.get("/auth/google")
-    assert r.status_code == 303
-    from tests.panel_support import sign_in
     assert sign_in(panel).headers["location"] == "/sin-proyectos"
     html = panel.get("/sin-proyectos").text
     assert "Todavía no perteneces a ninguna organización" in html
@@ -127,7 +120,6 @@ def test_a_person_in_an_org_without_projects_lands_on_the_selector():
     engine.state.projects[project_a(engine)].deleted_at = "2026-01-01T00:00:00Z"
     engine.state.projects[project_b(engine)].deleted_at = "2026-01-01T00:00:00Z"
     panel = make_panel(link(engine), login=False, transport=google_transport(email=EMAIL))
-    from tests.panel_support import sign_in
     r = sign_in(panel)
     assert r.headers["location"] == "/proyectos"
     s = session_of(panel)
@@ -182,7 +174,6 @@ def test_an_unknown_org_query_falls_back_to_the_current_org():
 def test_the_selector_says_the_engine_is_unreachable():
     def down(request):
         if request.url.path == "/v1/people/login":
-            from tests.panel_support import login_answer
             return httpx.Response(200, json=login_answer())
         raise httpx.ConnectError("down")
     panel = make_panel(httpx.AsyncClient(transport=httpx.MockTransport(down)))
@@ -372,7 +363,6 @@ def test_creating_an_organization_needs_the_csrf_token():
 def test_the_create_organization_form_survives_an_engine_that_is_down():
     def handler(request):
         if request.url.path == "/v1/people/login":
-            from tests.panel_support import login_answer
             return httpx.Response(200, json=login_answer())
         raise httpx.ConnectError("down")
     panel = make_panel(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
@@ -516,7 +506,7 @@ def test_when_saving_the_mode_fails_the_project_is_still_opened_and_the_person_i
     assert r.status_code == 303
     (p,) = created_projects(engine, org_a(engine), exclude=old)
     assert session_of(panel)["project"] == p.id
-    assert "No se pudo guardar el modo" in panel.get("/proyectos").text
+    assert "no se pudo guardar el modo" in panel.get("/proyectos").text
 
 
 def test_the_first_project_of_a_new_org_can_be_created_without_any_current_project():
@@ -619,7 +609,7 @@ def test_deleting_the_current_org_clears_the_session_project():
     engine.state.projects[project_b(engine)].deleted_at = "2026-01-01T00:00:00Z"
     panel.post(f"/organizaciones/{org_b(engine)}/eliminar", data={"confirm": "Demo 2"})
     s = session_of(panel)
-    assert "project" not in s and "org" not in s
+    assert "project" not in s and s["org"] == org_a(engine)  # the selector opens on an org they still have
     assert panel.get("/actividad").headers["location"] == "/proyectos"
     assert "Demo 1" in panel.get("/proyectos").text
 

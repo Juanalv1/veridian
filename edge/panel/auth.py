@@ -29,7 +29,7 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 LOGIN_ERRORS = {
     "denied": "Cancelaste el inicio de sesión con Google.",
-    "state": "La sesión de inicio expiró o no es válida. Inténtalo de nuevo.",
+    "state": "El inicio de sesión expiró o no es válido. Inténtalo de nuevo.",
     "email": "Tu cuenta de Google no tiene el correo verificado.",
     "engine": "Entraste con Google, pero Veridian no pudo confirmar tu cuenta. Inténtalo de nuevo en unos minutos.",
     "failed": "No pudimos completar el inicio de sesión con Google. Inténtalo de nuevo.",
@@ -85,8 +85,10 @@ def install(app, settings: Settings, templates: Jinja2Templates, client: httpx.A
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     @app.exception_handler(NoProjects)
-    async def _no_projects(_: Request, __: NoProjects):
-        return RedirectResponse("/sin-proyectos", status_code=303)
+    async def _no_projects(request: Request, __: NoProjects):
+        # With an org (but no project yet) the selector is where a project gets created; with none, the
+        # "sin organización" page. The session holds the org id from login, never a role.
+        return RedirectResponse("/proyectos" if request.session.get("org") else "/sin-proyectos", status_code=303)
 
     @app.exception_handler(CsrfRejected)
     async def _csrf_rejected(_: Request, __: CsrfRejected):
@@ -169,9 +171,10 @@ class Auth:
             return None
         return profile if isinstance(profile, dict) else None
 
-    async def engine_login(self, profile: dict) -> tuple[dict, list[dict]] | None:
-        """POST /v1/people/login with the service credential: (person, projects), or None if the engine says no.
-        The engine answers person + orgs (role and projects each); `projects` is those of every org, in order."""""
+    async def engine_login(self, profile: dict) -> tuple[dict, list[dict], list[dict]] | None:
+        """POST /v1/people/login with the service credential: (person, orgs, projects), or None if the engine
+        says no. The engine answers person + orgs (role and projects each); `projects` is those of every org,
+        in order, each with the id of its org."""
         body = {"google_sub": str(profile["sub"]), "email": str(profile["email"]).lower(),
                 "name": str(profile.get("name") or profile["email"])}
         try:
@@ -183,9 +186,10 @@ class Auth:
             person, orgs = answer["person"], answer["orgs"]
             if not isinstance(person["id"], str) or not isinstance(orgs, list):
                 return None
-            projects = [p for o in orgs if isinstance(o, dict) and isinstance(o.get("projects"), list)
+            orgs = [o for o in orgs if isinstance(o, dict) and isinstance(o.get("id"), str)]
+            projects = [{**p, "org_id": o["id"]} for o in orgs if isinstance(o.get("projects"), list)
                         for p in o["projects"] if isinstance(p, dict) and isinstance(p.get("id"), str)]
-            return person, projects
+            return person, orgs, projects
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return None
 
@@ -227,14 +231,17 @@ class Auth:
             answer = await auth.engine_login(profile)
             if answer is None:
                 return auth.login_error("engine")
-            person, projects = answer
+            person, orgs, projects = answer
             request.session.clear()  # a fresh session (and CSRF token) for every login
             request.session.update({
                 "person": person["id"], "email": str(profile["email"]).lower(),
                 "name": str(profile.get("name") or profile["email"]), "csrf": secrets.token_urlsafe(32)})
+            # Start on the first project (of the first org that has one); the selector changes it from there.
             if projects:
-                request.session["project"] = projects[0]["id"]  # first project of the first org, until the selector (T4)
-            return RedirectResponse("/" if projects else "/sin-proyectos", status_code=303)
+                request.session.update({"project": projects[0]["id"], "org": projects[0]["org_id"]})
+            elif orgs:
+                request.session["org"] = orgs[0]["id"]
+            return RedirectResponse("/" if projects else "/proyectos" if orgs else "/sin-proyectos", status_code=303)
 
         return router
 
