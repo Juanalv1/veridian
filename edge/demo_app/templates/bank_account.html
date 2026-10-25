@@ -15,7 +15,7 @@
   </dl>
   <hr>
   <h2>Cambiar cuenta</h2>
-  <form method="post" action="/payouts/bank-account">
+  <form method="post" action="/payouts/bank-account" data-fetch data-blocked-notice="blocked-notice">
     <label for="bank">Banco</label>
     <input id="bank" name="bank" autocomplete="off" required>
     <label for="account_number">Número de cuenta</label>
@@ -23,5 +23,6 @@
     <p class="hint" id="account_hint">Entre 10 y 20 dígitos, sin espacios ni guiones.</p>
     <button type="submit" data-busy="Guardando…">Guardar cuenta</button>
   </form>
+  <div class="msg error" id="blocked-notice" role="alert" hidden>Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú.</div>
 </div>
 {% endblock %}

@@ -161,3 +161,30 @@ async def test_demo_serves_busy_script_and_css_has_focus_and_press_states():
         css = (await c.get("/static/app.css")).text
         assert ":focus-visible" in css and "scale(0.97)" in css and "prefers-reduced-motion" in css
         assert (await c.get("/static/busy.js")).status_code == 200
+
+
+BLOCKED_TEXT = "Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú."
+
+
+async def test_bank_form_is_sent_by_fetch_and_has_a_hidden_blocked_notice():
+    async with browser(make_demo()) as c:
+        await login(c)
+        html = (await c.get("/payouts/bank-account")).text
+        assert 'data-fetch data-blocked-notice="blocked-notice"' in html
+        assert f'<div class="msg error" id="blocked-notice" role="alert" hidden>{BLOCKED_TEXT}</div>' in html
+        js = (await c.get("/static/busy.js")).text
+        # the page reads the SDK's unchanged 403 body and shows the notice instead of raw JSON
+        assert 'r.status === 403' in js and 'body.error === "blocked"' in js
+
+
+async def test_blocked_bank_change_still_answers_the_sdk_json_the_page_reads():
+    app = make_demo(trusted_proxies=1)
+    atk_h = {"X-Forwarded-For": "190.202.14.7, 203.0.113.9"}
+    async with browser(app, headers=atk_h) as atk:
+        await login(atk)
+        await atk.post("/payouts/bank-account", data={"bank": "Evil", "account_number": "1"})
+        await app.flush()
+        await app.refresh_blocklist()
+        r = await atk.post("/payouts/bank-account", data={"bank": "Evil", "account_number": "1"},
+                           headers={"Accept": "text/html"})
+        assert r.status_code == 403 and r.json()["error"] == "blocked"
