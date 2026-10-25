@@ -12,7 +12,8 @@
     {% if d.marked_normal %}
       <span class="consequence">Marcado como normal. Veridian lo suma al perfil de {{ d.user_id }}.</span>
     {% else %}
-      <form method="post" action="/decisions/{{ d.id | urlencode }}/normal">
+      <form method="post" action="/decisions/{{ d.id | urlencode }}/normal"
+            hx-post="/decisions/{{ d.id | urlencode }}/normal" hx-target="#live" hx-sync="#live:replace">
         <input type="hidden" name="user" value="{{ d.user_id }}">
         <button class="btn" type="submit">Esto era normal</button>
       </form>

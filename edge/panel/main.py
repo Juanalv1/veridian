@@ -16,8 +16,8 @@ from fastapi.templating import Jinja2Templates
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
-# Cache-busting query for /static assets: bump when panel.css or panel.js change.
-ASSET_VERSION = "1"
+# Cache-busting query for /static assets: bump when panel.css, panel.js or htmx.min.js change.
+ASSET_VERSION = "2"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -110,11 +110,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         return f"{user_url(d.get('user_id'))}/decisions/{quote(str(d.get('id', '')), safe='')}"
 
     # Decorators register bottom-up: the more specific route must come first.
-    @app.get("/", response_class=HTMLResponse)
-    @app.get("/users/{user:path}", response_class=HTMLResponse)
-    @app.get("/users/{user:path}/decisions/{decision_id}", response_class=HTMLResponse)
-    async def index(request: Request, user: str | None = None, decision_id: str | None = None,
-                    error: str | None = None):
+    async def render(request: Request, user: str | None, decision_id: str | None, error: bool):
         decisions, engine_error = await load_decisions()
         for d in decisions:
             d["href"] = decision_url(d)
@@ -135,20 +131,30 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                            "routes_more": max(0, len(routes) - MAX_PROFILE_ROUTES)}
         return templates.TemplateResponse(request, "index.html", {
             "decisions": decisions, "engine_error": engine_error, "refresh": REFRESH_SECONDS,
-            "refresh_ms": REFRESH_SECONDS * 1000, "asset_version": ASSET_VERSION,
+            "asset_version": ASSET_VERSION,
             "current": current, "profile": profile,
             "notice": MARK_ERROR if error else None,
             "refresh_url": decision_url(current) if current else "/",
         })
 
+    @app.get("/", response_class=HTMLResponse)
+    @app.get("/users/{user:path}", response_class=HTMLResponse)
+    @app.get("/users/{user:path}/decisions/{decision_id}", response_class=HTMLResponse)
+    async def index(request: Request, user: str | None = None, decision_id: str | None = None,
+                    error: str | None = None):
+        return await render(request, user, decision_id, bool(error))
+
     @app.post("/decisions/{decision_id}/normal")
-    async def mark_normal(decision_id: str, user: str | None = Form(None)):
+    async def mark_normal(request: Request, decision_id: str, user: str | None = Form(None)):
         ok = False
         try:
             r = await client.post(f"{base}/v1/decisions/{quote(decision_id, safe='')}/normal", headers=headers)
             ok = r.status_code == 200
         except httpx.HTTPError:
             pass
+        if request.headers.get("HX-Request") == "true":
+            # htmx swaps the returned page in place: same selected decision, same error text.
+            return await render(request, user, decision_id, not ok)
         url = user_url(user)
         if not ok:
             url += "?" + urlencode({"error": "mark"})

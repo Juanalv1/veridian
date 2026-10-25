@@ -3,20 +3,21 @@
 <head>
 <meta charset="utf-8">
 {% block head_extra %}{% endblock %}
+<meta name="htmx-config" content='{"historyCacheSize":0,"includeIndicatorStyles":false}'>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Veridian · Panel</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400..800&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
 <link rel="stylesheet" href="/static/panel.css?v={{ asset_version }}">
 </head>
-<body data-refresh-ms="{{ refresh_ms }}">
+<body>
 <header>
   <div class="wrap">
     <div class="brand">
       <span class="wordmark">Veridian</span>
       <span class="app">Panel</span>
     </div>
-    <div class="conn{% if engine_error %} down{% endif %}" role="status">
+    <div id="conn" class="conn{% if engine_error %} down{% endif %}" role="status">
       <span class="dot" aria-hidden="true"></span>
       <span>{% if engine_error %}Motor sin conexión{% else %}En vivo{% endif %}</span>
     </div>
@@ -24,6 +25,7 @@
 </header>
 
 {% block content %}{% endblock %}
-<script id="live-refresh" src="/static/panel.js?v={{ asset_version }}"></script>
+<script src="/static/htmx.min.js?v={{ asset_version }}"></script>
+<script src="/static/panel.js?v={{ asset_version }}"></script>
 </body>
 </html>

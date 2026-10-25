@@ -1,4 +1,4 @@
-  <nav aria-label="Decisiones recientes">
+  <nav aria-label="Decisiones recientes" hx-boost="true" hx-target="#live" hx-sync="#live:replace">
     <span class="nav-title">Decisiones recientes</span>
     {% for d in decisions %}
       <a class="item" href="{{ d.href }}"{% if current and d.href == current.href %} aria-current="true"{% endif %}>

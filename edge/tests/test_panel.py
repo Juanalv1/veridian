@@ -335,7 +335,63 @@ def test_live_refresh_swaps_data_and_keeps_meta_refresh_only_without_js():
     r = panel.get("/")
     assert '<noscript><meta http-equiv="refresh"' in r.text
     assert r.text.count('http-equiv="refresh"') == 1
-    assert 'id="live-refresh"' in r.text
+    assert 'id="live-refresh"' not in r.text
+
+
+def test_live_region_polls_with_htmx_and_swaps_region_and_status():
+    _, panel = blocked_setup()
+    r = panel.get("/")
+    live = re.search(r'<main id="live"[^>]*>', r.text, re.S).group(0)
+    did = re.search(r'hx-get="([^"]+)"', live).group(1)
+    assert did.startswith("/users/u_42/decisions/")
+    assert 'hx-trigger="every 2s [refreshAllowed()]"' in live
+    assert 'hx-select="#live"' in live and 'hx-select-oob="#conn"' in live
+    assert 'hx-swap="outerHTML' in live
+    assert 'id="conn"' in r.text and 'role="status"' in r.text
+    # the polled URL is the canonical page
+    assert panel.get(did).status_code == 200
+
+
+def test_htmx_is_vendored_and_loaded_from_static_without_cdn():
+    _, panel = blocked_setup()
+    js = panel.get("/static/htmx.min.js")
+    assert js.status_code == 200 and "javascript" in js.headers["content-type"]
+    assert 'version:"2.0.4"' in js.text
+    page = panel.get("/").text
+    assert 'src="/static/htmx.min.js?v=' in page
+    assert "unpkg" not in page and "cdn" not in page.lower().replace("fonts.googleapis", "")
+    assert page.index("htmx.min.js") < page.index("panel.js")
+
+
+def test_nav_links_are_boosted_into_the_live_region():
+    _, panel = blocked_setup()
+    nav = re.search(r"<nav[^>]*>", panel.get("/").text).group(0)
+    assert 'hx-boost="true"' in nav and 'hx-target="#live"' in nav
+
+
+def test_htmx_post_mark_normal_returns_updated_page_not_redirect():
+    engine, panel = blocked_setup()
+    did = decision_id(engine)
+    r = panel.post(f"/decisions/{did}/normal", data={"user": "u_42"}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert "Bloqueo levantado" in r.text and "Esto era normal" not in r.text
+    assert 'id="live"' in r.text and 'id="conn"' in r.text
+    status = TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["status"]
+    assert status == "marked_normal"
+
+
+def test_htmx_post_mark_normal_failure_shows_same_error_in_place():
+    _, panel = blocked_setup()
+    r = panel.post("/decisions/d_nope/normal", data={"user": "u_42"}, headers={"HX-Request": "true"})
+    assert r.status_code == 200 and "No se pudo marcar" in r.text and 'id="live"' in r.text
+
+
+def test_mark_normal_form_keeps_real_post_and_adds_hx_post():
+    engine, panel = blocked_setup()
+    page = panel.get("/").text
+    action = f"/decisions/{decision_id(engine)}/normal"
+    assert f'action="{action}"' in page and 'method="post"' in page
+    assert f'hx-post="{action}"' in page
 
 
 def test_panel_serves_its_stylesheet_and_script():
@@ -345,4 +401,4 @@ def test_panel_serves_its_stylesheet_and_script():
     assert panel.get("/static/panel.js").status_code == 200
     page = panel.get("/").text
     assert '<link rel="stylesheet" href="/static/panel.css?v=' in page
-    assert 'src="/static/panel.js?v=' in page and 'data-refresh-ms="2000"' in page
+    assert 'src="/static/panel.js?v=' in page

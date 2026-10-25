@@ -1,8 +1,7 @@
-// Refresh the data in place instead of reloading the page, so a click is
-// never lost to a reload, and show times in the viewer's local time zone
-// (the engine sends UTC).
+// Live refresh, the mark-normal swap and navigation are done by htmx (see the
+// hx-* attributes in the templates). This file only guards the polling and shows
+// times in the viewer's local time zone (the engine sends UTC).
 (function () {
-  var REFRESH_MS = Number(document.body.getAttribute("data-refresh-ms")) || 2000;
   function pad(n) { return String(n).padStart(2, "0"); }
   function localize(root) {
     root.querySelectorAll("time.ts[datetime]").forEach(function (el) {
@@ -24,28 +23,14 @@
     });
   }
   var pointerDown = false;
-  var busy = false;
   document.addEventListener("pointerdown", function () { pointerDown = true; }, true);
   document.addEventListener("pointerup", function () { setTimeout(function () { pointerDown = false; }, 0); }, true);
-  function swap(doc) {
-    ["main.wrap", ".conn"].forEach(function (sel) {
-      var current = document.querySelector(sel);
-      var next = doc.querySelector(sel);
-      if (current && next) current.replaceWith(next);
-    });
-    localize(document);
-  }
-  function tick() {
+  // Polling guard (used in hx-trigger): never swap while the viewer is pressing,
+  // has keyboard focus in a form, or the tab is hidden.
+  window.refreshAllowed = function () {
     var active = document.activeElement;
-    // Never swap while the viewer is pressing or has keyboard focus in a form.
-    if (busy || pointerDown || document.hidden || (active && active.closest && active.closest("form"))) return;
-    busy = true;
-    fetch(location.pathname, { cache: "no-store" })
-      .then(function (r) { return r.text(); })
-      .then(function (html) { swap(new DOMParser().parseFromString(html, "text/html")); })
-      .catch(function () {})
-      .finally(function () { busy = false; });
-  }
+    return !(pointerDown || document.hidden || (active && active.closest && active.closest("form")));
+  };
+  document.addEventListener("htmx:afterSwap", function () { localize(document); });
   localize(document);
-  setInterval(tick, REFRESH_MS);
 })();

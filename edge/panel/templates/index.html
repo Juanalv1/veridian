@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block head_extra %}<noscript><meta http-equiv="refresh" content="{{ refresh }};url={{ refresh_url }}"></noscript>{% endblock %}
 {% block content %}
-<main class="wrap">
+{# Live region: polls its own URL and swaps itself plus the connection badge; nav links and the
+   mark-normal form swap the same region in place. Without JS the form posts and the meta refresh reloads. #}
+<main id="live" class="wrap"
+      hx-get="{{ refresh_url }}" hx-trigger="every {{ refresh }}s [refreshAllowed()]"
+      hx-select="#live" hx-select-oob="#conn" hx-target="this" hx-swap="outerHTML settle:0ms"
+      hx-sync="this:replace">
   {% include "partials/decision_nav.html" %}
 
   <section id="detalle" aria-label="Detalle de la decisión">
