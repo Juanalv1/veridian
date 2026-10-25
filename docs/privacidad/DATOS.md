@@ -21,18 +21,19 @@ Notas:
 
 - Los perfiles no se guardan: se calculan al leer desde `events` (`engine/veridian_engine/profile.py`), así que borrar eventos borra lo aprendido.
 - `decisions.signals` contiene la ruta y las rutas de la sesión (`rules.py:88-101`); `rationale` puede nombrar la ruta y la red /24 (`rules.py:11-14`).
-- Límites del evento: `user_agent` hasta 512 caracteres en el motor (`events.py:16`); el SDK envía los primeros 200 (`sdk/python/README.md:53`).
+- `session_id` cuando el cliente no lo define: el SDK envía `s_` + los primeros 16 caracteres hexadecimales del SHA-256 de la primera cookie de sesión conocida (`sessionid`, `connect.sid`, `sid`, `session_id`, `PHPSESSID`, `JSESSIONID`) o, si no hay ninguna, del token `Authorization: Bearer`. El valor de la cookie o del token nunca sale de la app (`sdk/python/src/veridian_sdk/middleware.py:38`, `47-60`). Es un hash sin sal: quien tenga el valor original puede reconocerlo, pero no recuperarlo a partir del hash.
+- Límites del evento: `user_agent` hasta 512 caracteres en el motor (`events.py:16`); el SDK envía los primeros 200 (`sdk/python/README.md:77`).
 
 ## Cookie del SDK
 
 | Dato | Detalle |
 |---|---|
-| Nombre | `vrd_did` (`sdk/python/src/veridian_sdk/middleware.py:25`) |
-| Valor | `d_` + 12 caracteres hexadecimales aleatorios, generado por el SDK (`middleware.py:196-199`) |
-| Atributos | `Path=/; HttpOnly; SameSite=Lax; Max-Age=` un año (`middleware.py:26`, `221-222`) |
+| Nombre | `vrd_did` (`sdk/python/src/veridian_sdk/middleware.py:27`) |
+| Valor | `d_` + 12 caracteres hexadecimales aleatorios, generado por el SDK (`middleware.py:285-288`) |
+| Atributos | `Path=/; HttpOnly; SameSite=Lax; Max-Age=` un año (`middleware.py:28`, `310-311`) |
 | Finalidad | Reconocer el dispositivo habitual del usuario (señal `new_device`) |
 | Dónde se guarda | Navegador del usuario final; el valor se copia a `events.device_id` |
-| No se emite | A un cliente bloqueado (`middleware.py:190-193`) |
+| No se emite | A un cliente bloqueado (`middleware.py:278-282`) |
 
 La cookie la pone la app del cliente, no Veridian: el cliente debe declararla en su aviso de cookies. Pendiente de revisión legal si requiere consentimiento (no se evalúa aquí).
 
