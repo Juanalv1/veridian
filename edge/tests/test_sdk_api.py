@@ -182,7 +182,7 @@ async def test_add_middleware_with_user_sends_events_with_the_env_key(monkeypatc
         return await call_next(request)
 
     async with client_for(app) as c:
-        r = await c.get("/items/7", cookies={"uid": "42"})
+        r = await c.get("/items/7", cookies={"uid": "42", "sessionid": "abc"})
         assert r.status_code == 200
         await instance(app).flush()
     (e,) = engine.events
@@ -226,8 +226,8 @@ async def event_with(cookies=None, headers=None, **kw):
     async with client_for(mw) as c:
         await c.get("/items/1", cookies=cookies or {}, headers=headers or {})
     await mw.flush()
-    (e,) = engine.events
-    return e
+    assert len(engine.events) <= 1
+    return engine.events[0] if engine.events else None  # None: nothing was reported
 
 
 @pytest.mark.parametrize("cookie", ["sessionid", "connect.sid", "sid", "session_id", "PHPSESSID", "JSESSIONID"])
@@ -239,7 +239,7 @@ async def test_a_known_session_cookie_is_detected_and_only_its_hash_is_sent(cook
 
 async def test_starlettes_session_cookie_is_ignored_because_it_changes_on_every_response():
     e = await event_with(cookies={"session": "eyJ1c2VyIjogMX0=.abc.def"})
-    assert e["session_id"] is None
+    assert e is None  # no session, and the engine requires one
 
 
 async def test_a_bearer_token_is_the_session_when_there_is_no_cookie():
@@ -250,7 +250,7 @@ async def test_a_bearer_token_is_the_session_when_there_is_no_cookie():
 
 async def test_basic_auth_is_never_a_session():
     e = await event_with(headers={"Authorization": "Basic dXNlcjpwYXNz"})
-    assert e["session_id"] is None
+    assert e is None
 
 
 async def test_a_cookie_wins_over_the_bearer_token():
@@ -260,7 +260,7 @@ async def test_a_cookie_wins_over_the_bearer_token():
 
 async def test_an_explicit_session_wins_and_is_not_second_guessed():
     e = await event_with(cookies={"sessionid": "c"}, session=lambda r: None)
-    assert e["session_id"] is None
+    assert e is None
     e = await event_with(cookies={"sessionid": "c"}, session=lambda r: "s_mine")
     assert e["session_id"] == "s_mine"
 

@@ -146,7 +146,7 @@ async def test_event_uses_route_template_not_raw_url(rec):
 async def test_unmatched_route_falls_back_to_raw_path(rec):
     mw = make_mw(build_app(), rec.client())
     async with client_for(mw) as c:
-        r = await c.get("/nope", cookies={"uid": "u_42"})
+        r = await c.get("/nope", cookies={"uid": "u_42", "sid": "s_1"})
     assert r.status_code == 404
     await mw.flush()
     assert rec.events[0]["route"] == "/nope"
@@ -158,7 +158,7 @@ async def test_events_never_contain_bodies_or_secrets(rec):
         await c.post(
             "/payouts/bank-account",
             content=b"iban=VE123456&password=hunter2",
-            cookies={"uid": "u_42"},
+            cookies={"uid": "u_42", "sid": "s_1"},
         )
     await mw.flush()
     (e,) = rec.events
@@ -190,10 +190,10 @@ async def test_user_set_by_app_during_request_is_used(rec):
 async def test_device_cookie_is_set_once_and_reused(rec):
     mw = make_mw(build_app(), rec.client())
     async with client_for(mw) as c:
-        r1 = await c.get("/items/1", cookies={"uid": "u_42"})
+        r1 = await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})
         did = r1.cookies.get("vrd_did")
         assert did
-        r2 = await c.get("/items/2", cookies={"uid": "u_42", "vrd_did": did})
+        r2 = await c.get("/items/2", cookies={"uid": "u_42", "sid": "s_1", "vrd_did": did})
         assert "vrd_did" not in r2.headers.get("set-cookie", "")
     await mw.flush()
     assert [e["device_id"] for e in rec.events] == [did, did]
@@ -203,7 +203,7 @@ async def test_event_ids_are_unique(rec):
     mw = make_mw(build_app(), rec.client())
     async with client_for(mw) as c:
         for _ in range(3):
-            await c.get("/items/1", cookies={"uid": "u_42"})
+            await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})
     await mw.flush()
     assert len({e["id"] for e in rec.events}) == 3
 
@@ -215,7 +215,7 @@ async def ip_seen(rec, trusted_proxies, xff, peer="198.51.100.1"):
     mw = make_mw(build_app(), rec.client(), trusted_proxies=trusted_proxies)
     headers = {"X-Forwarded-For": xff} if xff else {}
     async with client_for(mw, peer) as c:
-        await c.get("/items/1", cookies={"uid": "u_42"}, headers=headers)
+        await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"}, headers=headers)
     await mw.flush()
     return rec.events[-1]["ip"]
 
@@ -326,7 +326,7 @@ async def test_engine_down_requests_still_work_and_last_list_kept(rec):
 async def test_failed_flush_is_retried_with_same_ids(rec):
     mw = make_mw(build_app(), rec.client())
     async with client_for(mw) as c:
-        await c.get("/items/1", cookies={"uid": "u_42"})
+        await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})
     rec.fail = True
     await mw.flush()
     rec.fail = False
@@ -339,7 +339,7 @@ async def test_queue_is_bounded_dropping_oldest(rec):
     mw = make_mw(build_app(), rec.client(), max_queue=3)
     async with client_for(mw) as c:
         for i in range(5):
-            await c.get(f"/items/{i}", cookies={"uid": "u_42"})
+            await c.get(f"/items/{i}", cookies={"uid": "u_42", "sid": "s_1"})
     await mw.flush()
     assert len(rec.events) == 3
     assert [e["route"] for e in rec.events] == ["/items/{item_id}"] * 3
@@ -458,7 +458,7 @@ async def test_static_requests_are_not_reported_by_default(rec):
 async def test_exclusion_matches_whole_path_segments_only(rec):
     mw = make_mw(app_with_static(), rec.client())
     async with client_for(mw) as c:
-        await c.get("/staticky", cookies={"uid": "u_42"})
+        await c.get("/staticky", cookies={"uid": "u_42", "sid": "s_1"})
     await mw.flush()
     assert [e["route"] for e in rec.events] == ["/staticky"]
 
@@ -470,14 +470,14 @@ async def test_excluded_paths_skip_the_blocklist(rec):
     mw = make_mw(app_with_static(), rec.client())
     await mw.refresh_blocklist()
     async with client_for(mw) as c:
-        assert (await c.get("/static/app.css", cookies={"uid": "u_42"})).status_code == 200
-        assert (await c.get("/items/1", cookies={"uid": "u_42"})).status_code == 403
+        assert (await c.get("/static/app.css", cookies={"uid": "u_42", "sid": "s_1"})).status_code == 200
+        assert (await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})).status_code == 403
 
 
 async def test_exclude_paths_is_configurable(rec):
     mw = make_mw(app_with_static(), rec.client(), exclude_paths=())
     async with client_for(mw) as c:
-        await c.get("/static/app.css", cookies={"uid": "u_42"})
+        await c.get("/static/app.css", cookies={"uid": "u_42", "sid": "s_1"})
     await mw.flush()
     assert [e["route"] for e in rec.events] == ["/static/app.css"]
 
@@ -888,7 +888,7 @@ async def test_events_rejected_by_the_engine_stay_queued_and_are_sent_later(stat
     engine = Rejecting(status, headers)
     mw = make_mw(build_app(), engine.client())
     async with client_for(mw) as c:
-        r = await c.get("/items/1", cookies={"uid": "u_42"})
+        r = await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})
     assert r.status_code == 200
     await mw.flush()  # must not raise
     assert engine.paths == ["/v1/events"] and len(mw.queue) == 1
@@ -902,7 +902,7 @@ async def test_background_tasks_do_not_hot_loop_on_429():
     mw = make_mw(build_app(), engine.client(), background=True, flush_interval=0.05,
                  poll_interval=0.05, routes_poll_interval=0.05)
     async with client_for(mw) as c:
-        r = await c.get("/items/1", cookies={"uid": "u_42"})  # starts the background tasks
+        r = await c.get("/items/1", cookies={"uid": "u_42", "sid": "s_1"})  # starts the background tasks
         await asyncio.sleep(0.2)
     await mw.aclose()
     assert r.status_code == 200
