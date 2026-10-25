@@ -1,62 +1,97 @@
 # Guía de uso del panel de Veridian
 
-Mapa rápido de cada menú del panel y para qué sirve.
+Mapa de cada menú del panel y para qué sirve. Capturas tomadas del panel desplegado (`veridian-panel.onrender.com`), proyecto de ejemplo recién creado, el 25 oct 2026.
 
 ## Mapa general
 
 ```
 ┌──────────────────────────────┐
-│ ◆ Veridian            [≡]    │ ← Logo: vuelve al Resumen · [≡] colapsa el menú
+│ ◆ Veridian            [▯]    │ ← Logo: vuelve al Resumen · [▯] colapsa el menú
 ├──────────────────────────────┤
 │ Org · Rol                    │
-│ Proyecto actual  [MODO]      │ ← Selector: cambia de organización o proyecto
+│ Proyecto actual              │ ← Selector: cambia de organización o proyecto
+│ Solo observa                 │ ← Modo del proyecto (solo observa / bloquea)
 ├──────────────────────────────┤
 │ ACCESOS                      │
-│   Resumen                    │ → Estado general del proyecto
-│   Actividad          (3)     │ → Accesos en vivo · (n) = bloqueos recientes
-│   Usuarios                   │ → Perfil aprendido de cada usuario
-│   Rutas críticas             │ → Rutas sensibles y su clasificación
+│   Resumen                    │ → Estado del día en cifras
+│   Actividad                  │ → Cada acceso y la decisión del motor
+│   Usuarios                   │ → Usuarios vistos y su perfil
+│   Rutas críticas             │ → Qué rutas son críticas o sensibles
 │ PROYECTO                     │
-│   Claves de API              │ → Credenciales del middleware
-│   Webhook                    │ → Avisos firmados hacia tu sistema
+│   Claves de API              │ → Clave del middleware + estado de conexión
+│   Webhook                    │ → Aviso firmado a tu sistema al bloquear
 │ ORGANIZACIÓN                 │
-│   Proyectos                  │ → Crear o elegir proyectos
+│   Proyectos                  │ → Organizaciones y proyectos
 │   Miembros                   │ → Invitar personas y asignar roles
-│   Auditoría                  │ → Historial de cambios de configuración
+│   Auditoría                  │ → Quién cambió qué (no editable)
 ├──────────────────────────────┤
-│ ● En vivo · último acceso…   │ ← Conexión con el motor
-│ correo@…   [Cerrar sesión]   │ ← Tu cuenta
+│ ● En vivo                    │ ← Conexión con el motor
+│ correo   [Cerrar sesión]     │ ← Tu cuenta
 └──────────────────────────────┘
 ```
 
-## ACCESOS — lo que pasa con las credenciales
+> Si no hay proyecto elegido, el grupo PROYECTO y Auditoría no aparecen. Si el motor no responde, el pie dice **Motor sin conexión** y las páginas avisan "Reintentando…".
 
-- **Resumen** → Titular del estado actual del proyecto y gráfico de **accesos por hora**. Es la primera pantalla: responde "¿está todo bien?".
-- **Actividad** → Lista de cada acceso reportado por el middleware con la decisión del motor (permitido / bloqueado) y su motivo. El número rojo en el menú indica bloqueos recientes. Aquí se ve el robo de credenciales en acción.
-- **Usuarios** → Cada usuario con su perfil determinista aprendido (desde dónde y cómo suele entrar). Sirve para entender por qué una desviación se marcó como sospechosa.
-- **Rutas críticas** → Rutas de tu app agrupadas por sensibilidad. Se clasifican automáticamente en la primera ejecución; un acceso inusual a una ruta crítica pesa más.
+## ACCESOS: lo que pasa con las credenciales
 
-## PROYECTO — conectar tu aplicación
+### Resumen
+![Resumen](guia-panel/01-resumen.jpg)
+- Titular del día (p. ej. **"Todo normal hoy."**).
+- Tres cifras → **Accesos vigilados** (y de cuántos usuarios), **Bloqueos activos** y **Consultas a la IA**.
+- **Accesos por hora** → gráfico del día.
+- **Bloqueos activos** y **Usuarios** → listas rápidas para saltar al detalle.
 
-- **Claves de API** → Crear y revocar las claves que usa el middleware para reportar accesos. La clave se muestra **una sola vez** al crearla: cópiala en ese momento.
-- **Webhook** → URL a la que Veridian avisa de cada bloqueo, con un **secreto de firma** (también visible una sola vez) para verificar que el aviso es auténtico.
+### Actividad
+![Actividad](guia-panel/02-actividad.jpg)
+- Lista en vivo de cada acceso que reporta el middleware, con la decisión del motor.
+- El menú muestra un contador cuando hay bloqueos recientes.
+- Vacía ("Veridian está listo para vigilar") hasta que llega el primer acceso.
 
-## ORGANIZACIÓN — equipo y gobierno
+### Usuarios
+![Usuarios](guia-panel/03-usuarios.jpg)
+- Los usuarios de tu app que Veridian ha visto y el perfil que aprendió de cada uno.
+- Sirve para entender por qué un acceso se salió de lo normal.
 
-- **Proyectos** → Lista de proyectos de la organización; crear uno nuevo (p. ej. una app distinta o un entorno).
-- **Miembros** → Invitar personas por correo y ver quién tiene acceso y con qué rol.
-- **Auditoría** → Registro de quién cambió qué (claves, webhook, miembros). Filtrable.
+### Rutas críticas
+![Rutas críticas](guia-panel/04-rutas.jpg)
+- **Críticas** → rutas de máximo riesgo (p. ej. `POST /payouts/bank-account`).
+- **Sensibles** → rutas que exponen datos (p. ej. `GET /invoices/export`).
+- El resto se trata como normal. **Solo lectura:** la clasificación se configura en el motor.
 
-> Claves, Webhook y Auditoría dependen del rol: si no tienes permiso verás "No tienes acceso…".
+## PROYECTO: conectar tu aplicación
 
-## Pie del menú
+### Claves de API
+![Claves de API](guia-panel/05-claves.jpg)
+- **Crear una clave** → la usa el middleware para reportar accesos y leer bloqueos.
+- **Estado** → "Esperando el primer evento" pasa a «Conectado» sin recargar cuando llega el primer acceso.
+- **Rotar** → crea una nueva, despliégala y revoca la anterior.
 
-- **● En vivo / Motor sin conexión** → indica si el panel recibe datos del motor; "último acceso hace…" muestra la frescura.
-- **Cerrar sesión** → sale de tu cuenta.
+### Webhook
+![Webhook](guia-panel/06-webhook.jpg)
+- **URL de tu sistema** → Veridian envía ahí una petición firmada cada vez que bloquea un acceso.
+- **Envíos recientes** → historial de avisos para comprobar que llegan.
+
+## ORGANIZACIÓN: equipo y gobierno
+
+### Proyectos
+![Proyectos](guia-panel/07-proyectos.jpg)
+- **Tus organizaciones** → elegir o **crear organización**.
+- **Crear proyecto** → uno por app o entorno. Cada tarjeta muestra el id y el modo (p. ej. **Solo observa**).
+- Tu rol en la organización vale para todos sus proyectos.
+
+### Miembros
+![Miembros](guia-panel/08-miembros.jpg)
+- **Invitar a una persona** → correo de Google + rol (p. ej. Viewer). La invitación vence en 14 días; hoy no se envía correo, hay que compartir el enlace.
+- **Personas** e **Invitaciones pendientes**. Siempre queda al menos un owner.
+
+### Auditoría
+![Auditoría](guia-panel/09-auditoria.jpg)
+- Quién cambió qué en la organización y sus proyectos (p. ej. `org.create`, `project.create`).
+- Filtros **Qué / Dónde / Quién**. Nadie puede editar ni borrar este registro.
 
 ## Flujo recomendado (primera vez)
 
 ```
-Proyectos → Claves de API → (instalar middleware) → Webhook → Actividad → Resumen
- crear        copiar clave     reporta accesos       avisos     ver en vivo   estado
+Proyectos → Claves de API → instalar middleware → Webhook → Actividad → Resumen
+  crear       crear clave     reporta accesos      avisos    ver en vivo   estado
 ```
