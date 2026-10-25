@@ -2,11 +2,21 @@
 
 **Estado:** propuesta para decidir (2026-10-25). Nada de esto está construido. Al aceptarse, los contratos nuevos se pasan a [REPARTO.md](REPARTO.md) en el mismo commit que el código, como pide ese documento.
 
+> **Revisión 2026-10-25: capa de organización.** Decisiones del usuario: (1) hay una organización por encima de los proyectos; (2) los roles viven **solo** en la organización (un rol por persona y organización, válido para todos sus proyectos; una lista de miembros por organización; sin roles por proyecto; una persona puede pertenecer a varias organizaciones). Qué cambia respecto a la versión anterior:
+>
+> - **Modelo:** nueva `Organization`; `Membership` e `Invitation` pasan de proyecto a organización; `Project` gana `org_id`; `ApiKey` sigue por proyecto; `AuditLog` gana `org_id` y `project_id` pasa a ser opcional.
+> - **Roles:** se resuelven por organización, con tres reglas (siempre un owner por organización, nadie cambia su propio rol, un admin no gestiona owners).
+> - **Panel y motor:** `X-Veridian-Project` sigue eligiendo el proyecto para leer datos; el motor autoriza con el rol del actor en la organización de ese proyecto. La administración de miembros, invitaciones y auditoría usa el id de la organización en la ruta.
+> - **Contratos:** 10 (organizaciones y proyectos), 11 (miembros e invitaciones bajo `/v1/orgs/{id}/…`), 12 (solo cambia quién autoriza), 15 (auditoría por organización con `?project=`). `GET /v1/me/projects` y `POST /v1/projects` se sustituyen por `GET /v1/me/orgs` y `POST /v1/orgs/{id}/projects`.
+> - **Corrección de una brecha previa:** el panel lee `GET /v1/blocklist` y `GET /v1/routes` (texto de la consecuencia de un bloqueo y página Rutas); ahora la tabla de llamantes los marca como accesibles para `sdk` **y** `panel`.
+> - **Decisiones abiertas:** la 1 queda decidida; la 2 pasa a ser quién crea organizaciones. Valores provisionales (no preguntados): ver decisión 2.
+> - **Plan de trabajo:** cambian U4, U6, U10 y U11.
+
 ## Problema y objetivo
 
 Veridian hoy funciona como demo de un solo cliente: los tokens son una variable de entorno, el panel no tiene login y lee el motor con un solo token, el endpoint de reinicio está encendido en producción y los datos personales (IP, user agent, `device_id`, `user_id`) se guardan sin límite de tiempo ni forma de borrarlos. Un cliente real no puede confiar en eso.
 
-El objetivo es que una **persona** entre al panel con su cuenta de Google, vea **sus proyectos** (puede tener varios), cree y rote las claves de cada uno sin redeploy, invite a su equipo, se entere cuando se bloquea a alguien, y pueda borrar sus datos. Todo sirve al mismo problema: credenciales robadas usadas por otra persona. Quedan fuera facturación, SSO empresarial, otras fuentes de logs y cualquier detección que no sea de ese problema.
+El objetivo es que una **persona** entre al panel con su cuenta de Google, vea **sus organizaciones y los proyectos de cada una** (puede pertenecer a varias organizaciones), cree y rote las claves de cada proyecto sin redeploy, invite a su equipo, se entere cuando se bloquea a alguien, y pueda borrar sus datos. Todo sirve al mismo problema: credenciales robadas usadas por otra persona. Quedan fuera facturación, SSO empresarial, otras fuentes de logs y cualquier detección que no sea de ese problema.
 
 ### Brechas que este documento cierra
 
@@ -26,10 +36,12 @@ El objetivo es que una **persona** entre al panel con su cuenta de Google, vea *
 ```mermaid
 erDiagram
     PERSON ||--o{ MEMBERSHIP : "tiene"
-    PROJECT ||--o{ MEMBERSHIP : "tiene"
-    PROJECT ||--o{ INVITATION : "emite"
+    ORGANIZATION ||--o{ MEMBERSHIP : "tiene (rol)"
+    ORGANIZATION ||--o{ INVITATION : "emite"
+    ORGANIZATION ||--o{ PROJECT : "agrupa"
+    ORGANIZATION ||--o{ AUDIT_LOG : "registra"
     PROJECT ||--o{ API_KEY : "tiene (varias activas)"
-    PROJECT ||--o{ AUDIT_LOG : "registra"
+    PROJECT |o--o{ AUDIT_LOG : "referencia (opcional)"
     PERSON ||--o{ AUDIT_LOG : "actor"
     PROJECT ||--o{ ROUTE_RULE : "clasifica"
     PROJECT ||--o{ EVENT : "datos"
@@ -41,7 +53,12 @@ erDiagram
              text name
              text created_at
              text last_login_at }
+    ORGANIZATION { text id PK
+                   text name
+                   text created_at
+                   text deleted_at }
     PROJECT { text id PK
+              text org_id
               text name
               int retention_days
               text enforcement
@@ -50,13 +67,13 @@ erDiagram
               text webhook_secret_enc
               text created_at
               text deleted_at }
-    MEMBERSHIP { text project_id PK
+    MEMBERSHIP { text org_id PK
                  text person_id PK
                  text role
                  int notify_email
                  text created_at }
     INVITATION { text id PK
-                 text project_id
+                 text org_id
                  text email
                  text role
                  text invited_by
@@ -73,7 +90,8 @@ erDiagram
               text last_used_at
               text revoked_at }
     AUDIT_LOG { int seq PK
-                text project_id
+                text org_id
+                text project_id "nullable"
                 text actor_person_id
                 text actor_kind
                 text action
@@ -85,29 +103,38 @@ erDiagram
 
 `EVENT` y `DECISION` son las tablas actuales con `client_id` renombrado a `project_id`.
 
-- **Person:** una cuenta de Google verificada. La identidad es `google_sub` (estable); el `email` puede cambiar. Una persona existe una vez, sin importar a cuántos proyectos pertenezca.
-- **Project:** el tenant. Reemplaza a `client_id`. Una persona puede crear y pertenecer a varios. Todo dato de la plataforma de datos cuelga de un proyecto.
-- **Membership:** la relación persona–proyecto con un rol. Es la única fuente de permisos.
-- **Invitation:** invitación por correo con rol y vencimiento. Se acepta sola cuando esa persona entra con Google y el correo verificado coincide; no hace falta enviar correo para que funcione (ver decisión 4).
+- **Person:** una cuenta de Google verificada. La identidad es `google_sub` (estable); el `email` puede cambiar. Una persona existe una vez, sin importar a cuántas organizaciones pertenezca.
+- **Organization:** la empresa o cuenta que agrupa proyectos y personas. Es el nivel donde viven los miembros y los roles. Una persona puede pertenecer a varias. Se elimina con borrado lógico (`deleted_at`); el contrato de eliminación de una organización **no está definido** (ver brechas de decisión al final).
+- **Project:** la unidad de datos y de claves. Reemplaza a `client_id` y pertenece a **una** organización (`org_id`). Todo dato de la plataforma de datos cuelga de un proyecto. No tiene miembros ni roles propios: hereda los de su organización.
+- **Membership:** la relación persona–organización con un rol. Es la única fuente de permisos y vale para todos los proyectos de la organización. Una persona tiene un solo rol por organización.
+- **Invitation:** invitación **a la organización** por correo con rol y vencimiento. Se acepta sola cuando esa persona entra con Google y el correo verificado coincide; no hace falta enviar correo para que funcione (ver decisión 4).
 - **ApiKey:** secreto que usa el middleware. Se guarda solo el hash; `prefix` sirve para que la persona reconozca cuál es cuál. Un proyecto puede tener varias activas a la vez: así se rota sin cortar el servicio (crear la nueva, desplegarla, revocar la vieja).
-- **AuditLog:** registro de solo agregar de quién hizo qué. Cubre marcar una decisión como normal, operaciones sobre claves, miembros, invitaciones, ajustes del proyecto, borrados y cambios de rutas.
+- **AuditLog:** registro de solo agregar de quién hizo qué, por organización (`org_id`) y con una referencia opcional al proyecto (`project_id`, nulo en acciones de la organización como miembros o invitaciones). Cubre marcar una decisión como normal, operaciones sobre claves, miembros, invitaciones, ajustes del proyecto, borrados y cambios de rutas.
 - **RouteRule:** la clasificación de rutas, ahora por proyecto (ver Aislamiento).
 
-### Roles: owner, admin, viewer
+### Roles: owner, admin, viewer (a nivel de organización)
 
-| Rol | Puede |
+Los roles viven **solo** en la organización: una persona tiene un rol por organización y vale para todos los proyectos de esa organización. No hay roles por proyecto ni una segunda lista de miembros. Quien quiera dar acceso a un solo proyecto no puede: tendría que ser una organización aparte.
+
+| Rol | Puede (en la organización y en todos sus proyectos) |
 |---|---|
-| `viewer` | Ver portada, actividad, decisiones, usuarios, perfiles y rutas. Nada que cambie estado. |
-| `admin` | Todo lo del viewer, más: marcar decisiones como normales, administrar claves, rutas, webhook, invitar y quitar `viewer` y `admin`, ajustes del proyecto, borrar datos de un usuario. |
-| `owner` | Todo lo del admin, más: administrar otros `owner`, borrar todos los datos del proyecto, eliminar el proyecto. |
+| `viewer` | Ver portada, actividad, decisiones, usuarios, perfiles y rutas de cualquier proyecto de la organización. Nada que cambie estado. |
+| `admin` | Todo lo del viewer, más: crear proyectos, marcar decisiones como normales, administrar claves, rutas, webhook y ajustes de proyectos, invitar y quitar `viewer` y `admin`, cambiar rol entre `viewer` y `admin`, ver la auditoría, borrar datos de un usuario. |
+| `owner` | Todo lo del admin, más: administrar otros `owner` (invitar, cambiar rol, quitar), borrar todos los datos de un proyecto, eliminar un proyecto. |
 
-**Por qué tres y no más:** `viewer` existe porque quien audita o apoya no debe poder levantar un bloqueo ni crear una clave. `owner` se separa de `admin` porque hay acciones irreversibles (eliminar el proyecto, borrar todos los datos) y porque necesitamos una regla simple contra quedarse sin responsable: **siempre debe haber al menos un owner** (igual que "último admin" en Centinela, `adapters/members.py`). **Por qué no menos:** con solo admin/viewer, cualquier admin podría borrar el proyecto o expulsar al dueño. **Por qué no permisos por ruta o por acción:** no sirve al problema y multiplica las pruebas.
+**Reglas de dominio (se prueban):**
+
+1. **Siempre hay al menos un owner por organización:** no se puede quitar ni degradar al último.
+2. **Nadie cambia su propio rol ni se quita a sí mismo** (como `self` en Centinela).
+3. **Un admin no gestiona owners:** no puede invitar con rol `owner`, ni cambiar o quitar a un owner, ni subir a nadie a `owner`.
+
+**Por qué tres y no más:** `viewer` existe porque quien audita o apoya no debe poder levantar un bloqueo ni crear una clave. `owner` se separa de `admin` porque hay acciones irreversibles (eliminar el proyecto, borrar todos los datos) y porque necesitamos una regla simple contra quedarse sin responsable (la regla 1; igual que "último admin" en Centinela, `adapters/members.py`). **Por qué no menos:** con solo admin/viewer, cualquier admin podría borrar un proyecto o expulsar al dueño. **Por qué no permisos por ruta, por acción o por proyecto:** no sirve al problema y multiplica las pruebas (decisión del usuario, 2026-10-25).
 
 ## Dónde vive cada dato
 
 | Plano | Datos | Quién los lee en caliente |
 |---|---|---|
-| **Control** | Person, Project, Membership, Invitation, ApiKey, AuditLog, RouteRule, ajustes del proyecto | El motor, en **cada** petición (la clave resuelve el proyecto) |
+| **Control** | Person, Organization, Project, Membership, Invitation, ApiKey, AuditLog, RouteRule, ajustes del proyecto | El motor, en **cada** petición (la clave resuelve el proyecto) |
 | **Datos** | events, decisions, decision_events, rate_spike_judgments, ai_judgments, blocklist_versions (los perfiles se calculan al leer, de `events`) | El motor |
 
 ### Opciones evaluadas
@@ -137,28 +164,32 @@ Hoy `db.init_db` ejecuta `CREATE TABLE IF NOT EXISTS`, que no sabe cambiar tabla
 - **Antes de aplicar**, copia el archivo de base (`veridian.db.pre-NNNN`) en el mismo disco. No hay migraciones hacia atrás: el camino de vuelta es esa copia.
 - `0001` es el esquema actual tal cual. Una base existente (sin `schema_migrations`) se reconoce porque tiene la tabla `events` y se marca como `0001` sin tocarla.
 - `0002` (aislamiento): renombra `client_id` a `project_id` (`ALTER TABLE ... RENAME COLUMN`, que exige SQLite 3.25 o superior: **comprobar la versión del Python de Render en una prueba**) y reconstruye `decisions` para reemplazar `id TEXT NOT NULL UNIQUE` por `UNIQUE (project_id, id)` (SQLite no puede quitar una restricción: se crea la tabla nueva, se copia y se renombra).
-- `0003`: tablas del control plane.
-- **Datos existentes (cliente de demo):** por cada `client_id` distinto en las tablas, y por cada entrada de `VERIDIAN_TOKENS`, se crea un `PROJECT` con `id = client_id` (los ids son texto opaco; los proyectos nuevos usan `prj_` más aleatorio) y `name = client_id`. Cada token de `VERIDIAN_TOKENS` se importa una vez como `API_KEY` (hash del token, `prefix = "legacy"`, `created_by = "migration"`), de modo que **el SDK de la demo sigue funcionando sin tocar su configuración**. Tras comprobar en producción, se elimina `VERIDIAN_TOKENS` del entorno y del código. Cuál es el nombre real del cliente de demo no está en el repo (el valor es `sync: false` en `render.yaml`): no verificado.
-- **Proyectos sin dueño:** los proyectos migrados no tienen miembros. La variable `VERIDIAN_BOOTSTRAP_OWNERS` (correos) hace que, al primer login de esas personas, queden como `owner` de los proyectos sin ningún owner. Es el mismo patrón de `ADMIN_EMAILS` de Centinela (`web/config.py`), y solo actúa mientras exista algún proyecto huérfano.
+- `0003`: tablas del control plane (incluida `organizations`).
+- **Datos existentes (cliente de demo):** por cada `client_id` distinto en las tablas, y por cada entrada de `VERIDIAN_TOKENS`, se crea una `ORGANIZATION` (`name = client_id`, id `org_` más aleatorio) y dentro de ella un `PROJECT` con `id = client_id` (los ids son texto opaco; los proyectos nuevos usan `prj_` más aleatorio) y `name = client_id`. El fake engine siembra el demo como la organización "Demo" con su proyecto; el nombre real del cliente de demo sigue sin verificarse. Cada token de `VERIDIAN_TOKENS` se importa una vez como `API_KEY` (hash del token, `prefix = "legacy"`, `created_by = "migration"`), de modo que **el SDK de la demo sigue funcionando sin tocar su configuración**. Tras comprobar en producción, se elimina `VERIDIAN_TOKENS` del entorno y del código. Cuál es el nombre real del cliente de demo no está en el repo (el valor es `sync: false` en `render.yaml`): no verificado.
+- **Organizaciones sin dueño:** las organizaciones migradas no tienen miembros. La variable `VERIDIAN_BOOTSTRAP_OWNERS` (correos) hace que, al primer login de esas personas, queden como `owner` de las organizaciones sin ningún owner. Es el mismo patrón de `ADMIN_EMAILS` de Centinela (`web/config.py`), y solo actúa mientras exista alguna organización huérfana.
 
 ## Cómo se autentica el panel contra el motor
 
-**Decisión: una credencial de servicio interna más identidad explícita en cada llamada, y el motor valida la membresía.**
+**Decisión: una credencial de servicio interna más identidad explícita en cada llamada, y el motor valida la membresía en la organización del proyecto.**
 
 El panel envía:
 
 ```
 Authorization: Bearer <VERIDIAN_PANEL_TOKEN>      # credencial de servicio, solo panel
 X-Veridian-Actor: <person_id>                      # quién, tomado de la sesión
-X-Veridian-Project: <project_id>                   # cuál, tomado de la sesión
+X-Veridian-Project: <project_id>                   # cuál, tomado de la sesión (lecturas de datos)
 ```
+
+`X-Veridian-Project` sigue eligiendo el proyecto para leer datos (contratos 3 a 9). El motor busca la organización de ese proyecto y autoriza con el **rol del actor en esa organización**; no hay rol por proyecto. Los endpoints de administración de la organización (miembros, invitaciones, auditoría, proyectos de la organización) llevan el **id de la organización en la ruta** y no necesitan el encabezado.
 
 El motor reconoce dos tipos de llamante (`Principal`):
 
 | Tipo | Se identifica con | Alcance |
 |---|---|---|
 | `sdk` | Clave de API de un proyecto | Solo `POST /v1/events`, `POST /v1/check`, `GET /v1/blocklist`, `GET /v1/routes` de **su** proyecto |
-| `panel` | Credencial de servicio + actor + proyecto | Todo lo demás, **solo si el actor es miembro del proyecto con el rol necesario** (el motor lo comprueba en cada petición, leyendo el rol de la base) |
+| `panel` | Credencial de servicio + actor (+ proyecto en lecturas de datos) | Todo lo demás, **y además `GET /v1/blocklist` y `GET /v1/routes`**: el panel los lee para mostrar el efecto de un bloqueo y la página Rutas. Siempre **solo si el actor es miembro de la organización del proyecto con el rol necesario** (el motor lo comprueba en cada petición, leyendo el rol de la base) |
+
+`GET /v1/blocklist` y `GET /v1/routes` son, por tanto, los dos únicos endpoints que aceptan ambos tipos de llamante (`sdk` con su clave, `panel` con rol `viewer` o superior). Todo lo demás de datos es solo `panel`.
 
 **Por qué esta opción:**
 
@@ -168,20 +199,20 @@ El motor reconoce dos tipos de llamante (`Principal`):
 
 **Implicaciones de seguridad (dichas sin adornos):**
 
-- La credencial de servicio es la más sensible del sistema: quien la tenga puede actuar como cualquier miembro de cualquier proyecto. Se mitiga con: es distinta de las claves de proyecto y no sirve en los endpoints del SDK; el motor la compara en tiempo constante; se acepta una lista de dos valores (`VERIDIAN_PANEL_TOKENS`: actual y anterior) para rotarla sin corte; cada acción de escritura del panel queda en `AuditLog` con el actor.
-- El motor **no confía solo en el panel**: aunque el panel esté comprometido, un actor sin membresía en un proyecto no obtiene datos de él; el atacante tendría que conocer un `person_id` válido y miembro. Es defensa en profundidad, no inmunidad: con la credencial robada y un `person_id` conocido, sí se puede actuar como esa persona. Los `person_id` son aleatorios y no se exponen fuera de la sesión.
+- La credencial de servicio es la más sensible del sistema: quien la tenga puede actuar como cualquier miembro de cualquier organización. Se mitiga con: es distinta de las claves de proyecto y no sirve en los endpoints del SDK; el motor la compara en tiempo constante; se acepta una lista de dos valores (`VERIDIAN_PANEL_TOKENS`: actual y anterior) para rotarla sin corte; cada acción de escritura del panel queda en `AuditLog` con el actor.
+- El motor **no confía solo en el panel**: aunque el panel esté comprometido, un actor sin membresía en la organización de un proyecto no obtiene datos de él; el atacante tendría que conocer un `person_id` válido y miembro. Es defensa en profundidad, no inmunidad: con la credencial robada y un `person_id` conocido, sí se puede actuar como esa persona. Los `person_id` son aleatorios y no se exponen fuera de la sesión.
 - Una clave de API (`sdk`) filtrada ya no lee decisiones ni perfiles, ni puede marcar decisiones como normales: hoy sí puede, porque el mismo token sirve para todo. Es un endurecimiento deliberado.
 - Los dos servicios hablan por internet pública (Render). El transporte es HTTPS; la restricción por red no está disponible sin cambiar de plan y no se asume.
 
-## Panel: login, miembros y proyectos
+## Panel: login, organizaciones, miembros y proyectos
 
 Se copia el patrón de Centinela (`web/auth.py`, `web/config.py`, `web/app.py`), sin importarlo:
 
 - **OAuth con Google hecho a mano con `httpx`:** `/auth/google` genera `state` aleatorio y lo guarda en la sesión; `/auth/callback` lo compara en tiempo constante, lo descarta tras un uso, cambia el `code` por un token y lee `userinfo`. **Se exige `email_verified: true`.**
-- **Sesión:** `SessionMiddleware` de Starlette (cookie firmada, `SameSite=lax`, `HttpOnly`, `Secure` si la URL pública es HTTPS, vigencia de 8 horas como en Centinela). La cookie guarda `person_id`, nombre, foto, `csrf` y el `project_id` elegido. **Nunca guarda el rol:** el motor lo lee en cada llamada y, si falla, se deniega (falla cerrado).
-- **Tras el callback:** el panel llama a `POST /v1/people/login` del motor (`google_sub`, `email`, `name`). El motor hace el alta o actualiza a la persona, **acepta las invitaciones pendientes y vigentes de ese correo** y devuelve sus proyectos.
-- **Varios proyectos:** el selector de proyecto vive en el encabezado. Cambiar de proyecto escribe `project_id` en la sesión **solo si** el motor confirma que la persona es miembro (`GET /v1/me/projects`). Sin proyectos, la pantalla ofrece crear uno (sujeto a la decisión 2). El panel **ya no lee `VERIDIAN_TOKEN`**: el proyecto sale de la sesión, nunca del entorno. Las variables nuevas son `VERIDIAN_PANEL_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `PUBLIC_URL`.
-- **Pantallas nuevas:** proyectos y selector, miembros e invitaciones, claves de API (la clave completa se muestra **una sola vez** al crearla), ajustes del proyecto (retención, aplicación de bloqueos, webhook), registro de auditoría. Los textos van en español como el resto del panel.
+- **Sesión:** `SessionMiddleware` de Starlette (cookie firmada, `SameSite=lax`, `HttpOnly`, `Secure` si la URL pública es HTTPS, vigencia de 8 horas como en Centinela). La cookie guarda `person_id`, nombre, foto, `csrf` y el `project_id` elegido (la organización se deduce de él). **Nunca guarda el rol:** el motor lo lee en cada llamada y, si falla, se deniega (falla cerrado).
+- **Tras el callback:** el panel llama a `POST /v1/people/login` del motor (`google_sub`, `email`, `name`). El motor hace el alta o actualiza a la persona, **acepta las invitaciones pendientes y vigentes de ese correo** y devuelve sus **organizaciones, con su rol en cada una y los proyectos de cada una** (`{person, orgs: [{id, name, role, projects: [{id, name}]}]}`). Las invitaciones son a la organización.
+- **Varias organizaciones y proyectos:** el selector vive en el encabezado y agrupa los proyectos por organización. Hasta que exista el selector, el panel usa el primer proyecto de la primera organización. Cambiar de proyecto escribe `project_id` en la sesión **solo si** el motor confirma que la persona es miembro de su organización (`GET /v1/me/orgs`). Sin organizaciones, o con una organización sin proyectos, la pantalla lo dice: crear organización depende de la decisión 2 y crear proyecto lo hacen `owner` y `admin` de la organización. El panel **ya no lee `VERIDIAN_TOKEN`**: el proyecto sale de la sesión, nunca del entorno. Las variables nuevas son `VERIDIAN_PANEL_TOKEN`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `PUBLIC_URL`.
+- **Pantallas nuevas:** organizaciones, proyectos y selector, miembros e invitaciones (de la organización), claves de API (la clave completa se muestra **una sola vez** al crearla), ajustes del proyecto (retención, aplicación de bloqueos, webhook), registro de auditoría. Los textos van en español como el resto del panel.
 - El caché de lecturas del panel (`TTLCache`) **debe incluir el `project_id` en su clave**; hoy asume un solo cliente y compartiría datos entre proyectos. Se prueba.
 
 ## Aislamiento entre proyectos (brecha 5)
@@ -191,7 +222,7 @@ Se copia el patrón de Centinela (`web/auth.py`, `web/config.py`, `web/app.py`),
 - **Pruebas de aislamiento entre proyectos (obligatorias, no opcionales):**
   1. Fixture de dos proyectos con datos distintos (`conftest.py` ya tiene `TOKEN_A` y `TOKEN_B`).
   2. **Recorrido de todas las rutas de la aplicación** (`app.routes`): un test parametrizado llama cada GET con el llamante B y comprueba que no aparece ningún id, `user_id`, IP ni sesión del proyecto A. Un endpoint nuevo sin cobertura hace fallar el test que lista las rutas esperadas.
-  3. Casos puntuales: `POST /v1/decisions/{id}/normal` con un id de A siendo B responde `404`; el blocklist de A no contiene lo de B y su `version` es independiente; `DELETE` por usuario o por proyecto no toca al otro; una clave revocada de A no autentica; un miembro de A con `X-Veridian-Project` de B recibe `403`.
+  3. Casos puntuales: `POST /v1/decisions/{id}/normal` con un id de A siendo B responde `404`; el blocklist de A no contiene lo de B y su `version` es independiente; `DELETE` por usuario o por proyecto no toca al otro; una clave revocada de A no autentica; un miembro de la organización de A con `X-Veridian-Project` de un proyecto de otra organización B recibe `403`. Un miembro de una organización sí lee todos los proyectos de ella (no hay aislamiento entre proyectos de la misma organización: es lo que implican los roles de organización).
   4. Dos proyectos con el **mismo** `decision_id` o el mismo `session_id`/`user_id` no se mezclan.
   5. El caché del panel no cruza proyectos.
 
@@ -201,25 +232,25 @@ Se copia el patrón de Centinela (`web/auth.py`, `web/config.py`, `web/app.py`),
 
 | Contrato | Cambio |
 |---|---|
-| **Reglas generales** | `Authorization: Bearer` admite ahora dos tipos de llamante (`sdk` y `panel`, ver arriba). El token ya no viene de `VERIDIAN_TOKENS`: es una clave de API creada en el panel. Se añade `429 {"error": "rate_limited"}` con `Retry-After`. `401` sigue igual y **no distingue** clave inexistente de revocada. Se añade `403 {"error": "forbidden"}` para rol insuficiente. |
-| **1 Eventos, 2 Bloqueos, 9 Consulta previa** | Sin cambio de forma. El proyecto sale de la clave. Con `enforcement = observe` (decisión 6) la decisión se registra pero `blocklist` no la publica y `check` devuelve `allow`. |
+| **Reglas generales** | `Authorization: Bearer` admite ahora dos tipos de llamante (`sdk` y `panel`, ver arriba). El token ya no viene de `VERIDIAN_TOKENS`: es una clave de API creada en el panel. Se añade `429 {"error": "rate_limited"}` con `Retry-After`. `401` sigue igual y **no distingue** clave inexistente de revocada. Se añade `403 {"error": "forbidden"}` para rol insuficiente (el rol es el del actor en la organización del proyecto). |
+| **1 Eventos, 2 Bloqueos, 9 Consulta previa** | Sin cambio de forma. El proyecto sale de la clave. `GET /v1/blocklist` (2) también lo lee `panel` con `X-Veridian-Project` y rol `viewer`. Con `enforcement = observe` (decisión 6) la decisión se registra pero `blocklist` no la publica y `check` devuelve `allow`. |
 | **3 Decisiones** | Sin cambio de forma. Solo `panel`. `POST /v1/decisions/{id}/normal` exige rol `admin` (decisión 3) y escribe `AuditLog`. |
 | **4 Perfil, 5 Actividad, 6 Resumen, 7 Usuarios** | Sin cambio de forma. Solo `panel`. |
-| **8 Rutas** | Ya no es "el mismo contenido para todos". Es por proyecto. Se añade `PUT` para admins. El middleware lo sigue leyendo con su clave (`sdk`). |
+| **8 Rutas** | Ya no es "el mismo contenido para todos". Es por proyecto. Se añade `PUT` para admins. El middleware lo lee con su clave (`sdk`) y el panel con `X-Veridian-Project` y rol `viewer` (página Rutas). |
 | **Solo para ensayos: reinicio** | **Se elimina** `POST /v1/admin/reset` y `VERIDIAN_ALLOW_RESET`. Lo reemplaza `DELETE /v1/projects/{id}/data` (contrato 14), con rol `owner` y auditoría. |
 
 ### Contratos nuevos
 
-Los de la columna "Llamante" `panel` llevan siempre `X-Veridian-Actor`; el proyecto va en la ruta cuando es administración y en `X-Veridian-Project` cuando es lectura de datos.
+Los de la columna "Llamante" `panel` llevan siempre `X-Veridian-Actor`. La organización va en la ruta (`/v1/orgs/{id}/…`) en la administración de la organización; el proyecto va en la ruta en la administración de un proyecto (`/v1/projects/{id}/…`) y en `X-Veridian-Project` en la lectura de datos. En todos los casos el rol es el del actor en la organización (del proyecto, si la ruta lo nombra).
 
 | N.º | Endpoints | Llamante y rol | Notas |
 |---|---|---|---|
-| **10 Personas y proyectos** | `POST /v1/people/login`; `GET /v1/me/projects`; `POST /v1/projects`; `GET`/`PATCH /v1/projects/{id}`; `DELETE /v1/projects/{id}` | `panel`; crear: cualquiera con permiso (decisión 2); `PATCH`: admin; `DELETE`: owner | `PATCH` cambia `name`, `retention_days`, `enforcement`, `ai_enabled`. `DELETE` es borrado lógico (`deleted_at`) y programa la purga. |
-| **11 Miembros e invitaciones** | `GET /v1/projects/{id}/members`; `PATCH`/`DELETE .../members/{person_id}`; `GET`/`POST .../invitations`; `DELETE .../invitations/{id}` | `panel`; admin (para `viewer`/`admin`), owner (para `owner`) | Reglas: siempre queda un owner; nadie cambia su propio rol ni se quita a sí mismo (como `self` en Centinela). Invitación vence a los 14 días por defecto (valor de configuración, no medido). |
-| **12 Claves de API** | `GET`/`POST /v1/projects/{id}/api-keys`; `POST .../api-keys/{key_id}/revoke` | `panel`; admin | `POST` devuelve `{"id","name","prefix","key"}` y **`key` solo esa vez**. Formato `vrd_<8 de prefijo>_<secreto aleatorio de 32 bytes en base64url>`. `GET` nunca devuelve `key` ni `key_hash`. |
+| **10 Personas, organizaciones y proyectos** | `POST /v1/people/login`; `GET /v1/me/orgs`; `POST /v1/orgs`; `GET`/`PATCH /v1/orgs/{id}`; `GET`/`POST /v1/orgs/{id}/projects`; `GET`/`PATCH`/`DELETE /v1/projects/{id}` | `panel`; `POST /v1/orgs`: correo permitido (decisión 2, provisional); `PATCH` de organización y `POST .../projects`: admin; `GET`: viewer; `PATCH` de proyecto: admin; `DELETE` de proyecto: owner | `login` devuelve `{person, orgs: [{id, name, role, projects: [{id, name}]}]}`; `GET /v1/me/orgs` devuelve `{orgs: [...]}` igual. `POST /v1/orgs` hace owner al creador. `PATCH` de organización cambia `name`; `PATCH` de proyecto cambia `name`, `retention_days`, `enforcement`, `ai_enabled`. Un proyecto responde con `org_id` y el `role` del actor en esa organización. `DELETE` de proyecto es borrado lógico (`deleted_at`) y programa la purga. Sustituyen a `GET /v1/me/projects` y `POST /v1/projects`. |
+| **11 Miembros e invitaciones** (de la organización) | `GET /v1/orgs/{id}/members`; `PATCH`/`DELETE /v1/orgs/{id}/members/{person_id}`; `GET`/`POST /v1/orgs/{id}/invitations`; `DELETE /v1/orgs/{id}/invitations/{inv_id}` | `panel`; admin (para `viewer`/`admin`), owner (para `owner`) | Reglas de dominio de la sección Roles: siempre queda un owner; nadie cambia su propio rol ni se quita a sí mismo; un admin no gestiona owners. Invitación vence a los 14 días por defecto (valor de configuración, no medido). Solo hay una lista de miembros por organización. |
+| **12 Claves de API** | `GET`/`POST /v1/projects/{id}/api-keys`; `POST .../api-keys/{key_id}/revoke` | `panel`; admin (de la organización del proyecto) | `POST` devuelve `{"id","name","prefix","key"}` y **`key` solo esa vez**. Formato `vrd_<8 de prefijo>_<secreto aleatorio de 32 bytes en base64url>`. `GET` nunca devuelve `key` ni `key_hash`. |
 | **13 Webhook** | `PUT /v1/projects/{id}/webhook`; `POST .../webhook/test`; `GET .../webhook/deliveries` | `panel`; admin | Ver Notificaciones. `PUT` devuelve el secreto de firma una sola vez. |
 | **14 Retención y borrado** | `DELETE /v1/projects/{id}/users/{user_id}`; `DELETE /v1/projects/{id}/data` | `panel`; admin (usuario), owner (proyecto completo) | Ver Retención. Responde `{"deleted": {"events": n, "decisions": n}, "version": v}`. |
-| **15 Auditoría** | `GET /v1/projects/{id}/audit?limit=&before=` | `panel`; admin (el viewer no la ve) | Solo lectura. No existe ningún endpoint que modifique o borre. |
+| **15 Auditoría** | `GET /v1/orgs/{id}/audit?project=&limit=&before=` | `panel`; admin (el viewer no la ve) | Solo lectura. `project` (opcional) filtra por el proyecto referenciado. Las acciones de la organización (miembros, invitaciones) tienen `project_id` nulo y solo salen sin filtro. No existe ningún endpoint que modifique o borre. |
 
 El **SDK no cambia de contrato**: sigue enviando `Authorization: Bearer <clave>` a `/v1/events`, `/v1/check`, `/v1/blocklist` y `/v1/routes`; la clave resuelve el proyecto. Impacto esperado: ninguno en código. Hay que **comprobar** (no lo asumimos) que el middleware trata `429` y `401` en `/v1/check` como fail-open, como ya documenta su cabecera, y actualizar su README y la landing para decir "crea una clave en el panel" en lugar de "tu `VERIDIAN_TOKEN`".
 
@@ -300,7 +331,7 @@ La carga lleva `user_id` y la ruta porque el destinatario es el propio cliente, 
 
 **Protección contra SSRF:** el motor hace peticiones a una URL que escribe un usuario. Se exige `https`, se resuelve el nombre y se rechazan direcciones privadas, locales y de metadatos (se vuelve a comprobar en cada intento), sin seguir redirecciones. Se prueba.
 
-**Correo a los admins:** destinatarios = miembros `owner` y `admin` con `notify_email = 1` (activo por defecto, se puede apagar). Contenido: proyecto, hora, `user_id`, enlace al panel; sin IP ni cuerpo de peticiones. El **proveedor queda como decisión abierta (4)**: se define una interfaz `Mailer` con una implementación nula y una real, de modo que elegir proveedor no cambia el diseño. Para invitar no hace falta correo (se aceptan al entrar).
+**Correo a los admins:** destinatarios = miembros `owner` y `admin` de la organización del proyecto con `notify_email = 1` (activo por defecto, se puede apagar; la preferencia es por organización). Contenido: proyecto, hora, `user_id`, enlace al panel; sin IP ni cuerpo de peticiones. El **proveedor queda como decisión abierta (4)**: se define una interfaz `Mailer` con una implementación nula y una real, de modo que elegir proveedor no cambia el diseño. Para invitar no hace falta correo (se aceptan al entrar).
 
 ## Retención y borrado (brecha 7)
 
@@ -378,14 +409,14 @@ Cada unidad es un trabajo ODD (`odd/tasks/<nombre>.md`) con sus pruebas y docume
 | **U1** | **Quitar `VERIDIAN_ALLOW_RESET` de `render.yaml`** (y comprobar el panel de Render) | docs/infra | nada | Prueba que `render.yaml` no contiene la variable; `Settings` por defecto sigue en `False` |
 | U2 | Migraciones: `schema_migrations`, ejecutor, copia previa, `0001` = esquema actual | engine | U1 | Base nueva y base existente (se marca `0001`); idempotente; falla y revierte una migración rota |
 | U3 | `0002`: `client_id` a `project_id`, `UNIQUE (project_id, id)` en `decisions`; renombrado mecánico en el código | engine | U2 | Toda la suite actual pasa sin cambios de comportamiento; migración conserva filas y el blocklist de una base de demo copiada |
-| U4 | `0003`: tablas del control plane + repositorios (person, project, membership, invitation, api_key, audit) con reglas de dominio (último owner, rol) | engine | U3 | Reglas de roles y último owner; auditoría en la misma transacción; invitación vence |
+| U4 | `0003`: tablas del control plane + repositorios (person, organization, project, membership, invitation, api_key, audit) con reglas de dominio (último owner, nadie cambia su propio rol, admin no gestiona owners) | engine | U3 | Reglas de roles y último owner; auditoría en la misma transacción con `org_id` y `project_id` opcional; invitación a la organización vence |
 | U5 | Claves de API: resolución por hash, tiempo constante, límite de fallos, importación de `VERIDIAN_TOKENS`, alcance `sdk`; contrato 12 | engine | U4 | Clave válida/revocada/desconocida dan el mismo `401`; `429`; importación idempotente; el SDK de la demo sigue autenticando; clave `sdk` no accede a decisiones; aislamiento entre claves de dos proyectos |
-| U6 | Principal `panel`: credencial de servicio + actor + proyecto, guarda de rol, contratos 10 y 11 (personas, proyectos, miembros, invitaciones), `POST /v1/people/login`, `VERIDIAN_BOOTSTRAP_OWNERS`; `mark_normal` con rol y auditoría | engine | U5 | Matriz rol por endpoint; no miembro `403`; invitación se acepta al login; bootstrap solo de huérfanos; marcar normal queda auditado |
+| U6 | Principal `panel`: credencial de servicio + actor + proyecto, guarda de rol resuelta en la organización del proyecto, contratos 10 y 11 (personas, organizaciones, proyectos, miembros, invitaciones), `POST /v1/people/login` con organizaciones y proyectos, `VERIDIAN_BOOTSTRAP_OWNERS` y `VERIDIAN_ORG_CREATORS`; `GET /v1/blocklist` y `GET /v1/routes` para `sdk` y `panel`; `mark_normal` con rol y auditoría | engine | U5 | Matriz rol por endpoint; no miembro `403`; invitación a la organización se acepta al login; bootstrap solo de organizaciones huérfanas; el rol de una organización vale en todos sus proyectos y no en los de otra; marcar normal queda auditado |
 | U7 | Rutas por proyecto (`route_rules`, siembra desde `routes.yaml`, `PUT`) | engine | U6 | Dos proyectos con rutas distintas; `GET /v1/routes` por clave; validación de clases |
 | U8 | **Batería de aislamiento entre proyectos** (recorrido de todas las rutas, casos puntuales, mismo id en dos proyectos) | engine | U7 | Es la prueba; debe fallar si se añade un endpoint no cubierto |
 | U9 | Panel: login de Google, sesión, CSRF, sin modo abierto, cierre de sesión | edge | U6 | Flujo OAuth con transporte falso (como `google_transport` en Centinela): `state`, `email_verified`, sesión; CSRF rechaza sin `Origin` ni token; sin config no arranca abierto |
-| U10 | Panel: selector y alta de proyecto, el proyecto sale de la sesión, `TTLCache` por proyecto, retirar `VERIDIAN_TOKEN` | edge | U9 | Cambiar de proyecto solo si es miembro; el caché no cruza proyectos; texto de errores |
-| U11 | Panel: miembros e invitaciones, claves de API (se muestra una vez), auditoría | edge | U10 | Roles ocultan acciones; la clave solo aparece en la respuesta de creación; rotación de punta a punta con el SDK |
+| U10 | Panel: selector de organización y proyecto, alta de organización (si está permitido) y de proyecto, el proyecto sale de la sesión, `TTLCache` por proyecto, retirar `VERIDIAN_TOKEN` | edge | U9 | Cambiar de proyecto solo si es miembro de su organización; el caché no cruza proyectos; texto de errores |
+| U11 | Panel: miembros e invitaciones de la organización, claves de API (se muestra una vez), auditoría de la organización con filtro por proyecto | edge | U10 | Roles ocultan acciones; admin no ve acciones sobre owners; la clave solo aparece en la respuesta de creación; rotación de punta a punta con el SDK |
 | U12 | Webhook: bandeja `notifications`, firma HMAC, reintentos, SSRF, secreto cifrado; contrato 13 | engine + edge (ajustes) | U6 | Firma verificable con la receta documentada; reintentos con reloj falso; rechaza IP privada y redirecciones; un fallo de envío no afecta a `check` |
 | U13 | Retención: `retention_days`, hilo de purga, borrado por usuario y por proyecto (reemplaza el reinicio); contrato 14 | engine + edge | U6 | Purga respeta bloqueos abiertos; borrado no toca otro proyecto; auditoría con hash; se elimina `reset` y se actualiza `test_reset.py` |
 | U14 | `enforcement = observe` y `ai_enabled` por proyecto | engine | U6 | `observe` registra pero `blocklist` vacío y `check` permite; `ai_enabled = 0` equivale a solo reglas |
@@ -398,8 +429,8 @@ U1 es independiente y se hace primero. U2 a U8 son el núcleo del motor y van en
 
 ## Decisiones abiertas
 
-1. **¿Se añade una capa de organización por encima de los proyectos?** Hoy una persona pertenece a varios proyectos pero no hay "empresa" que los agrupe, ni miembros heredados. Recomendación: **no**. No hay un cliente que lo pida, duplica roles y pantallas, y se puede añadir después como una tabla que agrupa proyectos sin cambiar el modelo actual.
-2. **¿Quién puede crear proyectos?** Opciones: cualquier persona con Google, o solo correos de una lista. Recomendación: **lista de correos permitidos hasta terminar el piloto**, porque cada proyecto activo consume llamadas a la IA (costo que hoy no tenemos medido) y no hay facturación que lo cubra.
+1. **¿Se añade una capa de organización por encima de los proyectos?** **Decidido (usuario, 2026-10-25): sí.** Los roles viven solo en la organización: un rol por persona y organización, válido para todos sus proyectos, una lista de miembros por organización, sin roles por proyecto, y una persona puede pertenecer a varias organizaciones. Esto reemplaza la recomendación anterior ("no"). Costo asumido: una tabla y una pantalla más, y no se puede dar acceso a un solo proyecto de una organización.
+2. **¿Quién puede crear organizaciones?** Opciones: cualquier persona con Google, o solo correos de una lista. Recomendación: **lista de correos permitidos hasta terminar el piloto**, porque cada proyecto activo consume llamadas a la IA (costo que hoy no tenemos medido) y no hay facturación que lo cubra. **Valores provisionales hasta que se decida** (no se preguntaron al usuario): la lista es la variable `VERIDIAN_ORG_CREATORS` (antes `VERIDIAN_PROJECT_CREATORS`; vacía = nadie); los `owner` y `admin` de una organización crean proyectos dentro de ella sin pasar por la lista; las invitaciones son a la organización; la auditoría es por organización con referencia opcional a proyecto; el demo sembrado es la organización "Demo" con su proyecto; `VERIDIAN_BOOTSTRAP_OWNERS` hace owners de las organizaciones sin owner.
 3. **¿Puede un `viewer` marcar una decisión como normal?** Marcar normal levanta un bloqueo y el perfil lo aprende, así que es una acción de seguridad. Recomendación: **no**; solo `admin` y `owner`.
 4. **¿Hay correo en la primera versión y con qué proveedor?** Las invitaciones y el webhook no lo necesitan. Recomendación: lanzar con webhook y panel, y añadir el correo (U17) con un proveedor transaccional por API una vez comparados costos, límites y ubicación de datos (**no verificado: hay que comparar**). La interfaz `Mailer` evita que esta decisión bloquee el resto.
 5. **¿Cuántos días de retención por defecto, y cuál es el mínimo permitido?** Recomendación: **90 días por defecto como valor provisional**, a revisar con la medición del piloto de cuántos días de historia necesita un perfil (pregunta abierta en `PENDIENTES.md`). El mínimo debe impedir una retención menor que lo que el perfil necesita; no tenemos el dato para fijarlo.
