@@ -50,6 +50,40 @@ def test_owner_on_known_network_and_device_is_allowed_without_ai(check_client):
     assert decisions(client) == []
 
 
+def test_owner_first_use_of_a_critical_route_from_known_network_and_device_is_allowed_without_ai(check_client):
+    """Found in production: the owner changing the bank account for the first time, from their own
+    network and device, was blocked by the AI 3 of 3 times. Network and device both known: no deviation."""
+    judge = FakeJudge(decision="block", rationale="Endpoint crítico nunca usado.")
+    client = check_client(judge)
+    seed_owner_history(client)  # GET /invoices only: the critical route was never used
+
+    response = check(client, make_event("c1", NOW, session_id="s_owner_bank", **CRITICAL))
+
+    assert response.json() == {"verdict": "allow", "decision_id": None}
+    assert judge.calls == []
+    assert decisions(client) == []
+
+
+def test_first_use_without_a_device_id_is_still_judged(check_client):
+    judge = FakeJudge(decision="block", rationale="Sin dispositivo.")
+    client = check_client(judge)
+    seed_owner_history(client)
+
+    response = check(client, make_event("c1", NOW, session_id="s_nodev", device_id="", **CRITICAL))
+
+    assert response.json()["verdict"] == "block"
+    assert len(judge.calls) == 1
+
+
+def test_first_use_from_a_new_device_on_the_known_network_is_still_judged(check_client):
+    judge = FakeJudge(decision="block", rationale="Dispositivo nuevo.")
+    client = check_client(judge)
+    seed_owner_history(client)
+
+    assert check(client, make_event("c1", NOW, **GRAY)).json()["verdict"] == "block"
+    assert len(judge.calls) == 1
+
+
 def test_attacker_is_blocked_by_rule_and_ai_explains_afterwards(check_client):
     judge = FakeJudge(decision="block", rationale="La IA vio un atacante.")
     client = check_client(judge)

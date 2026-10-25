@@ -245,6 +245,12 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 - **Clasificar con el clasificador OpenAPI sin revisión.** Marcó `POST /login` como `critical`, lo que bloquearía el primer login desde una red nueva. Su salida es un borrador que revisa una persona.
 - **Límite de fallos por `request.client.host`.** Detrás del proxy de Render todos comparten esa dirección, así que 30 claves malas de cualquiera dejaban a todos los SDK en `429`. Ahora se usa `client_ip()` con `VERIDIAN_TRUSTED_PROXIES`.
 
+## Hallazgo del testing en producción (2026-10-25)
+
+- **El dueño quedaba bloqueado la primera vez que cambiaba su cuenta bancaria**, aun desde su red y su dispositivo, a su hora: 3 de 3 veces en producción. "Ruta crítica nunca usada" alcanzaba para consultar a la IA, y Haiku bloqueaba aunque su propio motivo decía que todo coincidía con el titular.
+- **Corregido** (`rules.py`): con la red **y** el dispositivo conocidos, el primer uso de una ruta `critical` no es un desvío y no se consulta a la IA. Sin `device_id`, con un dispositivo nuevo o desde una red nueva se sigue juzgando. Las rutas `sensitive` (exportar) se siguen juzgando en segundo plano.
+- Riesgo aceptado: alguien que opere desde la propia máquina y red del dueño pasa. Ese caso queda fuera del alcance (otra persona usando la credencial desde otro lado).
+
 ## Decisiones clave
 
 | Decisión | Por qué |

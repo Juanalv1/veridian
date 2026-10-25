@@ -78,8 +78,15 @@ def evaluate_event(
     route_never_used = key not in profile.routes
     rate = rate_per_min(conn, project_id, event)
     rate_spike = rate > max(settings.rate_factor * profile.usual_max_rate_per_min, settings.rate_floor)
+    # The owner's own network and device together: a first use of a critical route is the owner
+    # doing something new, not someone else (the AI blocked the owner changing the bank account
+    # 3 of 3 times in production). Without a device id the device is unknown, so it is still
+    # judged. Sensitive routes (bulk export) are still judged in the background.
+    known_place = not new_network and bool(event.device_id) and not new_device
+    first_guarded_use = (route_never_used and route_class in GUARDED_CLASSES
+                         and not (route_class == "critical" and known_place))
     # A rate spike is a deviation even on the owner's network and device: scripts and malware.
-    if not (new_network or new_device or rate_spike or (route_never_used and route_class in GUARDED_CLASSES)):
+    if not (new_network or new_device or rate_spike or first_guarded_use):
         return None
 
     rows = session_events(conn, project_id, event)
