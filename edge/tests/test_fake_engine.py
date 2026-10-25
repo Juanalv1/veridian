@@ -224,6 +224,16 @@ def test_mark_normal_unblocks_and_bumps_version(client):
     assert client.get("/v1/blocklist", headers=AUTH).json()["version"] == 2
 
 
+def test_decision_status_goes_from_open_to_marked_normal(client):
+    post_events(client, [attack()])
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    assert d["status"] == "open"
+    r = client.post(f"/v1/decisions/{d['id']}/normal", headers=AUTH)
+    assert r.json()["status"] == "marked_normal"
+    d = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]
+    assert d["status"] == "marked_normal"
+
+
 def test_mark_normal_unknown_decision_is_404(client):
     assert client.post("/v1/decisions/d_nope/normal", headers=AUTH).status_code == 404
 

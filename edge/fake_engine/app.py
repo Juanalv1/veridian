@@ -186,6 +186,7 @@ class ClientState:
                     f"({event.method} {event.route}) que este usuario nunca hace."
                 ),
                 "event_ids": [event.id],
+                "status": "open",
             }
         )
 
@@ -196,6 +197,7 @@ class ClientState:
         if decision_id in self.normal:
             return decision
         self.normal.add(decision_id)
+        decision["status"] = "marked_normal"
         event = self.pending_events[decision_id]
         self.profile(event.user_id).learn(event)
         changed = False
