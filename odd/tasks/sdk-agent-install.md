@@ -27,7 +27,7 @@ Mode: on. Runner: `uv run pytest -q` in `edge/` (panel). Landing is static: stru
 ## Tasks
 
 - [ ] T1 Agent install guide (`landing/install.md`, `landing/llms.txt`), linked from the root README and both SDK READMEs. Route: delegated (writer: guide + 3 READMEs).
-- [ ] T2 Copy-prompt button in the landing and the panel snippet partial, with a test in `edge/tests`. Route: delegated (same writer).
+- [x] T2 Copy-prompt button in the landing and the panel snippet partial, with a test in `edge/tests`. Route: delegated (same writer).
 
 ## Acceptance
 
@@ -38,3 +38,7 @@ Mode: on. Runner: `uv run pytest -q` in `edge/` (panel). Landing is static: stru
 ## Progress
 
 Created 2026-10-25. Next: T1.
+
+## Evidence
+
+- T2 (commit below): tests written first (6 failed = RED), then button in `landing/index.html` (codecard foot, `.copy` class, label kept by `install.js`) and `edge/panel/templates/partials/snippet.html` (own step row, `data-agent-prompt`, `data-copy`). Prompt has no key; `edge/tests/test_agent_prompt.py` checks panel, one-time reveal page and landing/panel text equality. `uv run pytest -q` in `edge/`: 798 passed.

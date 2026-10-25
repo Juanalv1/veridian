@@ -1,11 +1,20 @@
 {# The SDK snippet: keys page and signup. `key` is the key just created (shown once) or None for a placeholder.
    The Python code must match sdk/python/examples/quickstart.py exactly (tests/test_sdk_api.py checks it). #}
 {% macro sdk_snippet(key=None) -%}
+{# The one source of the agent prompt in the panel. It never takes the key: pasting it into an agent sends it to a
+   third-party model. test_agent_prompt.py checks it equals the landing's. #}
+{% set agent_prompt = "Install Veridian in this project. Follow https://veridian-platanus.onrender.com/install.md step by step. Read the API key from the VERIDIAN_API_KEY environment variable; do not ask me to paste it here, tell me which env file to put it in. Stop and ask me if the stack is not supported or if you cannot find where the authenticated user id lives." %}
 <div class="sn">
   <div class="sn-head">
     <div role="tablist" aria-label="Lenguaje" class="sn-tabs">
       <button type="button" role="tab" id="snippet-tab-python" aria-selected="true" aria-controls="snippet-panel-python" tabindex="0">Python</button>
       <button type="button" role="tab" id="snippet-tab-node" aria-selected="false" aria-controls="snippet-panel-node" tabindex="-1">Node</button>
+    </div>
+  </div>
+  <div class="sn-step">
+    <div class="sn-step-head">
+      <span class="sn-name">¿Prefieres que lo haga tu agente de código? La clave no va en el prompt.</span>
+      <button class="btn btn-secondary" type="button" data-agent-prompt data-copy="{{ agent_prompt }}" hidden>Copiar prompt para tu agente</button>
     </div>
   </div>
   <div class="sn-step">

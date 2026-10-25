@@ -42,6 +42,7 @@
   }
   Array.prototype.forEach.call(document.querySelectorAll('.copy'), function (btn) {
     var timer;
+    var label = btn.textContent;
     btn.addEventListener('click', function () {
       var text = btn.dataset.copy || document.getElementById(btn.dataset.copyFrom).textContent;
       copyText(text).then(function () { flash('Copiado', 'Copiado al portapapeles'); },
@@ -51,7 +52,7 @@
       btn.textContent = label;
       if (status) status.textContent = msg;
       clearTimeout(timer);
-      timer = setTimeout(function () { btn.textContent = 'Copiar'; if (status) status.textContent = ''; }, 1800);
+      timer = setTimeout(function () { btn.textContent = label; if (status) status.textContent = ''; }, 1800);
     }
   });
 })();
