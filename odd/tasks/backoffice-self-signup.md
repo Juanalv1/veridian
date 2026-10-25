@@ -27,10 +27,10 @@ Mode: on. Source: `INIT.md` (same as the other edge task docs). Runner: `uv run 
 
 ## Tasks
 
-- [x] T1 Fake engine: org creation open to any signed-in person; persons identified by verified email across providers. Route: delegated (writer + preparation triggers: fake engine, panel auth, tests). Evidence: `9a00141`; baseline 697 passed -> 699 passed. `VERIDIAN_ORG_CREATORS` removed from the fake engine (nothing in the demo needed it; `render.yaml` still sets it, harmless and untouched).
-- [x] T2 Panel: GitHub OAuth (`user:email`, primary verified email), same account as Google for the same email. Route: delegated. Evidence: `e1097c4`; 699 -> 716 passed.
-- [ ] T3 Panel: first-run company-name step creating org + first project; people with an org never see it again. Route: delegated.
-- [ ] T4 Panel: after first run, land on key creation with the snippet filled in; "waiting for the first event" → "connected". Route: delegated.
+- [x] T1 Fake engine: org creation open to any signed-in person; persons identified by verified email across providers. Route: delegated (writer + preparation triggers: fake engine, panel auth, tests). Evidence: `041e74a` (was `9a00141` before an upstream rebase); baseline 697 passed -> 699 passed. `VERIDIAN_ORG_CREATORS` removed from the fake engine (nothing in the demo needed it; `render.yaml` still sets it, harmless and untouched).
+- [x] T2 Panel: GitHub OAuth (`user:email`, primary verified email), same account as Google for the same email. Route: delegated. Evidence: `19cf559`; 699 -> 716 passed.
+- [x] T3 Panel: first-run company-name step creating org + first project; people with an org never see it again. Route: delegated. Evidence: `81bb64c`; 716 -> 732 passed. `/sin-proyectos` is now the step (the engine, not the session, says whether the person has an org; a stale page or double submit creates nothing). The first project is named after the company and starts in `observe`.
+- [x] T4 Panel: after first run, land on key creation with the snippet filled in; "waiting for the first event" → "connected". Route: delegated. Evidence: `7d03b6a` (committed by the repo sync tool, message "chore: sync uncommitted changes"); 732 -> 747 passed with Maikol's snippet component merged in. The step lands on `/claves` with a welcome flash; the snippet is Maikol's shared macro. The state reads `GET /v1/activity?limit=1` (already used by the panel): no contract change. The panel polls `GET /claves/conexion` (htmx, every 3 s) until the first access.
 
 ## Acceptance
 
@@ -41,4 +41,4 @@ Mode: on. Source: `INIT.md` (same as the other edge task docs). Runner: `uv run 
 
 ## Progress
 
-Created 2026-10-25. T1 and T2 done. Next: T3.
+Created 2026-10-25. T1-T4 done (2026-10-25); 747 passed. Open: set the GitHub OAuth app env vars; the real engine must identify people by verified email across providers (docs/REPARTO.md, "Login").

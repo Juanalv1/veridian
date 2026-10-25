@@ -117,7 +117,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
    3. **Crear la clave de API** (la página de claves ya existe, contrato 12) y mostrar el snippet con esa clave ya puesta, listo para copiar. El snippet lo diseña Maikol; usar el mismo componente.
    4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
    - **Tests:** una persona nueva entra con Google o GitHub, crea su organización y su clave sin que nadie la invite; una persona con organización no vuelve a ver el paso 2; la misma persona con los dos proveedores es una sola cuenta.
-   - **Avance de José (2026-10-25):** hecho en el motor falso y el panel el acceso abierto a crear organizaciones y el login con GitHub (misma persona por correo verificado). Plan y evidencia: `odd/tasks/backoffice-self-signup.md`.
+   - **Avance de José (2026-10-25):** hecho el punto 2 completo en el panel y el motor falso (T1-T4 de `odd/tasks/backoffice-self-signup.md`, 747 tests pasan): login con GitHub, misma persona por correo verificado, paso de «nombre de la empresa» que crea organización y primer proyecto, y la página de claves con el estado «Esperando el primer evento» / «Conectado». Falta: crear la OAuth App de GitHub (callback `<PUBLIC_URL>/auth/github/callback`) y poner `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`; y que el motor real identifique a las personas por correo verificado entre proveedores (`docs/REPARTO.md`, «Login»).
 
 ### Carlos Navas: SDK, middleware y app de demo (lo que era del Dev 2)
 
