@@ -4,7 +4,6 @@
 **Rama:** `main` (no se usan PR; ver `CLAUDE.md`)
 **Estado:** en curso.
 - El motor está desplegado y pasa sus tests, pero **su comportamiento no está validado por personas.** Ver "Validación humana pendiente": los ensayos reales ya mostraron cosas que había que cambiar, y quedan casos sin probar.
-- Hay un bug conocido sin corregir (ver "Bug conocido").
 - Faltan unidades del plan de producto.
 
 Antes de tocar código lee `INIT.md`, `docs/REPARTO.md` (contratos) y `docs/DISENO-PRODUCTO.md` (plan de producto). El progreso unidad por unidad está en `odd/tasks/engine-productization.md`.
@@ -45,14 +44,7 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
 
 ### Dev B: notificaciones y operación
 
-1. **Hecho (2026-10-25): U12, endpoints del webhook** (contrato 13, documentado en `REPARTO.md`). Los proyectos en `observe` notifican con `decision.enforced: false`; la migración `0006` borró `project.webhook_url` y `project.webhook_secret_enc`. Lo que sigue es lo que se pedía: La conexión ya está en `main`: cada `block` encola una notificación en la misma transacción (`decisions.create_decision`) y un hilo la envía firmada, con reintentos. Falta exponerlo por HTTP:
-   - `PUT .../webhook` → `webhook_store.set_webhook_endpoint(conn, pid, url, now=, resolver=)`. Devuelve el secreto una sola vez. Si la URL es insegura (`UnsafeUrlError`) responde `422`; si falta `VERIDIAN_SECRET_KEY` (`SecretKeyMissing`), `503`.
-   - `DELETE .../webhook` → `clear_webhook_endpoint`. Para leer y activar o desactivar: `get_webhook_endpoint` y `set_webhook_enabled`.
-   - `GET .../webhook/deliveries` → `notifications/outbox.list_notifications`.
-   - `POST .../webhook/test`: no hay nada construido detrás todavía.
-   - **Decidir:**
-     - la migración `0003` creó `project.webhook_url` y `project.webhook_secret_enc`, pero la `0005` usa una tabla aparte, `webhook_endpoint`; hay que borrar esas columnas o pasar a usarlas;
-     - los proyectos en `observe` también notifican (`blocked.session: true`); ¿está bien?
+1. **Hecho (2026-10-25): U12, endpoints del webhook** (contrato 13, documentado en `REPARTO.md`). Los proyectos en `observe` notifican con `decision.enforced: false`; la migración `0006` borró `project.webhook_url` y `project.webhook_secret_enc`.
 2. **U17, conexión del correo.**
    - El módulo `engine/veridian_engine/mailer.py` ya existe.
    - Falta encolar `kind='email'` en el mismo outbox del webhook, para los owners y admins con `notify_email`.
@@ -282,29 +274,19 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
   - `engine/scripts/reset_client.py`, `seed_demo_history.py` y `send_sample_events.py` leen `.env` desde `engine/`;
   - el reset desaparece con U13.
 
-## Bug conocido: el perfil aprende de la sesión del atacante
+## Corregido (2026-10-25): el perfil aprendía de la sesión del atacante
 
-**Qué pasa:**
-- Después del ensayo real, el perfil de Ana (`u_42`, cliente `demo` en Render) tiene aprendida **la red del atacante** (`186.164.35.0/24`) y **su dispositivo** (`d_11623911ab28`).
-- Si el atacante repite desde el mismo teléfono pasados 10 minutos, el motor ya no lo ve como "red nueva" ni como "dispositivo nuevo".
+**Qué pasaba:** `build_profile` (`engine/veridian_engine/profile.py`) solo descartaba los eventos ligados a una decisión `block`/`alert` por `decision_events`, es decir, el evento que **disparó** la decisión. El resto de la sesión del atacante (su `POST /login`, las páginas después del bloqueo) se aprendía pasada la espera. Así, el perfil de Ana (`u_42`, cliente `demo`) terminó con la red `186.164.35.0/24` y el dispositivo `d_11623911ab28` del atacante. Eso rompía el principio de `docs/DECISIONES.md`: *"Nunca aprende de lo marcado como sospechoso"*.
 
-**Por qué pasa:**
-- `build_profile` (`engine/veridian_engine/profile.py`) solo descarta los eventos ligados a una decisión `block`/`alert` por `decision_events`, que es el evento que **disparó** la decisión.
-- El resto de la sesión del atacante no está ligado a ninguna decisión: su `POST /login`, las facturas a las que la app lo redirige, los `403` posteriores.
-- Al pasar `VERIDIAN_LEARN_DELAY_MIN`, esos eventos se aprenden.
+**Corrección:** un evento no se aprende si:
+- su sesión tiene una decisión `block`, `step_up` o `alert` abierta (toda la sesión, no solo el evento que la disparó); o
+- viene de una IP que incluye un `block` abierto (el atacante que vuelve en una sesión nueva).
 
-**Qué principio rompe:** `docs/DECISIONES.md`, *"Nunca aprende de lo marcado como sospechoso"*. Un atacante bloqueado termina enseñándole al perfil.
+Si la decisión se marca como normal, la sesión y la IP se aprenden (contrato 3). `review` no excluye nada: es el dueño con la IP rotando. Tests en `engine/tests/test_decisions.py`.
 
-**Corrección propuesta (sin hacer):**
-- No aprender **ningún** evento de una sesión que tenga una decisión `block`, `step_up` o `alert` abierta. Tampoco de la IP de un bloqueo que la incluya.
-- Si la decisión se marcó como normal, esa sesión sí se aprende (contrato 3).
+**Base de la demo:** no hace falta limpiarla. Los perfiles se calculan al leer desde `events`, así que el de Ana deja de tener la red y el dispositivo del atacante en cuanto el motor despliega, mientras ese bloqueo siga abierto. Si alguien lo marcó como normal, sí se aprenden: en ese caso, reiniciar y sembrar `demo`.
 
-**Tests que hacen falta:**
-- una sesión bloqueada cuyos eventos sin decisión no entran al perfil, ni pasada la espera;
-- la misma sesión después de marcarla normal, que sí entra;
-- la sesión del dueño, en paralelo, que sigue aprendiéndose.
-
-**Limpieza de la base de la demo:** al corregirlo, se pueden recalcular los perfiles, porque se construyen desde `events`. Si no, basta con reiniciar y sembrar el cliente `demo` antes de cada ensayo.
+**Lo que no cubre:** el atacante que vuelve con el mismo teléfono desde **otra** IP, en una sesión nueva, sin decisión todavía. Excluir por dispositivo bloquearía al dueño en el caso del script en su laptop (bloqueo solo de sesión). Esa sesión nueva se juzga como cualquier otra: red nueva, sin aprender hasta que pasa la espera.
 
 ## Validación humana pendiente
 
@@ -326,7 +308,7 @@ Hay que probar estos casos **con personas, la app real y redes reales**, y anota
 | 6 | Atacante (otra red y otro dispositivo) va directo a cambiar la cuenta | `block` **antes** de ejecutar (`403`, la cuenta no cambia) | Confirmar en cada ensayo |
 | 7 | Atacante que solo **mira** la cuenta bancaria (ruta `sensitive`) | La IA lo bloqueó en el ensayo | ¿Es demasiado agresivo si el dueño la mira desde otra red? |
 | 8 | Atacante con el mismo operador que el dueño (`/24` cercana) | Depende de que caiga en otra `/24` | ¿Pasa seguido? |
-| 9 | Atacante que repite desde el mismo teléfono, pasados 10 min | **Hoy falla** (ver "Bug conocido") | Validar la corrección |
+| 9 | Atacante que repite desde el mismo teléfono, pasados 10 min | Corregido: no se aprende mientras el bloqueo siga abierto | Validar la corrección en un ensayo |
 | 10 | Script en la laptop del dueño (`--scenario bot`) | Bloqueo solo de sesión; el dueño sigue entrando | ¿El dueño realmente no queda afuera? |
 | 11 | Usuario legítimo muy rápido, o app con muchas llamadas por página | No debería disparar la ráfaga (piso 30/min) | Los umbrales (3× lo habitual, 30/min) **no están medidos** |
 | 12 | Usuario **sin historial** (nuevo) que usa una ruta crítica | Bloqueo por regla (red nueva + ruta nunca usada) | ¿Qué hacemos con los usuarios nuevos? Es pregunta abierta en `PENDIENTES.md` |

@@ -6,8 +6,13 @@ from ipaddress import ip_network
 from .events import format_ts
 from .route_classes import route_key
 
-# An event is learned when it is older than the learn delay and is not part of an
-# active block/alert decision, or when it belongs to a decision marked normal.
+# An event is learned when it is older than the learn delay and nothing suspicious taints it,
+# or when it belongs to a decision marked normal. Tainted: the event is part of an open
+# block/alert decision; its session has an open block, step_up or alert (the whole session,
+# not only the events that triggered it: the attacker's /login and the pages after the
+# block too); or it comes from an IP that an open block includes (the attacker back in a
+# new session). Marking the decision normal lifts the taint (contract 3). `review` never
+# taints: it is the owner on a rotating IP.
 LEARNED_EVENTS_SQL = """
 SELECT e.id, e.ts, e.session_id, e.ip, e.device_id, e.method, e.route FROM events e
 WHERE e.project_id = :project_id AND e.user_id = :user_id AND (
@@ -15,7 +20,13 @@ WHERE e.project_id = :project_id AND e.user_id = :user_id AND (
         SELECT 1 FROM decision_events de
         JOIN decisions d ON d.project_id = de.project_id AND d.id = de.decision_id
         WHERE de.project_id = e.project_id AND de.event_id = e.id
-          AND d.decision IN ('block', 'alert') AND d.normal = 0))
+          AND d.decision IN ('block', 'alert') AND d.normal = 0)
+     AND NOT EXISTS (
+        SELECT 1 FROM decisions d
+        WHERE d.project_id = e.project_id AND d.normal = 0 AND (
+            (d.user_id = e.user_id AND d.session_id = e.session_id AND e.session_id <> ''
+             AND d.decision IN ('block', 'step_up', 'alert'))
+            OR (d.decision = 'block' AND d.ip <> '' AND d.ip = e.ip))))
     OR EXISTS (
         SELECT 1 FROM decision_events de
         JOIN decisions d ON d.project_id = de.project_id AND d.id = de.decision_id

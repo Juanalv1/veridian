@@ -112,13 +112,93 @@ def test_non_critical_route_from_new_network_does_not_block(client):
     assert decisions(client) == []
 
 
+def profile_of(client, user_id="u_42"):
+    return client.get(f"/v1/users/{user_id}/profile", headers=as_panel(client, AUTH_A)).json()
+
+
 def test_events_in_block_decision_are_not_learned(client, clock):
     seed_owner_history(client)
     attack(client)
     clock.now = NOW + timedelta(days=1)
-    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()
+    profile = profile_of(client)
     assert "POST /payouts/bank-account" not in profile["routes"]
-    assert "203.0.113.0/24" in profile["networks"]  # the /login event is not part of the decision
+
+
+def test_no_event_of_a_blocked_session_is_learned_even_after_the_delay(client, clock):
+    # The /login before the block and the pages after it are not part of the decision.
+    seed_owner_history(client)
+    attack(client)
+    after = make_event("a3", NOW + timedelta(seconds=5), route="/reports", **ATTACKER)
+    post_events(client, [after])
+    clock.now = NOW + timedelta(days=1)
+    profile = profile_of(client)
+    assert "203.0.113.0/24" not in profile["networks"]
+    assert "d_evil" not in profile["devices"]
+    assert "GET /login" not in profile["routes"] and "GET /reports" not in profile["routes"]
+
+
+def test_the_attacker_returning_from_the_blocked_ip_in_a_new_session_is_not_learned(client, clock):
+    seed_owner_history(client)
+    attack(client)
+    clock.now = NOW + timedelta(minutes=11)
+    again = make_event("r1", clock.now, route="/login", **{**ATTACKER, "session_id": "s_evil_2"})
+    post_events(client, [again])
+    clock.now = NOW + timedelta(days=1)
+    profile = profile_of(client)
+    assert "203.0.113.0/24" not in profile["networks"]
+    assert "d_evil" not in profile["devices"]
+
+
+def test_the_owner_session_in_parallel_keeps_being_learned(client, clock):
+    seed_owner_history(client)
+    attack(client)
+    post_events(client, [make_event("o1", NOW - timedelta(seconds=10), route="/reports", session_id="s_owner_2")])
+    clock.now = NOW + timedelta(days=1)
+    profile = profile_of(client)
+    assert "GET /reports" in profile["routes"]
+    assert profile["networks"] == ["190.202.14.0/24"]
+
+
+def test_a_blocked_session_marked_normal_is_learned_whole(client, clock):
+    seed_owner_history(client)
+    attack(client)
+    post_events(client, [make_event("a3", NOW + timedelta(seconds=5), route="/reports", **ATTACKER)])
+    [decision] = decisions(client)
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
+    clock.now = NOW + timedelta(days=1)
+    profile = profile_of(client)
+    assert "203.0.113.0/24" in profile["networks"]
+    assert "d_evil" in profile["devices"]
+    assert "GET /reports" in profile["routes"]
+
+
+def test_an_open_alert_or_step_up_keeps_its_session_out_of_the_profile(client, clock):
+    from veridian_engine import db
+    from veridian_engine.decisions import create_decision
+
+    seed_owner_history(client)
+    for kind, session in (("alert", "s_x1"), ("step_up", "s_x2")):
+        post_events(client, [make_event(f"{kind}1", NOW, route="/reports", session_id=session, device_id=f"d_{kind}")])
+        with db.connect(client.app.state.settings.db_path) as conn:
+            create_decision(conn, "client_a", ts=NOW, user_id="u_42", session_id=session, ip="", decision=kind,
+                            signals={}, rationale="test", event_ids=[])
+    clock.now = NOW + timedelta(days=1)
+    profile = profile_of(client)
+    assert "d_alert" not in profile["devices"] and "d_step_up" not in profile["devices"]
+    assert "GET /reports" not in profile["routes"]
+
+
+def test_a_review_does_not_keep_its_session_out_of_the_profile(client, clock):
+    from veridian_engine import db
+    from veridian_engine.decisions import create_decision
+
+    seed_owner_history(client)
+    post_events(client, [make_event("rv1", NOW, route="/reports", session_id="s_rv", device_id="d_rv")])
+    with db.connect(client.app.state.settings.db_path) as conn:
+        create_decision(conn, "client_a", ts=NOW, user_id="u_42", session_id="s_rv", ip="", decision="review",
+                        signals={}, rationale="test", event_ids=[])
+    clock.now = NOW + timedelta(days=1)
+    assert "d_rv" in profile_of(client)["devices"]
 
 
 def test_events_of_decision_marked_normal_are_learned_immediately(client):
