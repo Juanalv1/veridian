@@ -1,6 +1,6 @@
 # Guion de la demo
 
-Borrador: se escribe por partes (2026-10-25). Parte 1 aprobada; el resto está pendiente.
+Borrador: se escribe por partes (2026-10-25). Partes 1 y 2 aprobadas; el resto está pendiente.
 
 Va después de la slide 4 y antes de la slide 5 (`GUION.md`). Tiempo disponible: 125-140 s (sin medir todavía).
 
@@ -28,7 +28,13 @@ Estructura: una sola persona, la dueña de la cuenta.
 
 ## Parte 2: dispositivo desconocido
 
-Pendiente.
+**[En la PC, en otro navegador, inicia sesión con la misma cuenta y navega unos segundos]**
+
+> Ahora entro a mi misma cuenta desde otro dispositivo, uno que Veridian nunca ha visto.
+
+**[Panel: «Raro»]**
+
+> Veridian sospecha, porque no me estoy conectando como siempre, y la IA revisa el acceso. Por ahora me deja seguir, porque lo que hago es de bajo impacto.
 
 ## Parte 3: bloqueo
 
