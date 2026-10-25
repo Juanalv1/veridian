@@ -381,6 +381,47 @@ def test_0002_keeps_the_decision_sequence(tmp_path):
     assert cursor.lastrowid == LEGACY_DECISION_SEQUENCE + 1
 
 
+def migrations_up_to(tmp_path: Path, last: int) -> Path:
+    directory = tmp_path / f"migrations_up_to_{last}"
+    directory.mkdir()
+    for source in sorted(db.MIGRATIONS_DIR.glob("*.sql")):
+        if int(source.name[:4]) <= last:
+            shutil.copy(source, directory / source.name)
+    return directory
+
+
+def test_0006_drops_the_unused_project_webhook_columns(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path))
+    assert not {"webhook_url", "webhook_secret_enc"} & set(columns(path, "project"))
+    assert "enforced" in columns(path, "notifications")
+
+
+def test_0006_keeps_projects_and_marks_queued_notifications_enforced(tmp_path):
+    path = tmp_path / "veridian.db"
+    db.init_db(str(path), migrations_dir=migrations_up_to(tmp_path, 5))
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO organization (id, name, created_at) VALUES ('org_1', 'Org', '2026-10-26T00:00:00Z')")
+    conn.execute("INSERT INTO project (id, org_id, name, enforcement, created_at, webhook_url) VALUES"
+                 " ('prj_1', 'org_1', 'App', 'enforce', '2026-10-26T00:00:00Z', NULL)")
+    conn.execute("INSERT INTO notifications (id, project_id, kind, decision_id, status, created_at, updated_at)"
+                 " VALUES ('ntf_1', 'prj_1', 'webhook', 'd_1', 'pending', 'x', 'x')")
+    conn.commit()
+    conn.close()
+
+    db.init_db(str(path))
+
+    conn = sqlite3.connect(path)
+    assert conn.execute("SELECT id, name FROM project WHERE id = 'prj_1'").fetchone() == ("prj_1", "App")
+    assert conn.execute("SELECT enforced FROM notifications WHERE id = 'ntf_1'").fetchone() == (1,)
+    conn.close()
+
+
+def test_sqlite_supports_drop_column():
+    # 0006 uses ALTER TABLE ... DROP COLUMN, available since SQLite 3.35.
+    assert sqlite3.sqlite_version_info >= (3, 35, 0)
+
+
 def test_sqlite_supports_rename_column():
     # 0002 uses ALTER TABLE ... RENAME COLUMN, available since SQLite 3.25.
     assert sqlite3.sqlite_version_info >= (3, 25, 0)

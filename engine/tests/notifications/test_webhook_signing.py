@@ -57,6 +57,7 @@ def test_block_payload_matches_documented_shape():
             "route": "POST /payouts/bank-account",
             "rationale": "Unknown network and device.",
             "blocked": {"session": True, "ip": True},
+            "enforced": True,
         },
         "panel_url": "https://panel.example.com/decisiones/d_311",
     }
@@ -71,6 +72,14 @@ def test_payload_never_carries_the_ip_or_signals():
 def test_session_only_block_reports_ip_not_blocked():
     payload = _payload({**BLOCK_ROW, "ip": ""})
     assert payload["decision"]["blocked"] == {"session": True, "ip": False}
+
+
+def test_an_observed_block_says_it_was_not_enforced():
+    payload = build_block_payload(
+        notification_id="ntf_1", created_at=CREATED, project_id="prj_x7k2", project_name="My app",
+        decision=BLOCK_ROW, route=None, panel_base_url="", enforced=False,
+    )
+    assert payload["decision"]["enforced"] is False
 
 
 def test_only_block_decisions_notify():

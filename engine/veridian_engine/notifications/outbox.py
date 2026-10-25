@@ -28,17 +28,24 @@ def new_notification_id() -> str:
 def enqueue_block_notification(
     conn: sqlite3.Connection, project_id: str, decision_id: str, now: datetime
 ) -> str | None:
-    """Queue a webhook for a block decision if the project has an enabled endpoint."""
+    """Queue a webhook for a block decision if the project has an enabled endpoint.
+
+    The project's mode is copied into the row: a project in `observe` notifies too, marked
+    not enforced, and a later mode change does not alter what retries send.
+    """
     endpoint = conn.execute(
         "SELECT 1 FROM webhook_endpoint WHERE project_id = ? AND enabled = 1", (project_id,)
     ).fetchone()
     if endpoint is None:
         return None
-    notification = new_notification(new_notification_id(), project_id, decision_id, now)
+    project = conn.execute("SELECT enforcement FROM project WHERE id = ?", (project_id,)).fetchone()
+    # A project without a row enforces (project_settings.get_project_flags).
+    enforced = project is None or project["enforcement"] == "enforce"
+    notification = new_notification(new_notification_id(), project_id, decision_id, now, enforced=enforced)
     created_at = format_ts(now)
     conn.execute(
         "INSERT INTO notifications (id, project_id, kind, decision_id, status, attempts, next_attempt_at,"
-        " last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " last_error, enforced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             notification.id,
             notification.project_id,
@@ -48,6 +55,7 @@ def enqueue_block_notification(
             notification.attempts,
             format_ts(notification.next_attempt_at),
             notification.last_error,
+            int(notification.enforced),
             created_at,
             created_at,
         ),
@@ -65,6 +73,7 @@ def _from_row(row) -> Notification:
         attempts=row["attempts"],
         next_attempt_at=parse_ts(row["next_attempt_at"]),
         last_error=row["last_error"],
+        enforced=bool(row["enforced"]),
     )
 
 

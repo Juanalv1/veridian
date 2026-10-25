@@ -1,6 +1,8 @@
 """U12 wiring through the app: block decisions on both paths reach the outbox, the sender runs
 with the app, and a failing receiver never affects ingestion or POST /v1/check."""
 
+import json
+
 import pytest
 from conftest import AUTH_A, NOW, as_panel, make_event, make_settings
 from cryptography.fernet import Fernet
@@ -12,6 +14,7 @@ from test_decisions import ATTACKER, attack, decisions, seed_owner_history
 from veridian_engine import db
 from veridian_engine.api import create_app
 from veridian_engine.notifications.outbox import list_notifications
+from veridian_engine.project_settings import set_project_flags
 from veridian_engine.notifications.secret_box import KEY_ENV
 from veridian_engine.notifications.webhook import DELIVERED, PENDING
 from veridian_engine.settings import Settings
@@ -82,6 +85,54 @@ def test_rule_block_on_ingestion_is_enqueued_and_delivered(app_factory):
     client.app.state.webhook_sender.run_once()
     assert outbox(settings)[0]["status"] == DELIVERED
     assert len(transport.requests) == 1
+
+
+def sent_bodies(transport):
+    return [json.loads(request.body) for request in transport.requests]
+
+
+def test_an_observed_block_is_notified_as_not_enforced(app_factory):
+    transport = FakeTransport()
+    client, settings = app_factory(transport)
+    with db.connect(settings.db_path) as conn:
+        set_project_flags(conn, PROJECT_A, enforcement="observe")
+    seed_owner_history(client)
+
+    attack(client)
+
+    client.app.state.webhook_sender.run_once()
+    [body] = sent_bodies(transport)
+    assert body["type"] == "decision.block" and body["decision"]["enforced"] is False
+
+
+def test_an_enforced_block_is_notified_as_enforced(app_factory):
+    transport = FakeTransport()
+    client, settings = app_factory(transport)
+    seed_owner_history(client)
+
+    attack(client)
+
+    client.app.state.webhook_sender.run_once()
+    [body] = sent_bodies(transport)
+    assert body["decision"]["enforced"] is True
+
+
+def test_retries_keep_the_mode_the_block_was_decided_under(app_factory):
+    transport = FakeTransport(status=500)
+    client, settings = app_factory(transport)
+    with db.connect(settings.db_path) as conn:
+        set_project_flags(conn, PROJECT_A, enforcement="observe")
+    seed_owner_history(client)
+    attack(client)
+    client.app.state.webhook_sender.run_once()
+
+    with db.connect(settings.db_path) as conn:
+        set_project_flags(conn, PROJECT_A, enforcement="enforce")
+        conn.execute("UPDATE notifications SET next_attempt_at = '2000-01-01T00:00:00Z'")
+    client.app.state.webhook_sender.run_once()
+
+    first, retry = sent_bodies(transport)
+    assert first == retry and retry["decision"]["enforced"] is False
 
 
 def test_block_on_check_is_enqueued_once(app_factory):

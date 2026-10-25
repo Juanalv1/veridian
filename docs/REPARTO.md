@@ -393,6 +393,7 @@ Solo `panel`, rol `admin` de la organización del proyecto de la ruta. Un proyec
 - **URL:** `https`, sin usuario ni contraseña, y el nombre tiene que resolver solo a direcciones públicas. Si no: `422 {"error": "unsafe_url", "detail"}` y no se guarda nada. Hasta 2048 caracteres.
 - **Secreto:** formato `whsec_...`. El motor lo guarda cifrado con `VERIDIAN_SECRET_KEY`. Sin esa variable, `PUT` y `test` responden `503 {"error": "secret_key_missing"}`.
 - **`status`:** `pending` (en cola o esperando reintento), `delivered` o `failed`.
+- **Proyectos en `observe`:** también notifican. La carga lleva `decision.enforced: false` (el bloqueo se registró, pero no se aplicó); en `enforce`, `true`.
 - **Prueba:** envía en el momento un evento `webhook.test` (cabecera `X-Veridian-Event: webhook.test`), firmado igual que un bloqueo: `{"id", "type": "webhook.test", "created_at", "project": {"id", "name"}}`. No pasa por la cola, no se reintenta y no aparece en `deliveries`. Un receptor que falla no es un error de la API: `delivered: false` con el motivo.
 - **Auditoría:** `webhook.set` (con la URL, nunca el secreto), `webhook.enable`, `webhook.delete` y `webhook.test` quedan en `audit_log` con el actor.
 

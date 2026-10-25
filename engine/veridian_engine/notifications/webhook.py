@@ -63,11 +63,13 @@ def build_block_payload(
     decision: Mapping,
     route: str | None,
     panel_base_url: str,
+    enforced: bool = True,
 ) -> dict | None:
     """Documented body for a `block` decision row; None for any other decision.
 
     The IP is read only to say whether it was blocked; it is never copied into the body,
-    and neither are `signals` (minimal exposure, same rule as the e-mail).
+    and neither are `signals` (minimal exposure, same rule as the e-mail). `enforced` is False
+    when the project was in `observe`: the block was decided and recorded, but not applied.
     """
     if decision.get("decision") != "block":
         return None
@@ -85,6 +87,7 @@ def build_block_payload(
             "route": route,
             "rationale": decision["rationale"],
             "blocked": {"session": True, "ip": bool(decision.get("ip"))},
+            "enforced": enforced,
         },
         "panel_url": f"{panel_base_url.rstrip('/')}/decisiones/{quote(decision_id, safe='')}",
     }
@@ -338,10 +341,16 @@ class Notification:
     attempts: int = 0
     next_attempt_at: datetime | None = None
     last_error: str | None = None
+    enforced: bool = True
 
 
 def new_notification(
-    notification_id: str, project_id: str, decision_id: str, now: datetime, kind: str = "webhook"
+    notification_id: str,
+    project_id: str,
+    decision_id: str,
+    now: datetime,
+    kind: str = "webhook",
+    enforced: bool = True,
 ) -> Notification:
     return Notification(
         id=notification_id,
@@ -349,6 +358,7 @@ def new_notification(
         decision_id=decision_id,
         kind=kind,
         next_attempt_at=now,
+        enforced=enforced,
     )
 
 

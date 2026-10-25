@@ -64,8 +64,6 @@ erDiagram
               int retention_days
               text enforcement
               int ai_enabled
-              text webhook_url
-              text webhook_secret_enc
               text created_at
               text deleted_at }
     MEMBERSHIP { text org_id PK
@@ -325,11 +323,14 @@ Ver la sección propia.
     "session_id": "s_8f1",
     "route": "POST /payouts/bank-account",
     "rationale": "…",
-    "blocked": {"session": true, "ip": true}
+    "blocked": {"session": true, "ip": true},
+    "enforced": true
   },
   "panel_url": "https://<panel>/decisiones/d_311"
 }
 ```
+
+**`enforced`:** `false` si el proyecto estaba en `observe` al decidirse el bloqueo: el bloqueo se decidió y se registró, pero no se aplicó. Los proyectos en `observe` también notifican (decisión del usuario, 2026-10-25). El valor se fija al encolar, así que todos los reintentos mandan la misma carga.
 
 La carga lleva `user_id` y la ruta porque el destinatario es el propio cliente, que ya tiene esos datos; **no lleva la IP**, para no replicar datos personales en más sistemas de los necesarios (quien la necesite entra al panel). Es la misma mínima exposición que se pide para el correo.
 

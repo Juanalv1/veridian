@@ -141,6 +141,7 @@ class WebhookSender:
             decision=dict(decision),
             route=route,
             panel_base_url=self._panel_base_url,
+            enforced=notification.enforced,
         )
         return (endpoint["url"], endpoint["secret_enc"], payload)
 
