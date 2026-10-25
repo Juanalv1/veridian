@@ -18,7 +18,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "8"
+ASSET_VERSION = "9"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -225,6 +225,12 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         current = (next((d for d in by_user if d.get("id") == decision_id), None)
                    or (by_user[0] if by_user else None)
                    or (decisions[0] if decisions else None))
+        if activity is not None and current is not None:
+            # One selected row: the access that triggered the decision (else the newest row of it).
+            mine = [a for a in activity if a.get("decision_id") == current.get("id")]
+            trigger = [a for a in mine if a.get("event_id") in (current.get("event_ids") or [])] or mine[:1]
+            for a in trigger:
+                a["selected"] = True
         profile = None
         if current is not None and current.get("decision") == "block" and not current["marked_normal"]:
             current["block_effect"] = _block_effect((current.get("access") or {}).get("ip"),

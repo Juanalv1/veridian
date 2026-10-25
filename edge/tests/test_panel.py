@@ -752,3 +752,21 @@ def test_new_transition_adds_camino_nuevo_to_the_path_row():
 def test_unknown_signal_keys_are_ignored():
     html = sig_panel({"future_signal": 3, "rate_per_min": "many", "rate_spike": "yes"})
     assert "future_signal" not in html and row_of(html, "Ritmo") is None and "pico" not in html
+
+
+# --- only the triggering row is the selected one ---------------------------
+
+
+def test_only_the_row_that_triggered_the_decision_is_selected():
+    acts = [act("e_r", verdict="block", decision_id="d_1", status=403),
+            act("e_t", verdict="block", decision_id="d_1", status=200)]
+    html = stub_panel([dec(event_ids=["e_t"])], activity=acts).get("/").text
+    r = rows(html)
+    assert 'aria-current="true"' not in r[0] and 'aria-current="true"' in r[1]
+
+
+def test_selection_falls_back_to_the_first_row_of_the_decision_without_event_ids():
+    acts = [act("e_r", verdict="block", decision_id="d_1"), act("e_t", verdict="block", decision_id="d_1")]
+    html = stub_panel([dec(event_ids=[])], activity=acts).get("/").text
+    r = rows(html)
+    assert 'aria-current="true"' in r[0] and 'aria-current="true"' not in r[1]

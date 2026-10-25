@@ -1,7 +1,7 @@
   <nav class="feed" aria-label="Actividad" hx-boost="true" hx-target="#live" hx-sync="#live:replace">
     <span class="nav-title">Actividad</span>
     {% for a in activity %}
-      {% if a.href %}<a data-row="ev-{{ a.event_id }}" class="row k-{{ a.verdict_kind }}" href="{{ a.href }}"{% if current and a.decision_id == current.id %} aria-current="true"{% endif %}>
+      {% if a.href %}<a data-row="ev-{{ a.event_id }}" class="row k-{{ a.verdict_kind }}" href="{{ a.href }}"{% if a.selected %} aria-current="true"{% endif %}>
       {% else %}<div data-row="ev-{{ a.event_id }}" class="row k-{{ a.verdict_kind }}">
       {% endif %}
         <span class="t"><time class="ts" datetime="{{ a.ts }}">{{ a.time }} UTC</time></span>
