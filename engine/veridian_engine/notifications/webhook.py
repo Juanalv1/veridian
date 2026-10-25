@@ -30,6 +30,7 @@ SIGNATURE_HEADER = "X-Veridian-Signature"
 EVENT_HEADER = "X-Veridian-Event"
 DELIVERY_HEADER = "X-Veridian-Delivery"
 BLOCK_EVENT = "decision.block"
+TEST_EVENT = "webhook.test"
 
 DEFAULT_TOLERANCE_SECONDS = 300
 REQUEST_TIMEOUT_SECONDS = 5.0
@@ -86,6 +87,16 @@ def build_block_payload(
             "blocked": {"session": True, "ip": bool(decision.get("ip"))},
         },
         "panel_url": f"{panel_base_url.rstrip('/')}/decisiones/{quote(decision_id, safe='')}",
+    }
+
+
+def build_test_payload(*, notification_id: str, created_at: datetime, project_id: str, project_name: str) -> dict:
+    """Body of `POST .../webhook/test`: same envelope and signature as a block, no decision."""
+    return {
+        "id": notification_id,
+        "type": TEST_EVENT,
+        "created_at": _iso_utc(created_at),
+        "project": {"id": project_id, "name": project_name},
     }
 
 

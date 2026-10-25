@@ -377,6 +377,25 @@ Solo `panel`, rol `admin` de la organización del proyecto de la ruta.
 - `POST /v1/projects/{id}/api-keys/{key_id}/revoke` → `200` con la clave como en el listado. Vale desde la petición siguiente (`401`). Una clave ya revocada, o de otro proyecto: `404 {"error": "not_found"}`.
 - Crear y revocar quedan en `audit_log`. `last_used_at` se escribe como mucho una vez por minuto por clave.
 
+### 13. Webhook: panel → motor
+
+Solo `panel`, rol `admin` de la organización del proyecto de la ruta. Un proyecto tiene como mucho un webhook. Cada decisión `block` encola una notificación firmada (carga y firma en `DISENO-PRODUCTO.md`, "Notificaciones de bloqueo").
+
+| Endpoint | Respuesta |
+|---|---|
+| `GET /v1/projects/{id}/webhook` | `{"webhook": {"url", "enabled", "created_at"}}`, o `{"webhook": null}` si no hay. Nunca devuelve el secreto |
+| `PUT /v1/projects/{id}/webhook` `{"url"}` | `200 {"url", "enabled", "created_at", "secret"}`. Crea o reemplaza, queda activo y con un secreto nuevo. **`secret` se muestra solo esta vez** |
+| `PATCH /v1/projects/{id}/webhook` `{"enabled"}` | `{"webhook": {...}}`; sin webhook, `404` |
+| `DELETE /v1/projects/{id}/webhook` | `204`; sin webhook, `404`. Las notificaciones pendientes quedan `failed` sin enviarse |
+| `GET /v1/projects/{id}/webhook/deliveries?limit=50` | `{"deliveries": [{"id", "kind", "decision_id", "status", "attempts", "next_attempt_at", "last_error", "created_at", "updated_at"}]}`, de la más nueva a la más vieja. `limit` de 1 a 200 |
+| `POST /v1/projects/{id}/webhook/test` | `200 {"delivered", "status_code", "error"}`; sin webhook, `404` |
+
+- **URL:** `https`, sin usuario ni contraseña, y el nombre tiene que resolver solo a direcciones públicas. Si no: `422 {"error": "unsafe_url", "detail"}` y no se guarda nada. Hasta 2048 caracteres.
+- **Secreto:** formato `whsec_...`. El motor lo guarda cifrado con `VERIDIAN_SECRET_KEY`. Sin esa variable, `PUT` y `test` responden `503 {"error": "secret_key_missing"}`.
+- **`status`:** `pending` (en cola o esperando reintento), `delivered` o `failed`.
+- **Prueba:** envía en el momento un evento `webhook.test` (cabecera `X-Veridian-Event: webhook.test`), firmado igual que un bloqueo: `{"id", "type": "webhook.test", "created_at", "project": {"id", "name"}}`. No pasa por la cola, no se reintenta y no aparece en `deliveries`. Un receptor que falla no es un error de la API: `delivered: false` con el motivo.
+- **Auditoría:** `webhook.set` (con la URL, nunca el secreto), `webhook.enable`, `webhook.delete` y `webhook.test` quedan en `audit_log` con el actor.
+
 ### Marcar normal (contrato 3)
 
 `POST /v1/decisions/{id}/normal` es solo `panel` con `X-Veridian-Project` y rol `admin` u `owner`; queda en `audit_log` (`decision.mark_normal`, con el actor) en la misma transacción. Un `viewer` recibe `403`; una decisión inexistente, `404`.

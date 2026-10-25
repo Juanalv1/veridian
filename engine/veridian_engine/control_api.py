@@ -1,20 +1,30 @@
-"""Panel-only control endpoints: contract 10 (people, organizations, projects) and contract 12
-(API keys). Wire shapes match the fake engine (edge/fake_engine/app.py) so the panel works
-against either. Roles are the actor's role in the organization (docs/DISENO-PRODUCTO.md).
+"""Panel-only control endpoints: contract 10 (people, organizations, projects), contract 12
+(API keys) and contract 13 (webhook). Wire shapes match the fake engine (edge/fake_engine/app.py)
+so the panel works against either. Roles are the actor's role in the organization (docs/DISENO-PRODUCTO.md).
 """
 
 import threading
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import db
+from . import db, webhook_store
 from .auth import Caller, caller_from_request
 from .control_plane import repository
 from .control_plane.repository import NotFound, PermissionDenied
 from .control_plane.roles import can
+from .notifications.outbox import list_notifications, new_notification_id
+from .notifications.secret_box import SecretEncryptionError, decrypt_secret
+from .notifications.webhook import (
+    TEST_EVENT,
+    HttpxTransport,
+    UnsafeUrlError,
+    build_test_payload,
+    default_resolver,
+    deliver,
+)
 from .principal import Forbidden, PanelProject, ProjectRequired, panel_actor, path_project
 from .project_settings import set_project_flags
 from .settings import Settings
@@ -34,6 +44,14 @@ class OrgPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
 
 
+class WebhookIn(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class WebhookPatch(BaseModel):
+    enabled: bool
+
+
 class ProjectPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     retention_days: int | None = Field(default=None, ge=1)
@@ -42,6 +60,7 @@ class ProjectPatch(BaseModel):
 
 
 NOT_FOUND = {"error": "not_found"}
+SECRET_KEY_MISSING = {"error": "secret_key_missing"}
 
 
 def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
@@ -174,6 +193,84 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
                 return repository.get_api_key(conn, project.project_id, key_id)
         except NotFound:
             return JSONResponse(status_code=404, content=NOT_FOUND)
+
+    # --- contract 13: webhook ---
+
+    resolver = settings.webhook_resolver or default_resolver
+
+    def audit_webhook(conn, project: PanelProject, action: str, meta: dict | None = None) -> None:
+        repository.record_audit(conn, actor_person_id=project.person_id, actor_kind="person", action=action,
+                                target_type="webhook", target_id=project.project_id, now=settings.clock(),
+                                meta=meta, project_id=project.project_id, org_id=project.org_id)
+
+    @router.get("/v1/projects/{project_id}/webhook")
+    def get_webhook(project: PanelProject = Depends(path_project("manage_webhook"))) -> dict:
+        with db.connect(settings.db_path) as conn:
+            return {"webhook": webhook_store.get_webhook_endpoint(conn, project.project_id)}
+
+    @router.put("/v1/projects/{project_id}/webhook")
+    def put_webhook(body: WebhookIn, project: PanelProject = Depends(path_project("manage_webhook"))):
+        url = body.url.strip()
+        try:
+            with write_lock, db.connect(settings.db_path) as conn:
+                secret = webhook_store.set_webhook_endpoint(conn, project.project_id, url, now=settings.clock(),
+                                                            resolver=resolver)
+                audit_webhook(conn, project, "webhook.set", {"url": url})
+                endpoint = webhook_store.get_webhook_endpoint(conn, project.project_id)
+        except UnsafeUrlError as exc:
+            return JSONResponse(status_code=422, content={"error": "unsafe_url", "detail": str(exc)})
+        except SecretEncryptionError:
+            return JSONResponse(status_code=503, content=SECRET_KEY_MISSING)
+        # The only time the signing secret leaves the engine.
+        return {**endpoint, "secret": secret}
+
+    @router.patch("/v1/projects/{project_id}/webhook")
+    def patch_webhook(body: WebhookPatch, project: PanelProject = Depends(path_project("manage_webhook"))):
+        with write_lock, db.connect(settings.db_path) as conn:
+            if not webhook_store.set_webhook_enabled(conn, project.project_id, body.enabled):
+                return JSONResponse(status_code=404, content=NOT_FOUND)
+            audit_webhook(conn, project, "webhook.enable", {"enabled": body.enabled})
+            return {"webhook": webhook_store.get_webhook_endpoint(conn, project.project_id)}
+
+    @router.delete("/v1/projects/{project_id}/webhook", status_code=204)
+    def delete_webhook(project: PanelProject = Depends(path_project("manage_webhook"))):
+        with write_lock, db.connect(settings.db_path) as conn:
+            if not webhook_store.clear_webhook_endpoint(conn, project.project_id):
+                return JSONResponse(status_code=404, content=NOT_FOUND)
+            audit_webhook(conn, project, "webhook.delete")
+        return Response(status_code=204)
+
+    @router.get("/v1/projects/{project_id}/webhook/deliveries")
+    def get_webhook_deliveries(limit: int = Query(default=50, ge=1, le=200),
+                               project: PanelProject = Depends(path_project("manage_webhook"))) -> dict:
+        with db.connect(settings.db_path) as conn:
+            return {"deliveries": list_notifications(conn, project.project_id, limit)}
+
+    @router.post("/v1/projects/{project_id}/webhook/test")
+    def post_webhook_test(project: PanelProject = Depends(path_project("manage_webhook"))):
+        """Send one signed `webhook.test` now and report the outcome. Not queued, not retried."""
+        now = settings.clock()
+        with db.connect(settings.db_path) as conn:
+            endpoint = conn.execute("SELECT url, secret_enc FROM webhook_endpoint WHERE project_id = ?",
+                                    (project.project_id,)).fetchone()
+            name = conn.execute("SELECT name FROM project WHERE id = ?", (project.project_id,)).fetchone()
+        if endpoint is None:
+            return JSONResponse(status_code=404, content=NOT_FOUND)
+        try:
+            secret = decrypt_secret(endpoint["secret_enc"])
+        except SecretEncryptionError:
+            return JSONResponse(status_code=503, content=SECRET_KEY_MISSING)
+        delivery_id = new_notification_id()
+        payload = build_test_payload(notification_id=delivery_id, created_at=now, project_id=project.project_id,
+                                     project_name=name["name"] if name else project.project_id)
+        # No connection or lock is held while the receiver answers (up to the 5 s timeout).
+        result = deliver(endpoint["url"], secret, payload, delivery_id=delivery_id,
+                         transport=settings.webhook_transport or HttpxTransport(), clock=settings.clock,
+                         resolver=resolver, event=TEST_EVENT)
+        with write_lock, db.connect(settings.db_path) as conn:
+            audit_webhook(conn, project, "webhook.test", {"delivered": result.delivered,
+                                                          "status_code": result.status_code})
+        return {"delivered": result.delivered, "status_code": result.status_code, "error": result.error}
 
     return router
 
