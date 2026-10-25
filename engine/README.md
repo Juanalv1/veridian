@@ -43,6 +43,12 @@ A deviation is an event with a new network, a new device (non-empty `device_id` 
 
 `GET /v1/activity?limit=50` (1–200) lists the client's latest accesses, newest first, each with a panel verdict (`normal`/`review`/`block`) and its `decision_id`; requests of a blocked session after the block show as `block` (contract 5 in `docs/REPARTO.md`).
 
+## Summary and users
+
+`GET /v1/summary?since=<ISO>&until=<ISO>` gives the panel's headline numbers for `[since, until)` (default: the last 24 h; `since >= until` is a `422`): accesses, users, `reviewed_by_ai` (real judge calls, recorded in `ai_judgments`; `0` without a judge), decisions by type, the current active blocks and a per-hour breakdown (contract 6).
+
+`GET /v1/users` lists every user with events, open blocks first, then by `last_seen`, with state and profile counts (contract 7).
+
 ## Tests
 
 ```bash

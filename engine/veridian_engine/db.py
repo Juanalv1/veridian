@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS rate_spike_judgments (
     PRIMARY KEY (client_id, session_id)
 );
 
+-- Every real call to the AI judge, by the judged event's ts (reviewed_by_ai, contract 6).
+CREATE TABLE IF NOT EXISTS ai_judgments (
+    client_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ai_judgments_by_ts ON ai_judgments (client_id, ts);
+
 CREATE TABLE IF NOT EXISTS blocklist_versions (
     client_id TEXT PRIMARY KEY,
     version INTEGER NOT NULL

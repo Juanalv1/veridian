@@ -1,4 +1,5 @@
 import threading
+from datetime import datetime, timedelta
 
 from dotenv import find_dotenv, load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, Response
@@ -14,6 +15,7 @@ from .profile import build_profile, is_blocked
 from .route_classes import RouteClasses
 from .rules import evaluate_event
 from .settings import Settings
+from .summary import as_utc, build_summary, list_users
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -53,6 +55,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Runs after the 202 is sent: ingestion never waits for the AI.
             background_tasks.add_task(judge_deviations, settings, write_lock, latest_per_session(deviations))
         return {"accepted": len(inserted)}
+
+    @app.get("/v1/summary")
+    def get_summary(
+        since: datetime | None = None,
+        until: datetime | None = None,
+        client_id: str = Depends(client_id_from_request),
+    ):
+        until = as_utc(until) if until is not None else settings.clock()
+        since = as_utc(since) if since is not None else until - timedelta(hours=24)
+        if since >= until:
+            return JSONResponse(status_code=422, content={"error": "since must be before until"})
+        with db.connect(settings.db_path) as conn:
+            return build_summary(conn, client_id, since, until)
+
+    @app.get("/v1/users")
+    def get_users(client_id: str = Depends(client_id_from_request)) -> dict:
+        with db.connect(settings.db_path) as conn:
+            return {"users": list_users(conn, client_id, settings.clock(), settings.learn_delay_min)}
 
     @app.get("/v1/users/{user_id}/profile")
     def get_profile(user_id: str, client_id: str = Depends(client_id_from_request)) -> dict:

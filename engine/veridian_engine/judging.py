@@ -6,6 +6,7 @@ import threading
 
 from . import db
 from .decisions import bump_version, create_decision, session_has_block
+from .events import format_ts
 from .rules import Deviation
 from .settings import Settings
 
@@ -33,6 +34,11 @@ def judge_deviations(settings: Settings, write_lock: threading.Lock, deviations:
                         "INSERT OR IGNORE INTO rate_spike_judgments (client_id, session_id) VALUES (?, ?)",
                         (deviation.client_id, deviation.event.session_id),
                     )
+                # One row per real model call, for the panel's reviewed_by_ai count.
+                conn.execute(
+                    "INSERT INTO ai_judgments (client_id, event_id, ts) VALUES (?, ?, ?)",
+                    (deviation.client_id, deviation.event.id, format_ts(deviation.event.ts)),
+                )
             judgment = settings.judge(deviation.signals, deviation.profile)
             with write_lock, db.connect(settings.db_path) as conn:
                 apply_judgment(conn, settings, deviation, judgment.decision, judgment.rationale)
