@@ -90,7 +90,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
   - El middleware recibe `trusted_proxies` (cantidad de proxies propios delante de la app; `0` por defecto).
   - Con `0`, usa la IP de la conexión e ignora el encabezado.
   - Con `N`, toma el valor número `N` contando desde la derecha de `X-Forwarded-For`: el que agregó nuestro proxy más externo. Si el encabezado trae menos de `N` valores, usa el primero.
-  - **Por verificar:** si Render reemplaza el `X-Forwarded-For` del cliente o le agrega su valor al final. Se mide al desplegar, con una petición que envíe el encabezado falso.
+  - **Medido en Render (2026-10-25):** Render conserva el `X-Forwarded-For` del cliente y le agrega tres entradas, así que la app de ejemplo usa `trusted_proxies=3`. Con `2` el middleware tomaba una IP de Cloudflare (`172.71.x.x`), que comparten muchos usuarios; con `3` toma la IP real y los valores falsos del cliente se ignoran.
 - **`device_id`:** cookie propia del middleware en el navegador del usuario. Puede venir vacío.
 - **Nunca se envían** cuerpos de peticiones, contraseñas ni datos de clientes.
 

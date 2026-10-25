@@ -30,7 +30,7 @@ uv sync
 | `VERIDIAN_LEARN_DELAY` | motor falso | Segundos antes de que un evento no marcado entre al perfil (por defecto 300). Evita que el login del atacante legitime su red |
 | `VERIDIAN_URL` | demo y panel | URL del motor (por defecto `http://localhost:8000`) |
 | `VERIDIAN_TOKEN` | demo y panel | Token Bearer con el que hablan con el motor |
-| `TRUSTED_PROXIES` | demo | Cantidad de proxies propios delante de la app (por defecto `0`: se usa la IP de la conexión y se ignora `X-Forwarded-For`) |
+| `TRUSTED_PROXIES` | demo | Cantidad de proxies propios delante de la app (por defecto `0`: se usa la IP de la conexión y se ignora `X-Forwarded-For`). En Render es `3` (medido) |
 | `DEMO_PASSWORD` | demo | Contraseña de los usuarios de ejemplo. Por defecto `demo1234`, solo para uso local |
 
 Los tokens no se guardan en el repo; se pasan por entorno o por un `.env` (ignorado por git).
@@ -94,3 +94,15 @@ No usan red real ni esperas: el motor falso y las apps se conectan por `httpx.AS
 
 - La regla del motor falso refleja el primer hito de Dev 1: ruta `critical` nunca usada del usuario, desde una red `/24` nunca vista para él → `block` de su sesión y su IP (`users` queda vacío). Un usuario sin historial no se juzga.
 - El `session_id` que ve el motor es un hash de la cookie de sesión, nunca la cookie.
+
+## Despliegue en Render
+
+| Servicio | URL | Notas |
+|---|---|---|
+| Motor (Dev 1) | <https://veridian-engine.onrender.com> | Plan starter con disco |
+| App de ejemplo | <https://veridian-demo.onrender.com> | `rootDir: edge`, plan free, `TRUSTED_PROXIES=3` |
+| Panel | <https://veridian-panel.onrender.com> | `rootDir: edge`, plan free |
+
+- La app y el panel se redespliegan solo cuando cambia `edge/`.
+- `VERIDIAN_TOKEN` es el token del cliente `demo` del motor; `DEMO_PASSWORD` está en el entorno de Render, no en el repo.
+- **Antes de la demo:** el plan free se duerme a los 15 min sin uso y tarda ~1 min en despertar; pasar a starter o abrir ambas URLs unos minutos antes.
