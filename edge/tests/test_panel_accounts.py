@@ -71,7 +71,7 @@ def open_project(panel, project_id):
 def test_login_page_follows_the_mockup_copy():
     html = panel_of(new_engine(), login=False).get("/login").text
     assert "Entra a tu panel" in html and "Continuar con Google" in html and 'href="/auth/google"' in html
-    assert "Solo entran personas invitadas" in html and "pídelo al administrador de tu equipo" in html
+    assert "primera vez" in html and "solo el nombre de tu empresa" in html and "GitHub" not in html
     assert 'role="alert"' not in html
 
 

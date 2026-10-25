@@ -1,7 +1,8 @@
-"""Google login, the signed session and its guards (session, project, CSRF).
+"""Google and GitHub login, the signed session and its guards (session, project, CSRF).
 
 Hand-rolled OAuth with httpx, like Centinela's web/auth.py: `state` lives in the session and is
-single use, `email_verified` is required, and the Google transport is injectable for tests. The
+single use, a verified email is required (GitHub: the primary one, from /user/emails), and the Google and
+GitHub transports are injectable for tests. A person is their verified email: the engine joins the providers. The
 session cookie never holds a role: the engine reads the role from its database on every call.
 """
 
@@ -13,7 +14,7 @@ from typing import NamedTuple
 from urllib.parse import urlencode, urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
@@ -24,6 +25,10 @@ log = logging.getLogger("veridian.panel")
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_USER_URL = "https://api.github.com/user"
+GITHUB_EMAILS_URL = "https://api.github.com/user/emails"
 SESSION_MAX_AGE_S = 8 * 3600
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -31,8 +36,12 @@ LOGIN_ERRORS = {
     "denied": "Cancelaste el inicio de sesión con Google.",
     "state": "El inicio de sesión expiró o no es válido. Inténtalo de nuevo.",
     "email": "Tu cuenta de Google no tiene el correo verificado.",
-    "engine": "Entraste con Google, pero Veridian no pudo confirmar tu cuenta. Inténtalo de nuevo en unos minutos.",
+    "engine": "Iniciaste sesión, pero Veridian no pudo confirmar tu cuenta. Inténtalo de nuevo en unos minutos.",
     "failed": "No pudimos completar el inicio de sesión con Google. Inténtalo de nuevo.",
+    "github_denied": "Cancelaste el inicio de sesión con GitHub.",
+    "github_email": ("Tu cuenta de GitHub no tiene un correo principal verificado. Verifica tu correo principal en "
+                     "GitHub o entra con Google."),
+    "github_failed": "No pudimos completar el inicio de sesión con GitHub. Inténtalo de nuevo.",
 }
 UNCONFIGURED = ("Panel sin configurar. Faltan variables de entorno del acceso (Google, sesión o credencial "
                 "del motor). Hasta que estén, el panel no muestra nada.")
@@ -67,9 +76,10 @@ current: ContextVar[Who | None] = ContextVar("veridian_panel_who", default=None)
 
 
 def install(app, settings: Settings, templates: Jinja2Templates, client: httpx.AsyncClient,
-            google_transport: httpx.AsyncBaseTransport | None) -> "Auth":
+            google_transport: httpx.AsyncBaseTransport | None,
+            github_transport: httpx.AsyncBaseTransport | None = None) -> "Auth":
     """Wire the exception handlers; return the guards and the public router."""
-    auth = Auth(settings, templates, client, google_transport)
+    auth = Auth(settings, templates, client, google_transport, github_transport)
 
     @app.exception_handler(NotConfigured)
     async def _not_configured(_: Request, __: NotConfigured):
@@ -99,8 +109,10 @@ def install(app, settings: Settings, templates: Jinja2Templates, client: httpx.A
 
 class Auth:
     def __init__(self, settings: Settings, templates: Jinja2Templates, client: httpx.AsyncClient,
-                 google_transport: httpx.AsyncBaseTransport | None) -> None:
+                 google_transport: httpx.AsyncBaseTransport | None,
+                 github_transport: httpx.AsyncBaseTransport | None = None) -> None:
         self.settings, self.templates, self.client, self.google_transport = settings, templates, client, google_transport
+        self.github_transport = github_transport
 
     # -- guards (FastAPI dependencies) ----------------------------------------------------------
 
@@ -144,9 +156,9 @@ class Auth:
 
     # -- helpers ----------------------------------------------------------------------------------
 
-    def redirect_uri(self, request: Request) -> str:
+    def redirect_uri(self, request: Request, path: str = "/auth/callback") -> str:
         base = self.settings.public_url or str(request.base_url).rstrip("/")
-        return f"{base}/auth/callback"
+        return f"{base}{path}"
 
     @staticmethod
     def login_error(code: str) -> RedirectResponse:
@@ -171,6 +183,36 @@ class Auth:
             return None
         return profile if isinstance(profile, dict) else None
 
+    async def github_profile(self, request: Request, code: str) -> dict | None:
+        """{sub, email, name} of the GitHub account, with its primary verified email; None if GitHub fails, and
+        `{"sub": ..., "email": None}` when the account has no primary verified email."""
+        try:
+            async with httpx.AsyncClient(timeout=10, transport=self.github_transport) as http:
+                tok = await http.post(GITHUB_TOKEN_URL, headers={"Accept": "application/json"}, data={
+                    "code": code, "client_id": self.settings.github_client_id,
+                    "client_secret": self.settings.github_client_secret,
+                    "redirect_uri": self.redirect_uri(request, "/auth/github/callback")})
+                tok.raise_for_status()
+                access = tok.json().get("access_token")  # a bad code is a 200 with {"error": ...}
+                if not access:
+                    return None
+                headers = {"Authorization": f"Bearer {access}", "Accept": "application/vnd.github+json",
+                           "User-Agent": "veridian-panel"}
+                user = await http.get(GITHUB_USER_URL, headers=headers)
+                user.raise_for_status()
+                emails = await http.get(GITHUB_EMAILS_URL, headers=headers)
+                emails.raise_for_status()
+                account, listed = user.json(), emails.json()
+            if not isinstance(account, dict) or not account.get("id") or not isinstance(listed, list):
+                return None
+        except Exception as exc:  # network, GitHub error or bad JSON: never the details, never a 500
+            log.warning("github login failed: %s", type(exc).__name__)
+            return None
+        # The profile email can be hidden or unverified: only the primary verified address counts.
+        primary = next((e.get("email") for e in listed if isinstance(e, dict) and e.get("primary") is True
+                        and e.get("verified") is True and isinstance(e.get("email"), str) and e["email"]), None)
+        return {"sub": f"github:{account['id']}", "email": primary, "name": account.get("name") or account.get("login")}
+
     async def engine_login(self, profile: dict) -> tuple[dict, list[dict], list[dict]] | None:
         """POST /v1/people/login with the service credential: (person, orgs, projects), or None if the engine
         says no. The engine answers person + orgs (role and projects each); `projects` is those of every org,
@@ -193,6 +235,23 @@ class Auth:
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return None
 
+    async def start_session(self, request: Request, profile: dict) -> RedirectResponse:
+        """Both providers end here with `sub` (their own id), a verified `email` and a `name`."""
+        answer = await self.engine_login(profile)
+        if answer is None:
+            return self.login_error("engine")
+        person, orgs, projects = answer
+        request.session.clear()  # a fresh session (and CSRF token) for every login
+        request.session.update({
+            "person": person["id"], "email": str(profile["email"]).lower(),
+            "name": str(profile.get("name") or profile["email"]), "csrf": secrets.token_urlsafe(32)})
+        # Start on the first project (of the first org that has one); the selector changes it from there.
+        if projects:
+            request.session.update({"project": projects[0]["id"], "org": projects[0]["org_id"]})
+        elif orgs:
+            request.session["org"] = orgs[0]["id"]
+        return RedirectResponse("/" if projects else "/proyectos" if orgs else "/sin-proyectos", status_code=303)
+
     # -- routes -------------------------------------------------------------------------------------
 
     def public_router(self) -> APIRouter:
@@ -203,7 +262,8 @@ class Auth:
             if auth.signed_in(request):
                 return RedirectResponse("/", status_code=303)
             message = LOGIN_ERRORS.get(error, LOGIN_ERRORS["failed"]) if error else None
-            return auth.templates.TemplateResponse(request, "login.html", {"error": message})
+            return auth.templates.TemplateResponse(request, "login.html", {
+                "error": message, "github": auth.settings.github_enabled})
 
         @router.get("/auth/google")
         async def auth_google(request: Request):
@@ -228,20 +288,36 @@ class Auth:
                 return auth.login_error("failed")
             if profile.get("email_verified") is not True or not profile.get("email"):
                 return auth.login_error("email")
-            answer = await auth.engine_login(profile)
-            if answer is None:
-                return auth.login_error("engine")
-            person, orgs, projects = answer
-            request.session.clear()  # a fresh session (and CSRF token) for every login
-            request.session.update({
-                "person": person["id"], "email": str(profile["email"]).lower(),
-                "name": str(profile.get("name") or profile["email"]), "csrf": secrets.token_urlsafe(32)})
-            # Start on the first project (of the first org that has one); the selector changes it from there.
-            if projects:
-                request.session.update({"project": projects[0]["id"], "org": projects[0]["org_id"]})
-            elif orgs:
-                request.session["org"] = orgs[0]["id"]
-            return RedirectResponse("/" if projects else "/proyectos" if orgs else "/sin-proyectos", status_code=303)
+            return await auth.start_session(request, profile)
+
+        def github_only():
+            if not auth.settings.github_enabled:
+                raise HTTPException(404)
+
+        @router.get("/auth/github", dependencies=[Depends(github_only)])
+        async def auth_github(request: Request):
+            state = secrets.token_urlsafe(32)
+            request.session["oauth_state"] = state
+            query = urlencode({
+                "client_id": auth.settings.github_client_id,
+                "redirect_uri": auth.redirect_uri(request, "/auth/github/callback"),
+                "scope": "user:email", "state": state})
+            return RedirectResponse(f"{GITHUB_AUTH_URL}?{query}", status_code=303)
+
+        @router.get("/auth/github/callback", dependencies=[Depends(github_only)])
+        async def auth_github_callback(request: Request, code: str | None = None, state: str | None = None,
+                                       error: str | None = None):
+            expected = request.session.pop("oauth_state", None)  # single use
+            if error:
+                return auth.login_error("github_denied")
+            if not (expected and state and code) or not hmac.compare_digest(str(state).encode(), str(expected).encode()):
+                return auth.login_error("state")
+            profile = await auth.github_profile(request, code)
+            if profile is None:
+                return auth.login_error("github_failed")
+            if not profile["email"]:
+                return auth.login_error("github_email")
+            return await auth.start_session(request, profile)
 
         return router
 

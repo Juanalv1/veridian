@@ -22,6 +22,8 @@ def load_dotenv(path: Path) -> None:
 class Settings:
     google_client_id: str = ""
     google_client_secret: str = ""
+    github_client_id: str = ""  # optional: GitHub sign-in is offered only when both GitHub values are set
+    github_client_secret: str = ""
     session_secret: str = ""
     public_url: str = ""  # behind Render's proxy: builds the OAuth redirect URI and is the only accepted Origin
     engine_url: str = "http://localhost:8000"
@@ -32,6 +34,10 @@ class Settings:
         """Without all of these the panel serves nothing: there is no open mode."""
         return bool(self.google_client_id and self.google_client_secret and self.session_secret and self.panel_token)
 
+    @property
+    def github_enabled(self) -> bool:
+        return bool(self.github_client_id and self.github_client_secret)
+
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv(DOTENV_PATH)
@@ -39,6 +45,8 @@ class Settings:
         return cls(
             google_client_id=env("GOOGLE_CLIENT_ID", ""),
             google_client_secret=env("GOOGLE_CLIENT_SECRET", ""),
+            github_client_id=env("GITHUB_CLIENT_ID", ""),
+            github_client_secret=env("GITHUB_CLIENT_SECRET", ""),
             session_secret=env("SESSION_SECRET", ""),
             public_url=env("PUBLIC_URL", "").rstrip("/"),
             engine_url=env("VERIDIAN_URL", "http://localhost:8000").rstrip("/"),

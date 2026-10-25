@@ -5,6 +5,7 @@ the signed-in person and project (X-Veridian-Actor, X-Veridian-Project); the eng
 
 Env: VERIDIAN_URL (engine base URL), VERIDIAN_PANEL_TOKEN (service credential), GOOGLE_CLIENT_ID,
 GOOGLE_CLIENT_SECRET, SESSION_SECRET, PUBLIC_URL. Without them the panel refuses to serve (no open mode).
+GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET add GitHub sign-in; without both it stays off.
 """
 
 import asyncio
@@ -211,8 +212,10 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                clock: Callable[[], float] = time.monotonic,
                now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
                settings: Settings | None = None,
-               google_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
-    """`token` is the service credential for the engine; `google_transport` replaces the network to Google (tests)."""
+               google_transport: httpx.AsyncBaseTransport | None = None,
+               github_transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
+    """`token` is the service credential for the engine; `google_transport` and `github_transport` replace the
+    network to Google and GitHub (tests)."""
     settings = settings or Settings.from_env()
     settings = dataclasses.replace(
         settings, engine_url=(engine_url or settings.engine_url).rstrip("/"),
@@ -221,7 +224,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     client = http_client or httpx.AsyncClient(timeout=3.0)
     templates.env.globals["asset_version"] = ASSET_VERSION
     app = FastAPI(title="Veridian panel", docs_url=None, redoc_url=None, openapi_url=None)
-    auth = auth_module.install(app, settings, templates, client, google_transport)
+    auth = auth_module.install(app, settings, templates, client, google_transport, github_transport)
     # Registered on the routers below, in this order: configured -> session (+CSRF) -> project.
     app.router.dependencies.append(Depends(auth.configured_guard))
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")

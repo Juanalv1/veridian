@@ -24,7 +24,7 @@ def api_routes(routes):
             yield from api_routes(route.original_router.routes)
 
 
-PUBLIC_ROUTES = {"/login", "/auth/google", "/auth/callback"}
+PUBLIC_ROUTES = {"/login", "/auth/google", "/auth/callback", "/auth/github", "/auth/github/callback"}
 
 
 def canned(request):

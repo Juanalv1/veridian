@@ -31,6 +31,7 @@ uv sync
 | `VERIDIAN_PANEL_TOKEN` | motor falso y panel | Credencial de servicio del panel. El motor falso la exige (más `X-Veridian-Actor` y `X-Veridian-Project`) en todo lo que no es del SDK; `VERIDIAN_PANEL_TOKENS` admite una lista para rotar |
 | `VERIDIAN_BOOTSTRAP_OWNERS` | motor falso | Correos que, al entrar, quedan como `owner` de las organizaciones sin owner (cada token sembrado es una organización con un proyecto) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `PUBLIC_URL` | panel | Login con Google y cookie de sesión. En local se leen de `edge/.env` sin pisar el entorno. Sin ellos el panel responde 503 (no hay modo abierto) |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | panel | Opcionales: sin los dos, el login con GitHub no aparece ni responde (404). Se crean en una OAuth App de GitHub con callback `<PUBLIC_URL>/auth/github/callback`. El panel pide el permiso `user:email` y entra con el correo principal verificado |
 | `VERIDIAN_URL` | demo y panel | URL del motor (por defecto `http://localhost:8000`) |
 | `VERIDIAN_TOKEN` | demo | Token Bearer (clave del SDK) con el que habla con el motor. El panel ya no lo usa |
 | `TRUSTED_PROXIES` | demo | Cantidad de proxies propios delante de la app (por defecto `0`: se usa la IP de la conexión y se ignora `X-Forwarded-For`). En Render es `3` (medido) |

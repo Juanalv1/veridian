@@ -50,6 +50,33 @@ def google_transport(sub="g-1", email=EMAIL, name="Ana", verified=True, token_st
     return httpx.MockTransport(handler)
 
 
+def github_transport(gh_id=4242, email=EMAIL, name="Ana G", emails=None, token_error=None, user_status=200,
+                     emails_status=200):
+    """Fake github.com / api.github.com. `emails` is what GET /user/emails answers (default: one primary verified)."""
+    listed = [{"email": email, "primary": True, "verified": True, "visibility": None}] if emails is None else emails
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        if request.url.host == "github.com":
+            if token_error:
+                return httpx.Response(200, json={"error": token_error})  # GitHub answers 200 with an error body
+            code = parse_qs(request.content.decode()).get("code", [""])[0]
+            return httpx.Response(200, json={"access_token": f"gh-{code}", "token_type": "bearer", "scope": "user:email"})
+        if request.url.path == "/user":
+            if user_status != 200:
+                return httpx.Response(user_status, json={"message": "boom"})
+            return httpx.Response(200, json={"id": gh_id, "login": "ana", "name": name, "email": None})
+        if request.url.path == "/user/emails":
+            if emails_status != 200:
+                return httpx.Response(emails_status, json={"message": "boom"})
+            return httpx.Response(200, json=listed)
+        return httpx.Response(404)
+    transport = httpx.MockTransport(handler)
+    transport.seen = seen
+    return transport
+
+
 def login_answer(projects=((PROJECT_ID, "Demo", "owner"),), person=PERSON_ID, email=EMAIL, orgs=None):
     """The login answer. `projects` are (id, name, role) triples placed in one org; `orgs` overrides it
     with a list of (org_id, role, [(project_id, name), ...])."""
@@ -104,6 +131,13 @@ def sign_in(client, code="c", **params):
     r = client.get("/auth/google")
     got = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
     return client.get("/auth/callback", params={"code": code, "state": got, **params})
+
+
+def sign_in_github(client, code="c", **params):
+    """Run /auth/github then /auth/github/callback; returns the callback response."""
+    r = client.get("/auth/github")
+    got = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    return client.get("/auth/github/callback", params={"code": code, "state": got, **params})
 
 
 def make_panel(http_client, *, settings=None, token=PANEL_TOKEN, login=True, transport=None, cookies=None, **kw):

@@ -3,12 +3,19 @@
 {% block content %}
   <div class="auth-heading">
     <h1>Entra a tu panel</h1>
-    <p class="auth-muted">Usa tu cuenta de Google para ver los accesos de tus proyectos y las decisiones de Veridian.</p>
+    <p class="auth-muted">Usa tu cuenta de Google{% if github %} o de GitHub{% endif %} para ver los accesos de tus proyectos y las decisiones de Veridian.</p>
   </div>
   {% if error %}<p class="auth-error" role="alert"><span class="auth-error-lead">No pudiste entrar.</span> {{ error }}</p>{% endif %}
+  <div class="auth-actions">
   <a class="btn btn-primary" href="/auth/google">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M20.5 12.2c0-.7-.1-1.3-.2-1.9H12v3.6h4.8a4.2 4.2 0 0 1-1.8 2.7v2.2h2.9c1.7-1.5 2.6-3.8 2.6-6.6z"></path><path d="M12 21c2.4 0 4.4-.8 5.9-2.2L15 16.6c-.8.5-1.8.9-3 .9-2.3 0-4.3-1.6-5-3.7H4v2.3A9 9 0 0 0 12 21z"></path><path d="M7 13.8a5.4 5.4 0 0 1 0-3.6V7.9H4a9 9 0 0 0 0 8.2z"></path><path d="M12 6.5c1.3 0 2.5.5 3.4 1.3L18 5.3A9 9 0 0 0 4 7.9l3 2.3c.7-2.1 2.7-3.7 5-3.7z"></path></svg>
     Continuar con Google
   </a>
-  <p class="auth-small">Solo entran personas invitadas a una organización. Si nadie te invitó, pídelo al administrador de tu equipo.</p>
+  {% if github %}
+  <a class="btn btn-secondary" href="/auth/github">
+    Continuar con GitHub
+  </a>
+  {% endif %}
+  </div>
+  <p class="auth-small">Si es tu primera vez, te pedimos solo el nombre de tu empresa y listo. Si alguien te invitó a su organización, entra con el correo de la invitación.</p>
 {% endblock %}
