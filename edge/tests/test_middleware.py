@@ -371,10 +371,8 @@ async def test_callable_errors_never_break_the_request(rec):
 
 
 async def test_an_app_that_raises_is_reported_as_a_500(rec):
-    app = FastAPI()
-
-    @app.get("/boom")
-    async def boom():
+    async def app(scope, receive, send):
+        # A bare ASGI app: FastAPI would send its own 500 first, this one starts no response.
         raise RuntimeError("app bug")
 
     mw = make_mw(app, rec.client())

@@ -356,7 +356,9 @@ class VeridianMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         finally:
-            self._record(scope, request, ip, device_id, status, size, event_id=event_id)
+            # No response started means the app raised: the server answers 500. The engine
+            # accepts 100-599 only, so 0 would get the event rejected.
+            self._record(scope, request, ip, device_id, status or 500, size, event_id=event_id)
 
     def _is_excluded(self, path: str) -> bool:
         return any(path == p or path.startswith(p + "/") for p in self.exclude_paths)
@@ -458,7 +460,8 @@ class VeridianMiddleware:
     def _record(self, scope, request, ip, device_id, status, size, route=None, event_id=None) -> None:
         try:
             event = self._event(scope, request, ip, device_id, status, size, route, event_id)
-            if event is not None:
+            # The engine requires a session (contract 1): an event without one would only be rejected.
+            if event is not None and event["session_id"]:
                 self.queue.append(event)
         except Exception:
             log.exception("veridian: could not record event")

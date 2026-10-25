@@ -222,6 +222,49 @@ async def test_blocked_bank_change_still_answers_the_sdk_json_the_page_reads():
         assert r.status_code == 403 and r.json()["error"] == "blocked"
 
 
+NAVIGATE = {"Sec-Fetch-Mode": "navigate", "Accept": "text/html"}
+
+
+def attacker(app):
+    return browser(app, headers={"X-Forwarded-For": "190.202.14.7, 203.0.113.9"})
+
+
+async def get_blocked(app, atk):
+    await login(atk)
+    await atk.post("/payouts/bank-account", data={"bank": "Evil", "account_number": "1"})
+    await app.flush()
+    await app.refresh_blocklist()
+
+
+async def test_a_blocked_browser_navigation_gets_a_page_not_raw_json():
+    app = make_demo(trusted_proxies=1)
+    async with attacker(app) as atk:
+        await get_blocked(app, atk)
+        for path in ("/invoices", "/payouts/bank-account", "/login"):
+            r = await atk.get(path, headers=NAVIGATE)
+            assert r.status_code == 403
+            assert r.headers["content-type"].startswith("text/html")
+            assert "Acceso bloqueado" in r.text and '"error"' not in r.text
+
+
+async def test_blocked_requests_that_are_not_navigations_keep_the_sdk_json():
+    app = make_demo(trusted_proxies=1)
+    async with attacker(app) as atk:
+        await get_blocked(app, atk)
+        r = await atk.get("/invoices", headers={"Sec-Fetch-Mode": "cors", "Accept": "text/html"})
+        assert r.status_code == 403 and r.json()["error"] == "blocked"
+
+
+async def test_the_blocked_page_shows_the_sdk_unlock_message_when_there_is_one():
+    from veridian_sdk.middleware import SELF_UNLOCK_MESSAGE
+    app = make_demo(trusted_proxies=1)
+    async with attacker(app) as atk:
+        await get_blocked(app, atk)
+        app.self_unlock_sessions.update(app.blocked["sessions"])
+        r = await atk.get("/invoices", headers=NAVIGATE)
+        assert r.status_code == 403 and SELF_UNLOCK_MESSAGE in r.text
+
+
 # --- one-tap demo preparation (/preparar) -------------------------------
 
 PREPARE_PIN = "4821"

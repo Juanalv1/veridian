@@ -158,7 +158,8 @@ export class Veridian {
   async record(info, deviceId, status, bytes, extra) {
     try {
       const event = await this.buildEvent(info, deviceId, status, bytes, extra);
-      if (event) this.enqueue(event);
+      // The engine requires a session (contract 1): an event without one would only be rejected.
+      if (event && event.session_id) this.enqueue(event);
     } catch (err) {
       this.config.logger.error(`veridian: could not record event: ${err?.message ?? err}`);
     }
