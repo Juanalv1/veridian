@@ -122,6 +122,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
   - T1 hecho (`a10c038`): paquete `veridian-sdk` (JavaScript ESM sin dependencias), configuración, errores al arrancar, IP del cliente, cookie `vrd_did` y sesión detectada.
   - T2 hecho (`54e8daa`): núcleo con lotes cada ~2 s en segundo plano (timers `unref`), consulta de `/v1/blocklist` con `since`, `403` a lo bloqueado y pasar ante `401`/`429`.
   - T3 hecho (`4eb2d29`, subido por la sincronización automática): rutas críticas y `POST /v1/check` (12 s, fail-open), reporte de rutas al arrancar (se lee del router de Express; en Express 5 los routers montados en una ruta hay que pasarlos con `routes`), adaptadores de Express 4/5 y de Next.js (route handlers, runtime Node); 128 tests.
+  - T4 hecho (`310b453`): README, `examples/quickstart.js` ejecutado tal cual contra `edge/fake_engine` (autentica, envía eventos y reporta rutas), instalación de Node en el `README.md` raíz; 134 tests en `sdk/node`, 747 en `edge`. Falta publicar en npm (el nombre `veridian-sdk` estaba libre) y la pestaña Node del panel y la landing (Maikol).
 
 ### Carlos Navas: SDK, middleware y app de demo (lo que era del Dev 2)
 

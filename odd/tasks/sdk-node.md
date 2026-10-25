@@ -28,8 +28,8 @@ Mode: on (project convention, `INIT.md`). Runner: `node --test` in `sdk/node` (N
 
 - [x] T1 Package scaffold, config/env defaults and startup errors, client IP and device cookie. Route: delegated (single writer). Evidence: a10c038, 29 tests pass (RED first: modules missing).
 - [x] T2 Event batching, blocklist polling and enforcement, 401/429 pass-through. Route: delegated (single writer). Evidence: 54e8daa, 54 tests pass in `sdk/node` (RED first: `src/core.js` missing), against a local fake HTTP engine.
-- [x] T3 Critical routes + `POST /v1/check` pre-check, route report at startup, Express and Next.js adapters. Route: delegated (single writer). Evidence: 4eb2d29 (auto-synced), 128 tests, 128 tests pass in `sdk/node` (RED first: `routes.js`, `index.js`, `next.js` missing and 17 core tests failing), Express 4 and 5 both exercised with real servers.
-- [ ] T4 README quickstart run as-is against the fake engine; docs. Route: delegated.
+- [x] T3 Critical routes + `POST /v1/check` pre-check, route report at startup, Express and Next.js adapters. Route: delegated (single writer). Evidence: 4eb2d29 (auto-synced), 128 tests pass in `sdk/node` (RED first: `routes.js`, `index.js`, `next.js` missing and 17 core tests failing), Express 4 and 5 both exercised with real servers.
+- [x] T4 README quickstart run as-is against the fake engine; docs. Route: delegated (single writer). Evidence: 310b453, 134 tests pass in `sdk/node` (RED first: README missing; the integration tests ran against the real `edge/fake_engine`), `edge` suite 747 passed.
 
 ## Acceptance
 
@@ -37,4 +37,4 @@ Mode: on (project convention, `INIT.md`). Runner: `node --test` in `sdk/node` (N
 
 ## Progress
 
-Created 2026-10-25. Next: T1, after the backoffice signup.
+Created 2026-10-25. T1-T4 done 2026-10-25. Pending, not authorized: publishing `veridian-sdk` to npm (name was free on 2026-10-25), and the Node tab of the panel snippet and the landing (Maikol).
