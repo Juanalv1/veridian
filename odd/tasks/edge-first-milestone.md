@@ -27,7 +27,7 @@ Mode: on. Source: `INIT.md` ("test first when there is clear behavior"). Runner:
 - [x] T2 Middleware: event capture (route template, IP rule, `device_id` cookie, user/session callables), batched background sender (~2 s, bounded buffer, retry), blocklist poller (`since`, `304`, keep last list on failure), `403 {"error": "blocked"}`. Route: delegated. Evidence: b9b4abd; `uv run pytest -q` 50 passed.
 - [x] T3 Demo app: login, invoices (list, detail, export), payout bank account (view, change), using the middleware. Route: delegated. Evidence: 779c08b; `uv run pytest -q` 60 passed. Note: fake engine learns unflagged events after VERIDIAN_LEARN_DELAY (default 300 s) so the attacker's own login does not whitelist their network.
 - [x] T4 Panel: lists `GET /v1/decisions` with signals and rationale, auto-refresh. Route: delegated. Evidence: 34bd444; `uv run pytest -q` 65 passed.
-- [x] T5 Run instructions (`edge/README.md`, Spanish) and a local end-to-end check of the demo path. Route: delegated. Evidence: COMMIT_T5; `uv run pytest -q` 65 passed; local smoke (3 uvicorn processes): owner login 303, invoices 200; attacker (XFF 9.9.9.9, 203.0.113.9, trusted_proxies=1) bank POST 200, ~5 s later 403 blocked; owner 200; panel shows block + rationale.
+- [x] T5 Run instructions (`edge/README.md`, Spanish) and a local end-to-end check of the demo path. Route: delegated. Evidence: 1f56bf4; `uv run pytest -q` 65 passed; local smoke (3 uvicorn processes): owner login 303, invoices 200; attacker (XFF 9.9.9.9, 203.0.113.9, trusted_proxies=1) bank POST 200, ~5 s later 403 blocked; owner 200; panel shows block + rationale.
 
 ## Acceptance
 
