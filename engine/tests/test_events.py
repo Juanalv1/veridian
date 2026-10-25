@@ -49,3 +49,24 @@ def test_same_event_id_is_independent_per_client(client):
 def test_device_id_may_be_empty(client):
     response = post_events(client, [make_event("e1", NOW, device_id="")])
     assert response.status_code == 202
+
+
+def test_create_app_without_settings_reads_dotenv(tmp_path, monkeypatch):
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from veridian_engine.api import create_app as app_from_env
+
+    keys = ("VERIDIAN_TOKENS", "VERIDIAN_TOKEN", "VERIDIAN_DB", "ANTHROPIC_API_KEY")
+    for key in keys:
+        monkeypatch.delenv(key, raising=False)
+    (tmp_path / ".env").write_text(f"VERIDIAN_TOKEN=from-dotenv\nVERIDIAN_DB={tmp_path / 'env.db'}\n")
+    monkeypatch.chdir(tmp_path)
+    try:
+        with TestClient(app_from_env()) as client:
+            response = client.get("/v1/blocklist", headers={"Authorization": "Bearer from-dotenv"})
+        assert response.status_code == 200
+    finally:
+        for key in keys:
+            os.environ.pop(key, None)

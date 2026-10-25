@@ -1,5 +1,6 @@
 import threading
 
+from dotenv import find_dotenv, load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
 
@@ -15,7 +16,10 @@ from .settings import Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or Settings.from_env()
+    if settings is None:
+        # Real environment variables win over the nearest .env (searched upward from the cwd).
+        load_dotenv(find_dotenv(usecwd=True))
+        settings = Settings.from_env()
     db.init_db(settings.db_path)
     route_classes = RouteClasses.load(settings.routes_file)
 
