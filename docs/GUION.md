@@ -20,7 +20,7 @@
 
 **[Slide 4: Instalación]**
 
-> Y se integra en tu backend en solo tres líneas de código: le dices cómo identificas al usuario, y se encarga del resto, hasta de clasificar tus rutas.
+> Y se integra en tu backend en solo tres líneas de código: le dices cómo identificas al usuario y, en la primera ejecución, clasifica automáticamente todas tus rutas.
 >
 > Ahora, veámoslo en vivo.
 
