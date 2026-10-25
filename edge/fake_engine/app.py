@@ -13,6 +13,7 @@ import ipaddress
 import itertools
 import json
 import os
+import re
 import secrets
 import time
 from collections import deque
@@ -23,7 +24,7 @@ from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, Path, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field, StringConstraints
 
 DEV_TOKEN = "dev-token"
 
@@ -93,6 +94,7 @@ class EventIn(BaseModel):
     route: str
     status: int
     bytes: int
+    user_email: str | None = None  # optional personal data (self-unlock); kept per user, never in the event
 
 
 class EventsIn(BaseModel):
@@ -178,11 +180,55 @@ class OrgPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
 
 
+BRAND_TEXT_FIELDS = ("brand_name", "brand_logo_url", "brand_color", "brand_support_url", "brand_support_email")
+_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+_EMAIL = re.compile(r"^[^@\s<>,;\"]+@[^@\s<>,;\"]+\.[^@\s<>,;\"]+$")
+
+
+def _blank_to_none(value):
+    """Null or a blank string clears a brand field; any other string is trimmed."""
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
+def _color(value: str | None) -> str | None:
+    if value is not None and not _COLOR.match(value):
+        raise ValueError("brand_color must be a #RRGGBB hex color")
+    return value
+
+
+def _email(value: str | None) -> str | None:
+    if value is not None and (len(value) > 254 or not _EMAIL.match(value)):
+        raise ValueError("brand_support_email must be an email address")
+    return value
+
+
+def _https(value: str | None) -> str | None:
+    if value is not None and (not value.lower().startswith("https://") or re.search(r"[\s<>\"']", value)):
+        raise ValueError("must be an https url")
+    return value
+
+
+BrandText = Annotated[str | None, BeforeValidator(_blank_to_none)]
+BrandColor = Annotated[str | None, BeforeValidator(_blank_to_none), AfterValidator(_color)]
+BrandEmail = Annotated[str | None, BeforeValidator(_blank_to_none), AfterValidator(_email)]
+BrandUrl = Annotated[str | None, BeforeValidator(_blank_to_none), AfterValidator(_https)]
+
+
 class ProjectPatch(BaseModel):
+    """Only the sent fields change (`model_fields_set`). For a brand field, null or "" clears it."""
+
     name: str | None = Field(default=None, min_length=1, max_length=80)
     retention_days: int | None = Field(default=None, ge=1)
     enforcement: Literal["observe", "enforce"] | None = None
     ai_enabled: bool | None = None
+    brand_name: BrandText = Field(default=None, max_length=80)
+    brand_logo_url: BrandText = Field(default=None, max_length=2048)  # checked like the webhook URL
+    brand_color: BrandColor = None
+    brand_support_url: BrandUrl = Field(default=None, max_length=2048)
+    brand_support_email: BrandEmail = None
+    self_unlock_enabled: bool | None = None
 
 
 def network_of(ip: str) -> str:
@@ -214,6 +260,39 @@ def iso_of(dt: datetime) -> str:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+_MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+           "noviembre", "diciembre")
+_BROWSERS = (("Edg", "Edge"), ("OPR", "Opera"), ("Firefox", "Firefox"), ("Chrome", "Chrome"), ("CriOS", "Chrome"),
+             ("Safari", "Safari"))
+_SYSTEMS = (("Windows", "Windows"), ("iPhone", "iOS"), ("iPad", "iOS"), ("Android", "Android"),
+            ("Mac OS", "macOS"), ("Macintosh", "macOS"), ("CrOS", "ChromeOS"), ("Linux", "Linux"))
+_EMAIL_SHAPE = re.compile(r"^[^@\s<>,;\"]+@[^@\s<>,;\"]+\.[^@\s<>,;\"]+$")
+MAIL_INTERVAL_S = 15 * 60  # one unlock email per user in this time (a design value, not measured)
+TOKEN_TTL_S = 24 * 3600
+
+
+def describe_device(user_agent: str | None) -> str:
+    """A coarse "Chrome en Windows"; never the raw user agent (same wording as the engine)."""
+    ua = user_agent or ""
+    browser = next((name for needle, name in _BROWSERS if needle in ua), None)
+    system = next((name for needle, name in _SYSTEMS if re.search(needle, ua, re.IGNORECASE)), None)
+    if browser and system:
+        return f"{browser} en {system}"
+    return browser or (f"Dispositivo {system}" if system else "Dispositivo desconocido")
+
+
+def describe_time(ts: str) -> str | None:
+    try:
+        value = parse_iso(ts).astimezone(timezone.utc)
+    except ValueError:
+        return None
+    return f"{value.day} de {_MONTHS[value.month - 1]} de {value.year}, {value:%H:%M} UTC"
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 @dataclass
@@ -258,6 +337,14 @@ class ClientState:
     learn_delay: float = 0.0
     clock: object = time.monotonic
     pending_learn: deque = field(default_factory=deque)
+    # Self-unlock by email. `self_unlock_gate` is "the project has the feature on and enforces" (set by the app);
+    # `issue_token` registers a token for a block decision in the app's registry.
+    contacts: dict[str, str] = field(default_factory=dict)  # user_id -> last valid user_email
+    last_mail: dict[str, float] = field(default_factory=dict)  # user_id -> clock() of the last unlock email
+    outbox: list[dict] = field(default_factory=list)  # the simulated mailer (shared by the app)
+    project_id: str = ""
+    self_unlock_gate: object = lambda: False
+    issue_token: object = None
 
     def _learn_later(self, event: EventIn) -> None:
         self.pending_learn.append((self.clock(), event))
@@ -280,6 +367,9 @@ class ClientState:
 
     def ingest(self, event: EventIn) -> None:
         self.log.append(event)
+        email = (event.user_email or "").strip()
+        if email and len(email) <= 254 and _EMAIL_SHAPE.match(email):
+            self.contacts[event.user_id] = email  # an invalid value is ignored: the event is accepted anyway
         if event.status == 403:
             # Rejected by the middleware: the app never saw it, so it says
             # nothing about the user. Never learned, never judged.
@@ -308,7 +398,30 @@ class ClientState:
             self.ingest(event)
         created = self.decisions[before:]
         decision = created[-1] if created else self._active_block_for(event)
-        return {"verdict": "block" if decision else "allow", "decision_id": decision["id"] if decision else None}
+        answer = {"verdict": "block" if decision else "allow", "decision_id": decision["id"] if decision else None}
+        if decision and self.gets_unlock_email(decision["user_id"]):
+            answer["self_unlock"] = True
+        return answer
+
+    def gets_unlock_email(self, user_id: str) -> bool:
+        """Whether a blocked user gets (or got) the unlock email: feature on, enforcing, and an address."""
+        return bool(self.self_unlock_gate()) and user_id in self.contacts
+
+    def self_unlock_sessions(self) -> list[str]:
+        return [d["access"]["session_id"] for d in self.open_blocks()
+                if d["access"].get("session_id") in self.sessions and self.gets_unlock_email(d["user_id"])]
+
+    def _queue_unlock_email(self, decision: dict, event: EventIn) -> None:
+        """The simulated mailer: one per user every 15 minutes; the plain token lives only in the outbox."""
+        user = event.user_id
+        if self.issue_token is None or not self.gets_unlock_email(user):
+            return
+        now = self.clock()
+        if user in self.last_mail and now - self.last_mail[user] < MAIL_INTERVAL_S:
+            return
+        self.last_mail[user] = now
+        self.outbox.append({"project_id": self.project_id, "to": self.contacts[user], "decision_id": decision["id"],
+                            "token": self.issue_token(decision["id"], user)})
 
     def _active_block_for(self, event: EventIn) -> dict | None:
         for d in reversed(self.open_blocks()):
@@ -369,6 +482,7 @@ class ClientState:
                 },
             }
         )
+        self._queue_unlock_email(self.decisions[-1], event)
 
     def activity(self, limit: int) -> list[dict]:
         """Newest-first accesses with their verdict and HTTP status (contract 5).
@@ -516,10 +630,22 @@ class Project:
     enforcement: str = "observe"
     ai_enabled: bool = True
     deleted_at: str | None = None
+    brand_name: str | None = None
+    brand_logo_url: str | None = None
+    brand_color: str | None = None
+    brand_support_url: str | None = None
+    brand_support_email: str | None = None
+    self_unlock_enabled: bool = False
 
     def public(self) -> dict:
         return {"id": self.id, "org_id": self.org_id, "name": self.name, "retention_days": self.retention_days,
-                "enforcement": self.enforcement, "ai_enabled": self.ai_enabled, "created_at": self.created_at}
+                "enforcement": self.enforcement, "ai_enabled": self.ai_enabled, "created_at": self.created_at,
+                **{k: getattr(self, k) for k in BRAND_TEXT_FIELDS}, "self_unlock_enabled": self.self_unlock_enabled}
+
+    def brand(self) -> dict:
+        """What the public unlock page may show; the name falls back to the project's."""
+        return {"name": self.brand_name or self.name, "logo_url": self.brand_logo_url, "color": self.brand_color,
+                "support_url": self.brand_support_url, "support_email": self.brand_support_email}
 
 
 @dataclass
@@ -649,8 +775,28 @@ def create_app(
     api_keys: dict[str, ApiKey] = {}  # id -> key
     key_by_hash: dict[str, ApiKey] = {}
 
+    outbox: list[dict] = []  # the simulated mailer, every project: {project_id, to, decision_id, token}
+    unlock_tokens: dict[str, dict] = {}  # sha256(token) -> {project_id, decision_id, user_id, expires_at, used}
+
     def new_state() -> ClientState:
         return ClientState(routes=dict(route_map), learn_delay=delay, clock=clock)
+
+    def attach(project: Project) -> Project:
+        """Wire the project's state to its settings and to the token registry (self-unlock by email)."""
+        st = project.state
+        st.self_unlock_gate = lambda: project.self_unlock_enabled and project.enforcement == "enforce"
+
+        def issue(decision_id: str, user_id: str) -> str:
+            token = secrets.token_urlsafe(32)
+            unlock_tokens[hash_token(token)] = {
+                "project_id": project.id, "decision_id": decision_id, "user_id": user_id, "used": False,
+                "expires_at": iso_of(datetime.now(timezone.utc) + timedelta(seconds=TOKEN_TTL_S))}
+            return token
+
+        st.issue_token = issue
+        st.outbox = outbox
+        st.project_id = project.id
+        return project
 
     # Each SDK key is an organization of its own with one seeded project, and no members until a
     # bootstrap owner logs in.
@@ -663,7 +809,8 @@ def create_app(
         pid, oid = "p_" + digest, "org_" + digest
         name = "Demo" if len(ordered) == 1 else f"Demo {i}"
         orgs[oid] = Organization(id=oid, name=name, created_at=now_iso())
-        projects[pid] = Project(id=pid, org_id=oid, name=name, state=st, created_at=now_iso(), enforcement="enforce")
+        projects[pid] = attach(Project(id=pid, org_id=oid, name=name, state=st, created_at=now_iso(),
+                                       enforcement="enforce"))
         by_token[token] = pid
 
     app = FastAPI(title="Veridian fake engine")
@@ -671,6 +818,8 @@ def create_app(
     app.state.orgs = orgs
     app.state.people = people
     app.state.api_keys = api_keys
+    app.state.unlock_tokens = unlock_tokens
+    app.state.outbox = outbox
     # What POST .../webhook/test answers; tests replace it. The fake engine never calls the URL.
     app.state.webhook_test_result = {"delivered": True, "status_code": 200, "error": None}
     app.state.project_id_for = by_token.__getitem__
@@ -854,7 +1003,10 @@ def create_app(
     def get_blocklist(st: SharedState, since: int | None = None):
         if since is not None and since == st.version:
             return Response(status_code=304)
-        return {"version": st.version, "users": [], "sessions": list(st.sessions), "ips": list(st.ips)}
+        answer = {"version": st.version, "users": [], "sessions": list(st.sessions), "ips": list(st.ips)}
+        if st.self_unlock_gate() and (sessions := st.self_unlock_sessions()):
+            answer["self_unlock_sessions"] = sessions  # optional, only when it applies (contract 2)
+        return answer
 
     @app.get("/v1/decisions")
     def get_decisions(st: ReadState, limit: Annotated[int, Query(ge=1, le=500)] = 50):
@@ -1221,7 +1373,7 @@ def create_app(
         pid = "p_" + secrets.token_hex(4)
         state = new_state()
         state.routes = {}  # a new project starts empty: the default routes describe the demo app only
-        project = Project(id=pid, org_id=org.id, name=body.name.strip(), state=state, created_at=now_iso())
+        project = attach(Project(id=pid, org_id=org.id, name=body.name.strip(), state=state, created_at=now_iso()))
         projects[pid] = project
         return project_view(project, person)
 
@@ -1232,9 +1384,77 @@ def create_app(
     @app.patch("/v1/projects/{project_id}")
     def patch_project(project_id: Annotated[str, Path()], body: ProjectPatch, person: Actor):
         project = authorize(person, project_id, "admin")
-        for key, value in body.model_dump(exclude_none=True).items():
+        sent = body.model_dump(include=body.model_fields_set)
+        # Only the sent fields change. null clears a brand text field; for the rest it means "not sent".
+        changes = {k: v for k, v in sent.items() if v is not None or k in BRAND_TEXT_FIELDS}
+        if changes.get("brand_logo_url"):
+            reason = unsafe_url_reason(changes["brand_logo_url"])  # like the webhook URL (no DNS here)
+            if reason:
+                return JSONResponse({"error": "unsafe_url", "detail": f"unsafe logo url: {reason}"}, status_code=422)
+        for key, value in changes.items():
             setattr(project, key, value.strip() if key == "name" else value)
+        if changes:
+            record(orgs[project.org_id], person, "project.update", "project", project.id, project.id, changes)
         return project_view(project, person)
+
+    # --- self-unlock by email: the panel's public page calls these with its service credential ---------------
+
+    def unlock_view(token: str) -> tuple[dict, str, Project, ClientState] | None:
+        """(record, state, project, client state) of a token, or None when unknown. Read-only. `used` is
+        evaluated first, then `closed`, then `expired`, as in the engine."""
+        digest = hash_token(token) if token else ""
+        entry = unlock_tokens.get(digest)
+        if entry is None:
+            return None
+        project = projects[entry["project_id"]]
+        st = project.state
+        decision = next((d for d in st.decisions if d["id"] == entry["decision_id"]), None)
+        if entry["used"]:
+            state = "used"
+        elif decision is None or decision["status"] != "open":
+            state = "closed"
+        elif parse_iso(entry["expires_at"]) <= datetime.now(timezone.utc):
+            state = "expired"
+        else:
+            state = "valid"
+        return entry, state, project, st
+
+    def unlock_token(authorization: Annotated[str | None, Header()] = None,
+                     x_veridian_unlock_token: Annotated[str | None, Header()] = None) -> str:
+        if kind_of(authorization)[0] != "panel":
+            raise Forbidden()
+        return (x_veridian_unlock_token or "").strip()
+
+    @app.get("/v1/self-unlock")
+    def get_self_unlock(token: Annotated[str, Depends(unlock_token)]):
+        """State and page data of the link. Never changes anything. No IP, user id or email in the answer."""
+        found = unlock_view(token)
+        if found is None:
+            raise NotFound()
+        entry, state, project, st = found
+        decision = next((d for d in st.decisions if d["id"] == entry["decision_id"]), None)
+        access = (decision or {}).get("access") or {}
+        event = st.pending_events.get(entry["decision_id"])
+        return {"state": state, "brand": project.brand(), "expires_at": entry["expires_at"],
+                "access": {"time": describe_time(access.get("ts", "")),
+                           "device": describe_device(event.user_agent if event else None)}}
+
+    @app.post("/v1/self-unlock")
+    def post_self_unlock(token: Annotated[str, Depends(unlock_token)]):
+        """The user confirms: marks the decision normal like an admin does and audits `decision.self_unlocked`."""
+        found = unlock_view(token)
+        if found is None:
+            raise NotFound()
+        entry, state, project, st = found
+        if state != "valid":
+            raise Conflict(state)
+        entry["used"] = True
+        st.mark_normal(entry["decision_id"])
+        org = orgs[project.org_id]
+        org.audit.append({"seq": next(audit_seq), "ts": now_iso(), "org_id": org.id, "project_id": project.id,
+                          "actor_person_id": None, "actor_kind": "system", "action": "decision.self_unlocked",
+                          "target_type": "decision", "target_id": entry["decision_id"], "meta": {"via": "email"}})
+        return {"unlocked": True, "brand": project.brand()}
 
     return app
 
