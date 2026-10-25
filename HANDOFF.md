@@ -1,4 +1,4 @@
-# Handoff: Veridian para tres devs (motor: Dev A y Dev B; borde: Dev 3)
+# Handoff: Veridian para tres devs (Carlos Navas: motor y SDK; Christian Mendoza: notificaciones y operación; Maikol Aguilar: frontend)
 
 **Fecha:** 2026-10-25, ~05:30 (hora de Caracas)
 **Rama:** `main` (no se usan PR; ver `CLAUDE.md`)
@@ -14,30 +14,31 @@ Terminar las unidades del motor de `docs/DISENO-PRODUCTO.md` (U2–U8, U12, U13,
 
 **Decisión del usuario (Juan):** terminar el producto tiene prioridad sobre mantener estable la demo actual. Los tests sí son obligatorios antes de cada merge.
 
-## Reparto entre los devs del motor
+## Reparto (actualizado 2026-10-25)
 
-Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B necesita sus roles para exponer endpoints.
+- **Carlos Navas (antes Dev 3):** motor (acceso, rutas y datos, lo que era del Dev A) y SDK/middleware/app de demo.
+- **Christian Mendoza (Dev B):** notificaciones y operación.
+- **Maikol Aguilar (antes Dev A):** todo el frontend: landing, backoffice y panel.
 
-### Dev A: acceso, rutas y datos
+Lo que Maikol ya cerró en el motor queda en `main`: el contrato 11 (`45f965a`) y `DELETE /v1/projects/{id}` (`ff891db`).
 
-1. **Revisar U6** (ya en `main`) con el panel real contra el motor real. Diferencias conocidas con el motor falso del Dev 2:
+### Carlos Navas: motor (acceso, rutas y datos)
+
+1. **Revisar U6** (ya en `main`) con el panel real contra el motor real. Diferencias conocidas con el motor falso:
    - todos los proyectos legacy quedan en una sola organización "Demo" (`org_demo`), mientras el falso arma una por token;
    - los ids son `prj_` y `org_`, no `p_`;
    - una invitación no cambia el rol de quien ya es miembro;
    - `mark_normal` devuelve `{id, normal, version}`;
    - la invitación vence a los 7 días, y el diseño dice 14.
 
-   Falta además:
-   - el contrato 11 (miembros e invitaciones por organización; el falso todavía no lo tiene);
-   - `DELETE /v1/projects/{id}`;
-   - el endpoint de auditoría (contrato 15).
-2. **U7: rutas por proyecto.**
+   Falta además el endpoint de auditoría (contrato 15) en el motor real; el panel y el motor falso ya lo tienen.
+2. **U7: rutas por proyecto.** La clasificación automática de rutas (tarea 6 de Christian) se construye encima: coordinar con él.
    - Qué hace: tabla `route_rules`, sembrada desde `engine/routes.yaml`, con `PUT` para admin+.
    - Cambios en el motor: `GET /v1/routes` responde por proyecto, y `/v1/check` y las reglas leen la clasificación del proyecto, no la global.
 3. **U8: batería de aislamiento entre proyectos.**
    - Recorre todas las rutas de la API, con el mismo `id` en dos proyectos.
    - Debe fallar si alguien agrega un endpoint que no cubre.
-4. **U13, conexión.** El núcleo ya está en `engine/veridian_engine/retention.py`. Falta:
+4. **U13, conexión.** Revisar primero qué dejó `f8d47d2` (*add retention purge and data deletion*). El núcleo está en `engine/veridian_engine/retention.py`. Falta:
    - el hilo de purga;
    - los endpoints del contrato 14: borrado por usuario y por proyecto, solo owner y con auditoría;
    - **eliminar `POST /v1/admin/reset`** y `test_reset.py`, y cambiar los scripts de ensayo para que usen el borrado por proyecto.
@@ -54,7 +55,7 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
    - rotar el token del cliente `demo`, que quedó expuesto en una conversación (motor: `VERIDIAN_TOKENS`; app y panel: `VERIDIAN_TOKEN`);
    - poner `VERIDIAN_SECRET_KEY` (Fernet) para el webhook.
 4. **REPARTO.md:** documentar en neutral los contratos 13, 14 y 15 a medida que aterricen.
-5. **Preparar la demo en un solo paso** (pedido de Juan; hoy son 4 comandos con 3 secretos y las IPs copiadas a mano). Coordinar con Dev A, porque U13 reemplaza el reset por el borrado por proyecto.
+5. **Preparar la demo en un solo paso** (pedido de Juan; hoy son 4 comandos con 3 secretos y las IPs copiadas a mano). Coordinar con Carlos, porque U13 reemplaza el reset por el borrado por proyecto.
    - **Script:** `engine/scripts/prepare_demo.py`, sin argumentos en el uso normal.
      - **Configuración:** lee la URL, el token `demo`, el secreto de reset (o lo que lo reemplace con U13) y el usuario del presentador de `engine/.env` (por ejemplo `DEMO_USER_ID=u_42`).
      - **Modo `--calibrar`:** el presentador navega unos minutos y el script toma de `GET /v1/activity` (con el acceso del panel) **todas** las IPs y `device_id` de ese usuario en los últimos N minutos. Así se resuelve lo del CGNAT sin copiar IPs a mano. Las guarda en `engine/.demo-presenter.json`, ignorado por git.
@@ -63,18 +64,18 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
        - siembra con las IPs y los dispositivos calibrados, en la hora UTC actual ±1;
        - verifica que el perfil quedó como se esperaba;
        - imprime un resumen de una línea: `listo: 3 redes, 1 dispositivo, 14 días`.
-   - **Botón (opcional, con el Dev 2):** "Preparar demo" en el panel, visible solo para un owner y solo si el ensayo está habilitado en el motor. Lo respalda un endpoint del motor que hace lo mismo que el script, por ejemplo `POST /v1/projects/{id}/rehearsal/prepare`. Tiene que ir con auditoría y quedar apagado en producción.
+   - **Botón (opcional, con Maikol):** "Preparar demo" en el panel, visible solo para un owner y solo si el ensayo está habilitado en el motor. Lo respalda un endpoint del motor que hace lo mismo que el script, por ejemplo `POST /v1/projects/{id}/rehearsal/prepare`. Tiene que ir con auditoría y quedar apagado en producción.
    - **Tests:** que la calibración tome todas las IPs del usuario y no las de otros usuarios; que la preparación deje el perfil sin rastros del atacante; que sin el ensayo habilitado el endpoint responda `404`.
    - **Problema visto en el ensayo:**
      - Qué pasó: después del reset, el motor tenía la blocklist vacía (`version 14`), pero la app seguía bloqueando el teléfono del atacante anterior. Hubo que reiniciar `veridian-demo` en Render para que el middleware cargara la lista nueva.
-     - Causa: no investigada. La versión había subido, así que el middleware debería haber recibido la lista nueva en ~2 s. Puede que no estuviera leyendo `/v1/blocklist`, que por contrato conserva la última lista conocida. Revisar con el Dev 2 si U6 afectó la autenticación del middleware.
+     - Causa: no investigada. La versión había subido, así que el middleware debería haber recibido la lista nueva en ~2 s. Puede que no estuviera leyendo `/v1/blocklist`, que por contrato conserva la última lista conocida. Revisar con Carlos si U6 afectó la autenticación del middleware.
      - Lo que hace falta: que la preparación de la demo verifique que la app ya no bloquea, o que reinicie la app.
 
 
 6. **Clasificación automática de rutas** (pedido de Juan, 2026-10-25). Hoy es manual: `engine/scripts/classify_openapi.py` genera un borrador de `routes.yaml` que alguien revisa y sube. Debe ser automático, porque el pitch lo presenta así.
    - **Flujo:** al arrancar, el SDK envía al motor las rutas de la app (método, ruta y descripción, sacadas del OpenAPI que ya expone FastAPI). El motor las clasifica con la IA (`veridian_engine.openapi.classify`), guarda el resultado por proyecto y lo sirve en `GET /v1/routes`, que el middleware ya consulta.
    - **Solo rutas, nunca código fuente.**
-   - **Depende de U7 (Dev A):** la tabla `route_rules` por proyecto. Coordinar con el Dev A: construirlo encima de U7 o acordar quién arma la tabla.
+   - **Depende de U7 (Carlos):** la tabla `route_rules` por proyecto. Coordinar con Carlos: construirlo encima de U7 o acordar quién arma la tabla. El panel que muestra la clasificación es de Maikol.
    - **Rutas nuevas o cambiadas:** clasificar solo las que cambiaron desde la última vez, no todas en cada arranque.
    - **Decidir:**
      - qué pasa si la IA falla; hoy la ruta queda `normal` y eso apaga la regla de bloqueo para ella. Una opción es mantener la última clasificación conocida y reintentar;
@@ -82,9 +83,23 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
    - **Contrato nuevo** en `REPARTO.md` para el envío de rutas (SDK → motor).
    - **Tests:** el SDK envía las rutas al arrancar; el motor las clasifica y las sirve por proyecto; una falla de la IA no borra la clasificación anterior; dos proyectos no ven las rutas del otro.
 
-### Dev 3: borde (lo que era del Dev 2)
+### Maikol Aguilar: frontend (landing, backoffice y panel)
 
-**Qué toma:** middleware, app de demo, panel, motor falso, SDK y landing; todo vive en `edge/`.
+**Qué toma:** `landing/`, `edge/panel/` (backoffice y panel) y `edge/fake_engine/`, el motor falso del que salen las formas de los contratos del panel.
+
+**Design system:** [Veridian](https://claude.ai/artifact/2JFynja7aQQqX1oJN6qmK2) (colores, tipografía, logo, botones). Es la base para la landing y el panel, y es libre de añadirle lo que haga falta: componentes, estados, patrones.
+
+**Pendiente:**
+- **T6:** el panel para el webhook (contrato 13, ya en el motor real: `cb1b125`) y para borrar datos de un usuario o de un proyecto (contrato 14, depende de U13 de Carlos).
+- **T4, seguimiento:** una revisión visual, y la decisión abierta 2 (quién crea organizaciones; hoy, solo los correos de `VERIDIAN_ORG_CREATORS`).
+- **El snippet en el panel y la landing** (puntos 2 y 3 de "Mejorar la integración del SDK", más abajo): el texto explicativo, las pestañas Python / Node, el resaltado, el botón de copiar y la clave recién creada ya puesta. La API del SDK la define Carlos; coordinar el snippet con él.
+- **La clasificación de rutas en el panel:** mostrarla cuando esté lista la tarea 6 de Christian.
+
+**Ya hecho por el borde, en `main`:** T1–T5, T7–T10 (ver la lista de Carlos). T5 quedó cerrado con la página de claves de API y la de auditoría (`bb6aea1`).
+
+### Carlos Navas: SDK, middleware y app de demo (lo que era del Dev 2)
+
+**Qué toma:** middleware, SDK y app de demo (`sdk/`, `edge/demo_app/`). El panel, la landing y el motor falso pasaron a Maikol.
 - Plan: `odd/tasks/edge-product-accounts.md`.
 - Otras tareas: `middleware-critical-check.md`, `panel-routes-readonly.md`, `sdk-python-pypi.md`, `edge-first-milestone.md`.
 - Diseño: `docs/DISENO-PRODUCTO.md`; ver la nota "Revisión 2026-10-25" sobre la capa de organización.
@@ -99,19 +114,13 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
 - **T9 y T10:** la capa de organización (roles solo por organización) y `DELETE /v1/orgs/{id}`.
 - **Consulta previa en el middleware:** antes de una ruta crítica llama a `POST /v1/check`; si responde `block`, devuelve `403` (contrato 9).
 
-**En curso cuando se fue el Dev 2 (T5, sin marcar en el documento):**
-- Hecho, en sus últimos commits (05:56–06:02):
-  - el motor falso ya tiene los contratos 11 (miembros e invitaciones), 12 (claves de API) y 15 (auditoría);
-  - el panel ya tiene la página de miembros e invitaciones con controles según el rol (`deb7c00`).
-- **Falta del panel:** la página de **claves de API** (la clave se muestra una sola vez) y la de **auditoría**. Después, marcar T5 con la evidencia.
+- **T5:** el motor falso tiene los contratos 11, 12 y 15, y el panel las páginas de miembros, claves de API y auditoría (`bb6aea1`).
 
 **Pendiente:**
-- **T6:** el panel para el webhook (contrato 13) y para borrar datos de un usuario o de un proyecto (contrato 14). Depende de que el motor los exponga: el 14 lo tiene el Dev A y el 13 el Dev B.
-- **T4, seguimiento:** una revisión visual, y la decisión abierta 2 (quién crea organizaciones; hoy, solo los correos de `VERIDIAN_ORG_CREATORS`).
-- **El middleware no tomó la lista nueva después de un reset.** En el ensayo hubo que reiniciar `veridian-demo` en Render. No está investigado; ver la tarea 5 del Dev B.
+- **El middleware no tomó la lista nueva después de un reset.** En el ensayo hubo que reiniciar `veridian-demo` en Render. No está investigado; ver la tarea 5 de Christian.
 
 **Para coordinar con el motor real:**
-- El motor real tiene el contrato 10, el 12 y el acceso del panel (U6), con las mismas formas que el motor falso. **Le faltan el 11 y el 15**, que el motor falso ya tiene; los tiene asignados el Dev A.
+- El motor real tiene los contratos 10, 11, 12 y 13 y el acceso del panel (U6), con las mismas formas que el motor falso. **Le falta el 15** (auditoría), asignado a Carlos.
 - Diferencias conocidas con el motor falso:
   - todos los proyectos legacy quedan en una sola organización, "Demo";
   - los ids son `prj_` y `org_`;
@@ -150,7 +159,7 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
      - qué es `trusted_proxies` y cuándo cambiarlo;
      - qué pasa si Veridian no responde (la app sigue funcionando);
      - cómo comprobar que quedó conectado (qué aparece en el panel).
-  3. **Presentación:** pestañas Python / Node, resaltado de sintaxis, botón de copiar y, en el panel, la clave recién creada ya puesta en el snippet (se muestra una sola vez), con el estilo de los mockups aprobados.
+  3. **Presentación (Maikol):** pestañas Python / Node, resaltado de sintaxis, botón de copiar y, en el panel, la clave recién creada ya puesta en el snippet (se muestra una sola vez), con el design system.
   4. **Tests:**
      - el snippet publicado, ejecutado tal cual contra el motor falso, autentica y envía eventos;
      - la API vieja sigue funcionando.
@@ -234,7 +243,7 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
 | `engine/veridian_engine/retention.py` | U13 (sin conectar) |
 | `engine/veridian_engine/notifications/` | U12 |
 | `engine/veridian_engine/mailer.py` | U17 (sin conectar) |
-| `edge/fake_engine/` | Motor falso del Dev 2: **las formas de los contratos del panel salen de acá** |
+| `edge/fake_engine/` | Motor falso (lo mantiene Maikol): **las formas de los contratos del panel salen de acá** |
 | `odd/tasks/engine-*.md` | Diseño, RED/GREEN y commits de cada tarea |
 
 ## Cómo retomar
