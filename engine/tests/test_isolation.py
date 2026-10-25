@@ -58,6 +58,9 @@ OPERATIONS = [
     ("GET", "/v1/activity", "own", None),
     ("POST", "/v1/decisions/{decision_id}/normal", "foreign", None),
     ("POST", "/v1/decisions/{decision_id}/normal", "own", None),
+    # The token header is the proof; without a valid one there is nothing to read or change.
+    ("GET", "/v1/self-unlock", "own", None),
+    ("POST", "/v1/self-unlock", "own", None),
     ("POST", "/v1/people/login", "own", {"google_sub": "sub-intruder", "email": CREATOR, "name": "Intruder"}),
     ("GET", "/v1/me/orgs", "own", None),
     ("POST", "/v1/orgs", "own", {"name": "Second"}),

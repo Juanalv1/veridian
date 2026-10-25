@@ -26,6 +26,7 @@ from .route_catalog import RouteCatalogIn, build_route_classifier, record_report
 from .route_classes import RouteClasses, seed_unseeded
 from .rules import evaluate_event
 from .self_unlock import self_unlock_applies
+from .self_unlock_page import VALID, read_token, unlock
 from .settings import Settings
 from .summary import as_utc, build_summary, list_users
 
@@ -204,6 +205,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if result is None:
             return JSONResponse(status_code=404, content={"error": "not_found"})
         return result
+
+    # --- self-unlock by email: the panel's public page calls these with its service credential ---
+
+    def unlock_token(request: Request, caller: Caller = Depends(caller_from_request)) -> str:
+        """The user's token, from a header (a URL would put it in the access logs). Only the panel."""
+        if caller.kind != "panel":
+            raise Forbidden()
+        return request.headers.get("x-veridian-unlock-token", "").strip()
+
+    def token_body(view) -> dict:
+        return {"state": view.state, "brand": view.brand, "access": view.access, "expires_at": view.expires_at}
+
+    @app.get("/v1/self-unlock")
+    def get_self_unlock(token: str = Depends(unlock_token)):
+        """State and page data of the link. Never changes anything."""
+        with db.connect(settings.db_path) as conn:
+            view = read_token(conn, token, settings.clock())
+        if view is None:
+            return JSONResponse(status_code=404, content={"error": "not_found"})
+        return token_body(view)
+
+    @app.post("/v1/self-unlock")
+    def post_self_unlock(token: str = Depends(unlock_token)):
+        """The user confirms: marks the decision normal (as the admin's mark-normal does) and audits
+        `decision.self_unlocked`. An expired, used or closed token is a 409 and unlocks nothing."""
+        with write_lock, db.connect(settings.db_path) as conn:
+            view = unlock(conn, token, settings.clock())
+        if view is None:
+            return JSONResponse(status_code=404, content={"error": "not_found"})
+        if view.state != VALID:
+            return JSONResponse(status_code=409, content={"error": view.state})
+        return {"unlocked": True, "brand": view.brand}
 
     @app.get("/v1/blocklist")
     def get_blocklist(since: int | None = None, project_id: str = Depends(shared_project)):
