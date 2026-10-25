@@ -20,7 +20,7 @@
 
 **[Slide 4: Instalación]**
 
-> Y todo esto se activa con tres líneas de código en tu app: le dices cómo identificas al usuario, y Veridian se encarga del resto, hasta de clasificar tus rutas.
+> Y todo esto se activa con tres líneas de código en tu backend: le dices cómo identificas al usuario, y Veridian se encarga del resto, hasta de clasificar tus rutas.
 >
 > Ahora, veámoslo en vivo.
 
