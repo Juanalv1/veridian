@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block content %}
+{# No polling here: forms must not be swapped away while someone types. The #live wrapper only keeps the
+   sidebar's boosted navigation working (its target is #live). #}
+<main id="live" class="wrap view-team">
+  <div class="tm-page">
+    <div class="acct-head">
+      <h1 class="acct-title">Miembros de {{ org.name }}</h1>
+      <p class="acct-lead">El rol de cada persona vale para todos los proyectos de {{ org.name }}. Siempre queda al menos un owner.</p>
+    </div>
+
+    {% if invite_error and not can_manage %}<div class="note err" role="alert">{{ invite_error }}</div>{% endif %}
+    {% if can_manage %}
+    <section class="tm-card" aria-labelledby="inv-title">
+      <h2 id="inv-title" class="tm-h2">Invitar a una persona</h2>
+      <form class="tm-invite" method="post" action="/miembros/invitar">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="field tm-grow{% if invite_error %} invalid{% endif %}">
+          <label for="inv-email">Correo de Google</label>
+          <input id="inv-email" type="email" name="email" value="{{ invite_email }}" placeholder="persona@tuempresa.com" maxlength="254" required autocomplete="off"{% if invite_error %} aria-invalid="true" aria-describedby="inv-error"{% endif %}>
+        </div>
+        <div class="field tm-role">
+          <label for="inv-role">Rol</label>
+          <select id="inv-role" name="role">
+            {% for value, name in roles %}<option value="{{ value }}"{% if value == invite_role %} selected{% endif %}>{{ name }}</option>{% endfor %}
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Invitar</button>
+      </form>
+      {% if invite_error %}<span id="inv-error" class="field-error" role="alert">{{ invite_error }}</span>{% endif %}
+      <p class="acct-small">Le llega acceso al entrar con Google usando ese correo. La invitación vence en 14 días. Hoy no enviamos correo: compártele el enlace del panel.</p>
+    </section>
+    {% endif %}
+
+    <section aria-labelledby="mem-title" class="tm-section">
+      <h2 id="mem-title" class="tm-h2">Personas <span class="tm-count">· {{ members|length }}</span></h2>
+      <ul class="tm-list">
+        {% for m in members %}
+        <li class="tm-item" data-member="{{ m.email }}">
+          <span class="tm-who">
+            <span class="tm-name">{{ m.name }}{% if m.self %}<span class="tm-count"> (tú)</span>{% endif %}</span>
+            <span class="tm-email">{{ m.email }}</span>
+          </span>
+          {% if m.editable %}
+          <form class="tm-inline" method="post" action="/miembros/{{ m.person_id|urlencode }}/rol">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <label><span class="vh">Rol de {{ m.name }}</span>
+              <select name="role">
+                {% for value, name in roles %}<option value="{{ value }}"{% if value == m.role %} selected{% endif %}>{{ name }}</option>{% endfor %}
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="submit">Cambiar</button>
+          </form>
+          {% else %}
+          <span class="tm-fixed">{{ m.role_label }}</span>
+          {% endif %}
+          <span class="tm-note">{{ m.note }}</span>
+          {% if m.editable %}
+          <form class="tm-inline" method="post" action="/miembros/{{ m.person_id|urlencode }}/quitar">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn btn-ghost" type="submit">Quitar<span class="vh"> a {{ m.name }}</span></button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section aria-labelledby="pend-title" class="tm-section">
+      <h2 id="pend-title" class="tm-h2">Invitaciones pendientes <span class="tm-count">· {{ invitations|length }}</span></h2>
+      {% if invitations %}
+      <ul class="tm-list">
+        {% for i in invitations %}
+        <li class="tm-item" data-invite="{{ i.email }}">
+          <span class="tm-who"><span class="tm-email tm-strong">{{ i.email }}</span></span>
+          <span class="tm-fixed">{{ i.role_label }}</span>
+          <span class="tm-note{% if i.expired %} tm-warn{% endif %}">{{ i.expires }}</span>
+          {% if i.actions %}
+          {% if i.expired %}
+          <form class="tm-inline" method="post" action="/invitaciones/{{ i.id|urlencode }}/reenviar">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn btn-ghost" type="submit">Reenviar<span class="vh"> a {{ i.email }}</span></button>
+          </form>
+          {% endif %}
+          <form class="tm-inline" method="post" action="/invitaciones/{{ i.id|urlencode }}/cancelar">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn btn-ghost" type="submit">Cancelar<span class="vh"> la invitación a {{ i.email }}</span></button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="acct-small">No hay invitaciones pendientes.</p>
+      {% endif %}
+    </section>
+
+    {% if is_viewer %}
+    <p class="acct-small">Tienes rol viewer: ves quién está en la organización, pero solo un admin u owner invita, cambia roles o quita personas.</p>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

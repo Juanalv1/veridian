@@ -28,12 +28,13 @@ from .config import Settings
 from .fmt import count as _count
 from .fmt import seconds_text
 from .overview import build_overview, iso_z, local_day_window, user_rows
+from .team import Team
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "23"
+ASSET_VERSION = "24"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -165,12 +166,21 @@ def _days(n) -> str:
 
 
 # Sidebar groups: (title, [(key, href, label, full_page)]). `full_page` links leave the live shell, so the
-# boosted/instant navigation skips them. Miembros, Claves, Auditoría and Ajustes join when their pages exist.
+# boosted/instant navigation skips them. Ajustes joins when its page exists.
 NAV_GROUPS = (
     ("ACCESOS", (("resumen", "/", "Resumen", False), ("actividad", "/actividad", "Actividad", False),
                  ("usuarios", "/usuarios", "Usuarios", False), ("rutas", "/rutas", "Rutas críticas", False))),
-    ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True),)),
+    ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True), ("miembros", "/miembros", "Miembros", True))),
 )
+# Links only an admin or owner is offered (the engine refuses the rest anyway). With the role unknown they stay hidden.
+MANAGER_ONLY = frozenset()
+
+
+def nav_for(role: str | None):
+    """The sidebar groups for a role (`owner`, `admin`, `viewer`, or None when it could not be read)."""
+    allowed = role in ("owner", "admin")
+    groups = ((title, tuple(i for i in items if allowed or i[0] not in MANAGER_ONLY)) for title, items in NAV_GROUPS)
+    return tuple((title, items) for title, items in groups if items)
 DEFAULT_UTC_OFFSET_MIN = -240  # Caracas, until the browser tells its own (cookie `vtz`, minutes east of UTC)
 NO_USERS = "El motor todavía no entrega la lista de usuarios."
 NO_ROUTES_ENDPOINT = "Este motor no expone su clasificación de rutas."
@@ -332,13 +342,19 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     def decision_url(d: dict) -> str:
         return f"{user_url(d.get('user_id'))}/decisions/{quote(str(d.get('id', '')), safe='')}"
 
-    async def page(request: Request, template: str, section: str, ctx: dict, engine_ms: float, t0_render: float):
-        lookup = getattr(request.state, "switcher", None)  # started by the guard, ran alongside the page's reads
+    async def shell(request: Request, template: str, section: str, ctx: dict, status: int = 200):
+        """A page inside the sidebar shell: the switcher card (looked up alongside the page's reads), the role-aware
+        navigation, the flash message and the CSRF token."""
+        lookup = getattr(request.state, "switcher", None)  # started by the guard
         switcher = await lookup if lookup is not None else None
-        response = templates.TemplateResponse(request, template, {
-            "refresh": REFRESH_SECONDS, "nav_groups": NAV_GROUPS, "section": section,
-            "switcher": switcher, "flash": request.session.pop("flash", None),
-            "csrf": request.session.get("csrf", ""), "email": request.session.get("email", ""), **ctx})
+        return templates.TemplateResponse(request, template, {
+            "refresh": REFRESH_SECONDS, "nav_groups": nav_for(switcher["role_key"] if switcher else None),
+            "section": section, "switcher": switcher, "flash": request.session.pop("flash", None),
+            "csrf": request.session.get("csrf", ""), "email": request.session.get("email", ""), **ctx},
+            status_code=status)
+
+    async def page(request: Request, template: str, section: str, ctx: dict, engine_ms: float, t0_render: float):
+        response = await shell(request, template, section, ctx)
         response.headers["Server-Timing"] = (
             f"engine;dur={engine_ms:.1f}, render;dur={(time.perf_counter() - t0_render) * 1000:.1f}")
         return response
@@ -498,6 +514,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             url += "?" + urlencode({"error": "mark"})
         return RedirectResponse(url, status_code=303)
 
+    panel.include_router(Team(accounts, shell, now).router())
     app.include_router(panel)
     return app
 

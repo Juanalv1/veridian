@@ -659,8 +659,8 @@ def test_nav_groups_link_only_pages_that_exist():
     nav = re.search(r'<nav[^>]*aria-label="Secciones"[^>]*>(.*?)</nav>', s, re.S).group(1)
     assert "ACCESOS" in nav and "ORGANIZACIÓN" in nav and "PROYECTO" not in nav.replace("Proyectos", "")
     hrefs = re.findall(r'<a [^>]*href="([^"]+)"', nav)
-    assert hrefs == ["/", "/actividad", "/usuarios", "/rutas", "/proyectos"]
-    for dead in ("Miembros", "Claves", "Auditoría", "Ajustes"):
+    assert hrefs == ["/", "/actividad", "/usuarios", "/rutas", "/proyectos", "/miembros"]
+    for dead in ("Claves", "Auditoría", "Ajustes"):
         assert dead not in nav
     proyectos = re.search(r'<a [^>]*href="/proyectos"[^>]*>', nav).group(0)
     assert 'hx-boost="false"' in proyectos and "data-full" in proyectos

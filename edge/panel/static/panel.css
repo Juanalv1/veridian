@@ -372,3 +372,35 @@
   .acct-title { font-size:26px; }
   .proj { padding:16px; }
 }
+
+/* Team pages (members, keys, audit): inside the sidebar shell, forms and lists, no polling. */
+.view-team { max-width:1000px; margin:0; }
+.tm-page { display:flex; flex-direction:column; gap:28px; padding:14px 0 40px; }
+.tm-card { display:flex; flex-direction:column; gap:12px; padding:20px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-md); }
+.tm-h2 { margin:0; font-size:18px; font-weight:600; }
+.tm-count { color:var(--muted); font-weight:400; }
+.tm-section { display:flex; flex-direction:column; gap:12px; }
+.tm-invite { margin:0; display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; }
+.tm-grow { flex:1 1 280px; }
+.tm-role { flex:0 1 180px; }
+.field input[type=email], .field input[type=search] { width:100%; min-height:44px; padding:10px 12px; background:var(--ground); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius-md); font-family:inherit; font-size:16px; }
+.field input[type=email]:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
+.field.invalid input[type=email] { border-color:var(--state-block); }
+select { min-height:44px; padding:8px 12px; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:var(--radius-md); font-family:inherit; font-size:15px; }
+.tm-card select { background:var(--ground); }
+select:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
+.tm-list { list-style:none; margin:0; padding:0; border-top:1px solid var(--line); }
+.tm-item { display:flex; flex-wrap:wrap; align-items:center; gap:8px 20px; padding:10px 4px; border-bottom:1px solid var(--line); }
+.tm-who { flex:1 1 260px; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.tm-name { font-size:16px; font-weight:600; overflow-wrap:anywhere; }
+.tm-email { font-family:var(--font-mono); font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
+.tm-strong { color:var(--ink); font-size:14px; }
+.tm-fixed { min-width:96px; font-size:15px; }
+.tm-note { min-width:150px; font-size:13px; color:var(--muted); }
+.tm-warn { color:var(--state-review); }
+.tm-inline { margin:0; display:flex; align-items:center; gap:8px; }
+.tm-inline .btn { padding:8px 14px; font-size:14px; }
+@media (max-width:600px) {
+  .tm-note, .tm-fixed { min-width:0; }
+  .tm-item { gap:8px 12px; }
+}

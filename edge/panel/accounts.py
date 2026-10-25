@@ -141,7 +141,8 @@ class Accounts:
                 mode = MODES.get(project.json().get("enforcement"))
         except (ValueError, AttributeError):
             pass
-        return {"org": org["name"], "role": ROLE_LABELS.get(org["role"], org["role"]), "project": proj["name"],
+        return {"org": org["name"], "role": ROLE_LABELS.get(org["role"], org["role"]), "role_key": org["role"],
+                "project": proj["name"],
                 "mode": mode[0] if mode else None, "mode_kind": mode[1] if mode else None}
 
     async def switcher_guard(self, request: Request) -> None:

@@ -112,7 +112,7 @@ def test_sidebar_has_the_data_sections_and_proyectos_and_marks_the_current_one()
     links = re.findall(r'<a [^>]*href="([^"]+)"[^>]*>(.*?)</a>', nav, re.S)
     assert [(h, text(t).split()[0]) for h, t in links] == [("/", "Resumen"), ("/actividad", "Actividad"),
                                                           ("/usuarios", "Usuarios"), ("/rutas", "Rutas"),
-                                                          ("/proyectos", "Proyectos")]
+                                                          ("/proyectos", "Proyectos"), ("/miembros", "Miembros")]
     assert nav.count('aria-current="page"') == 1
     assert re.search(r'<a [^>]*href="/"[^>]*aria-current="page"', nav)
 
@@ -481,4 +481,4 @@ def test_actividad_collapses_the_sidebar_to_an_icon_rail_on_desktop():
     assert re.search(r"\.shell:has\(\.view-actividad\) \.nav-label[^{]*\{[^}]*clip", desktop)
     html = full().panel().get("/actividad").text
     nav = re.search(r'<nav[^>]*aria-label="Secciones"[^>]*>(.*?)</nav>', html, re.S).group(1)
-    assert re.findall(r'<a [^>]*title="([^"]+)"', nav) == ["Resumen", "Actividad", "Usuarios", "Rutas críticas", "Proyectos"]
+    assert re.findall(r'<a [^>]*title="([^"]+)"', nav) == ["Resumen", "Actividad", "Usuarios", "Rutas críticas", "Proyectos", "Miembros"]

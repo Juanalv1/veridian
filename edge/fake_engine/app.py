@@ -619,6 +619,7 @@ def create_app(
     app = FastAPI(title="Veridian fake engine")
     app.state.projects = projects
     app.state.orgs = orgs
+    app.state.people = people
     app.state.api_keys = api_keys
     app.state.project_id_for = by_token.__getitem__
     app.state.org_id_for = lambda token: projects[by_token[token]].org_id
