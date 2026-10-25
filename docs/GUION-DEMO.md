@@ -1,5 +1,7 @@
 # Guion de la demo
 
+Borrador: la estructura está aprobada (2026-10-25); falta definir el texto en detalle.
+
 Va después de la slide 4 y antes de la slide 5 (`GUION.md`). Tiempo disponible: 125-140 s (sin medir todavía).
 
 Depende del desbloqueo por correo, que está en desarrollo ([DESBLOQUEO-POR-CORREO.md](DESBLOQUEO-POR-CORREO.md)). Si no está listo, la demo termina en el bloqueo y se cierra con el stack.
