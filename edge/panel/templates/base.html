@@ -17,6 +17,7 @@
 </head>
 <body hx-ext="preload">
 <div class="shell">
+  <script>try { var r = localStorage.getItem("vrd-rail"); if (r === "on" || r === "off") document.currentScript.parentNode.setAttribute("data-rail", r); } catch (e) {}</script>
   <header class="topbar">
     <a class="wordmark-link" href="/"><img src="/static/mark.svg?v={{ asset_version }}" alt="" width="26" height="26"><span class="wordmark">Veridian</span></a>
     <button class="menu-btn" type="button" aria-expanded="false" aria-controls="side" aria-label="Abrir menú">
@@ -27,6 +28,9 @@
   <aside id="side" class="side">
     <div class="brand">
       <a class="wordmark-link" href="/"><img src="/static/mark.svg?v={{ asset_version }}" alt="" width="26" height="26"><span class="wordmark">Veridian</span></a>
+      <button class="rail-btn" type="button" aria-controls="side" aria-label="Colapsar menú" title="Colapsar menú" hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg>
+      </button>
     </div>
     <a class="switcher" href="/proyectos" hx-boost="false" aria-label="Cambiar de organización o de proyecto" aria-describedby="sw-now" title="Cambiar de organización o de proyecto">
       <span id="sw-now" class="sw-text">

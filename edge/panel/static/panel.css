@@ -45,14 +45,14 @@
   /* On Actividad the sidebar collapses to an icon rail: the list-detail view needs the width.
      Labels stay in the accessible name; the title gives sighted users a tooltip. */
   @media (min-width:901px) {
-    .shell:has(.view-actividad) .side { flex-basis:72px; width:72px; padding:24px 12px; align-items:center; }
-    .shell:has(.view-actividad) .brand { padding:0; }
-    .shell:has(.view-actividad) .brand .wordmark, .shell:has(.view-actividad) .brand .app { display:none; }
-    .shell:has(.view-actividad) .nav-link { position:relative; justify-content:center; padding:12px; }
-    .shell:has(.view-actividad) .nav-label, .shell:has(.view-actividad) .conn-label, .shell:has(.view-actividad) .last-access { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-    .shell:has(.view-actividad) #nav-badge { position:absolute; top:2px; right:0; }
-    .shell:has(.view-actividad) .badge { font-size:11px; padding:0 5px; }
-    .shell:has(.view-actividad) .conn-card { padding:12px; border:0; align-items:center; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .side { flex-basis:72px; width:72px; padding:24px 12px; align-items:center; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .brand { padding:0; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .brand .wordmark, .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .brand .app { display:none; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .nav-link { position:relative; justify-content:center; padding:12px; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .nav-label, .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .conn-label, .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .last-access { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) #nav-badge { position:absolute; top:2px; right:0; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .badge { font-size:11px; padding:0 5px; }
+    .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .conn-card { padding:12px; border:0; align-items:center; }
   }
   /* Actividad is a list-detail view: the feed scrolls on its own in a fixed column, the detail beside it. */
   main.view-actividad { display:grid; grid-template-columns:minmax(320px, 380px) minmax(0, 1fr); gap:32px; align-items:start; }
@@ -292,9 +292,9 @@
 .nav-group + .nav-group { margin-top:14px; }
 .nav-group-title { padding:0 12px 6px; font-family:var(--font-mono); font-size:11px; font-weight:500; letter-spacing:1px; color:var(--muted); }
 @media (min-width:901px) {
-  .shell:has(.view-actividad) .switcher { justify-content:center; padding:10px; }
-  .shell:has(.view-actividad) .sw-text, .shell:has(.view-actividad) .nav-group-title { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-  .shell:has(.view-actividad) .nav-group + .nav-group { margin-top:2px; }
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .switcher { justify-content:center; padding:10px; }
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .sw-text, .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .nav-group-title { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .nav-group + .nav-group { margin-top:2px; }
 }
 .note.flash.ok { color:var(--ink); }
 .content > .note.flash { margin:18px 40px 0; }
@@ -459,11 +459,19 @@ select:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
 /* Logout: icon + label; the collapsed rail of Actividad keeps only the icon (label stays for screen readers). */
 .session .logout { display:inline-flex; align-items:center; justify-content:center; gap:var(--space-2); }
 @media (min-width:901px) {
-  .shell:has(.view-actividad) .session { align-items:center; }
-  .shell:has(.view-actividad) .session .who,
-  .shell:has(.view-actividad) .session .logout-label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-  .shell:has(.view-actividad) .session .logout { width:44px; padding:0; }
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .session { align-items:center; }
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .session .who,
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .session .logout-label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .session .logout { width:44px; padding:0; }
 }
 /* Activity with nothing to list yet: one column, no orphan list title. */
 main.view-actividad:not(:has(.row, .item)) { grid-template-columns:minmax(0, 1fr); }
 main.view-actividad:not(:has(.row, .item)) > nav { display:none; }
+/* Rail toggle (wide screens): collapses the sidebar to icons; the choice persists per browser. */
+.rail-btn { display:none; }
+@media (min-width:901px) {
+  .side .brand { flex-direction:row; align-items:center; justify-content:space-between; }
+  .rail-btn:not([hidden]) { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; padding:0; color:var(--muted); background:transparent; border:0; border-radius:var(--radius-md); cursor:pointer; transition:background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out); }
+  .rail-btn:hover { background:var(--surface-hover); color:var(--ink); }
+  .shell:is([data-rail="on"], :not([data-rail="off"]):has(.view-actividad)) .side .brand { flex-direction:column; gap:12px; }
+}

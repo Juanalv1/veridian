@@ -292,6 +292,30 @@
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMenu(); });
   }
 
+  // Rail toggle (wide screens). Without a saved choice Actividad starts collapsed and the rest expanded.
+  var railBtn = document.querySelector(".rail-btn"), shell = document.querySelector(".shell");
+  function railOn() {
+    var r = shell.getAttribute("data-rail");
+    return r ? r === "on" : !!document.querySelector(".view-actividad");
+  }
+  function syncRail() {
+    var label = railOn() ? "Expandir menú" : "Colapsar menú";
+    railBtn.setAttribute("aria-label", label);
+    railBtn.setAttribute("title", label);
+    railBtn.setAttribute("aria-expanded", railOn() ? "false" : "true");
+  }
+  if (railBtn && shell) {
+    railBtn.hidden = false;
+    syncRail();
+    railBtn.addEventListener("click", function () {
+      var next = railOn() ? "off" : "on";
+      shell.setAttribute("data-rail", next);
+      try { localStorage.setItem("vrd-rail", next); } catch (e) {}
+      syncRail();
+    });
+    document.body.addEventListener("htmx:afterSettle", syncRail);
+  }
+
   // The panel shows "today" in the viewer's time zone: tell the server the offset (minutes east of UTC).
   document.cookie = "vtz=" + (-new Date().getTimezoneOffset()) + "; path=/; max-age=31536000; samesite=lax";
 
