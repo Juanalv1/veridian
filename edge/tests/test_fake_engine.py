@@ -685,3 +685,60 @@ def test_routes_lists_the_classification_critical_first_and_needs_a_token(client
         {"method": "GET", "route": "/invoices/export", "class": "sensitive"},
         {"method": "GET", "route": "/payouts/bank-account", "class": "sensitive"},
     ]
+
+
+# --- contract 9: POST /v1/check -----------------------------------------------
+
+
+def check(client, event, headers=AUTH):
+    return client.post("/v1/check", json={"event": event}, headers=headers)
+
+
+def test_check_requires_a_valid_token_and_body(client):
+    assert check(client, attack(), headers={}).status_code == 401
+    assert client.post("/v1/check", json={}, headers=AUTH).status_code == 422
+    assert check(client, {"id": "x"}).status_code == 422
+
+
+def test_check_blocks_critical_unused_route_from_new_network(client):
+    r = check(client, attack())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["verdict"] == "block" and body["decision_id"]
+    bl = client.get("/v1/blocklist", headers=AUTH).json()
+    assert bl["sessions"] == ["s_atk"] and bl["ips"] == ["203.0.113.9"]
+    (d,) = client.get("/v1/decisions", headers=AUTH).json()["decisions"]
+    assert d["id"] == body["decision_id"] and d["event_ids"] == ["e_atk"]
+
+
+def test_check_allows_the_owner(client):
+    r = check(client, make_event(id="e_own", ip="190.202.14.200", method="POST", route="/payouts/bank-account"))
+    assert r.json() == {"verdict": "allow", "decision_id": None}
+    assert client.get("/v1/blocklist", headers=AUTH).json()["version"] == 0
+
+
+def test_check_records_the_event_and_the_batch_resend_is_idempotent(client):
+    check(client, attack())
+    r = post_events(client, [attack(status=403)])
+    assert r.json() == {"accepted": 0}
+    assert len(client.get("/v1/decisions", headers=AUTH).json()["decisions"]) == 1
+    assert client.get("/v1/blocklist", headers=AUTH).json()["version"] == 1
+
+
+def test_check_repeated_id_returns_the_same_block(client):
+    first = check(client, attack()).json()
+    again = check(client, attack()).json()
+    assert again == first
+    assert client.get("/v1/blocklist", headers=AUTH).json()["version"] == 1
+
+
+def test_check_of_an_already_blocked_session_blocks(client):
+    check(client, attack())
+    r = check(client, attack(id="e_atk2", route="/invoices", method="GET"))
+    assert r.json()["verdict"] == "block"
+
+
+def test_check_is_isolated_per_client(client):
+    check(client, attack())
+    other = {"Authorization": "Bearer tok-b"}
+    assert client.get("/v1/blocklist", headers=other).json()["sessions"] == []

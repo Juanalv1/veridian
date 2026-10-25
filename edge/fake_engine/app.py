@@ -1,6 +1,7 @@
 """In-memory stand-in for the Veridian engine.
 
-Honors the five contracts in docs/REPARTO.md and mirrors Dev 1's first
+Honors the contracts in docs/REPARTO.md (including 8, routes, and 9, the
+synchronous check of critical routes) and mirrors Dev 1's first
 milestone rule: a `critical` route the user never used, hit from a /24 never
 seen for that user, produces a `block` decision and blocks its session and IP.
 No AI, no persistence.
@@ -69,6 +70,10 @@ class EventIn(BaseModel):
 
 class EventsIn(BaseModel):
     events: list[EventIn]
+
+
+class CheckIn(BaseModel):
+    event: EventIn
 
 
 def network_of(ip: str) -> str:
@@ -182,6 +187,26 @@ class ClientState:
             self._block(event, route_class, block_ip=new_network)
         else:
             self._learn_later(event)
+
+    def check(self, event: EventIn) -> dict:
+        """Contract 9: ingest like POST /v1/events (first write per id wins), then answer
+        `block` when this event started a block or its session or IP is on the blocklist."""
+        before = len(self.decisions)
+        if event.id not in self.seen_event_ids:
+            self.seen_event_ids.add(event.id)
+            self.ingest(event)
+        created = self.decisions[before:]
+        decision = created[-1] if created else self._active_block_for(event)
+        return {"verdict": "block" if decision else "allow", "decision_id": decision["id"] if decision else None}
+
+    def _active_block_for(self, event: EventIn) -> dict | None:
+        for d in reversed(self.open_blocks()):
+            access = d.get("access") or {}
+            same_session = event.session_id and event.session_id == access.get("session_id")
+            same_ip = d["id"] in self.ip_blocked and event.ip == access.get("ip")
+            if same_session or same_ip:
+                return d
+        return None
 
     def _block(self, event: EventIn, route_class: str, block_ip: bool = True) -> None:
         """Block the session; the IP too only when `block_ip` (new network). A block from a
@@ -414,6 +439,10 @@ def create_app(
             accepted_count += 1
             st.ingest(event)
         return {"accepted": accepted_count}
+
+    @app.post("/v1/check")
+    def post_check(body: CheckIn, st: State):
+        return st.check(body.event)
 
     @app.get("/v1/blocklist")
     def get_blocklist(st: State, since: int | None = None):
