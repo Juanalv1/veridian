@@ -34,6 +34,8 @@ Dato del [Verizon DBIR 2025](https://www.verizon.com/business/resources/articles
 
 > Con una contraseña filtrada, un código 2FA robado o una sesión robada, el sistema deja pasar a otra persona como si fueras tú.
 
+**Cambio de slide a Solución.**
+
 La frase de las tarjetas no llama «credencial» a la sesión ni la cuelga de la cifra: el dato de Verizon habla de credenciales robadas, y la sesión es lo que el sistema entrega después de usarlas.
 
 **Apertura alternativa (no definitiva):** una pregunta al público: «¿Cuántos saben si alguien más está usando su cuenta ahora mismo?». Riesgo: puede abrir el tema de las cuentas compartidas.
