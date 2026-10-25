@@ -64,6 +64,8 @@ Estructura: una sola persona, la dueña de la cuenta.
 
 ## Antes de subir
 
+- **Comprobar que la red tenga una sola IP pública.** En una red con dos salidas, la IP cambia entre conexiones; visto el 2026-10-25: `186.167.82.140` y `38.121.211.28`, alternando en 12 consultas a `api.ipify.org`. Ahí la PC aparece como red nueva: la IA bloquea ya en el paso 2 (no sale «Raro») y el bloqueo incluye la IP, así que también bloquea al teléfono. Si la IP cambia, usar el hotspot de un teléfono para la PC y para el teléfono de la demo, y tocar «Preparar demo» desde esa red.
+
 - Espejar el teléfono en el proyector.
 - Antes de cada corrida, abrir `https://veridian-demo.onrender.com/preparar` desde el teléfono, con el wifi del evento, y tocar «Preparar demo» (la primera vez pide el PIN). Borra los datos y precarga 14 días de historial con la red y el dispositivo del teléfono. Nunca abrirla desde la PC: la PC quedaría como conocida y no habría bloqueo.
 - En Render (servicio de la demo): `DEMO_PREPARE_PIN` y `VERIDIAN_PANEL_TOKEN`; `ensayo@veridian.demo` debe ser owner de la organización Demo.
