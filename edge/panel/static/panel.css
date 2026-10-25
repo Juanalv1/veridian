@@ -411,7 +411,13 @@ select:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
 .tm-reveal-text { margin:0; font-size:15px; line-height:1.5; }
 .tm-copy { display:flex; flex-wrap:wrap; gap:8px; align-items:stretch; }
 .tm-code { flex:1 1 360px; min-width:0; padding:12px 14px; background:var(--ground); border:1px solid var(--line); border-radius:var(--radius-md); font-family:var(--font-mono); font-size:14px; line-height:1.5; overflow-wrap:anywhere; user-select:all; }
-.tm-snippet { margin:0; padding:12px 14px; background:var(--ground); border:1px solid var(--line); border-radius:var(--radius-md); font-family:var(--font-mono); font-size:13px; line-height:1.6; color:var(--muted); overflow-x:auto; white-space:pre; }
+.tm-h3 { margin:6px 0 0; font-size:16px; font-weight:600; }
+.tm-snippet-wrap { display:flex; flex-direction:column; gap:8px; }
+.tm-snippet { margin:0; padding:12px 14px; background:var(--ground); border:1px solid var(--line); border-radius:var(--radius-md); font-family:var(--font-mono); font-size:13px; line-height:1.6; color:var(--ink); overflow-x:auto; white-space:pre; tab-size:4; }
+.tm-snippet .c { color:var(--muted); }
+.tm-snippet .k { font-weight:600; }
+.tm-snippet .s { color:var(--viridian); }
+.tm-snippet-copy { align-self:flex-end; }
 .tm-saved { align-self:flex-start; color:var(--ink); border-color:var(--viridian); }
 .tm-muted { color:var(--muted); }
 .tm-revoked th, .tm-revoked td { color:var(--muted); }

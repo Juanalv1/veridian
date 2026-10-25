@@ -12,34 +12,56 @@ Requires Python 3.12 or newer.
 
 ## Usage
 
-Create an API key in the Veridian panel (one per project) and pass it as `token`; the key identifies your project. This README reads it from the `VERIDIAN_TOKEN` environment variable, but the name is only your choice: the SDK takes `token` as an argument and reads no environment variable itself. Keep the key secret and out of source control; if it leaks, revoke it in the panel and create another.
+Create an API key in the Veridian panel (Claves de API; one per project) and put it in the `VERIDIAN_API_KEY` environment variable of your app. Keep it out of source control; if it leaks, revoke it in the panel and create another.
 
-Works with any ASGI app (FastAPI, Starlette). Wrap the app and tell the middleware who the user and the session are:
+Works with any ASGI app (FastAPI, Starlette). This is the whole integration; it runs as is (`examples/quickstart.py`, tested against a fake engine):
 
 ```python
-import os
-
+# 1. Instala el SDK:            pip install veridian-sdk
+# 2. Pon tu clave en el entorno (nunca en el código), la que creaste en el panel:
+#                               VERIDIAN_API_KEY=vrd_...
 from fastapi import FastAPI
 from veridian_sdk import VeridianMiddleware
 
 app = FastAPI()
 
-app = VeridianMiddleware(
-    app,
-    token=os.environ["VERIDIAN_TOKEN"],
-    base_url=os.environ["VERIDIAN_URL"],
-    user_id=lambda request: request.state.user_id if hasattr(request.state, "user_id") else None,
-    session_id=lambda request: request.cookies.get("sid"),
+app.add_middleware(
+    VeridianMiddleware,
+    # Quién hace la petición: el id de tu usuario, o None si nadie inició sesión.
+    # Si nadie inició sesión y request.state.user no existe, cuenta como None, sin errores.
+    # Corre antes de tus rutas: si tu login pone el usuario en request.state desde
+    # otro middleware, agrega ese middleware después de este, así corre primero.
+    user=lambda request: request.state.user.id,
+    # Cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1).
+    # Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.
     trusted_proxies=0,
 )
+
+# La sesión se detecta sola: cookie sessionid, connect.sid, sid, session_id, PHPSESSID
+# o JSESSIONID, o el token Bearer. Veridian solo recibe un hash, nunca el valor.
+# Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.
+# Para comprobar la conexión: entra a tu app con un usuario y, en unos segundos,
+# ese acceso aparece en Actividad, en el panel de Veridian.
 ```
 
-- `user_id` and `session_id` are callables that take a Starlette `Request` and return a string or `None`. They run before the app (to enforce the blocklist) and again after it (the app may have just logged the user in). Requests with no user are not reported.
-- Pass a hash of the session cookie as `session_id`, never the cookie itself.
-- `trusted_proxies` is the number of your own proxies in front of the app. With `0` the connection IP is used and `X-Forwarded-For` is ignored, because any client can write it.
-- `exclude_paths` (default `("/static",)`) lists path prefixes that pass straight through with no event and no blocklist check.
-- `routes_poll_interval` (default `30.0` seconds) is how often the critical routes are read from the engine.
-- `check_timeout` (default `12.0` seconds) is how long a critical request waits for the engine's verdict.
+| Argument | Default | What it does |
+|---|---|---|
+| `user` | none | Function `request -> id or None`: who makes the request. It runs before your routes (to enforce the blocklist and check critical routes) and again after them (your app may have just logged the user in). A lookup that raises `AttributeError` or `LookupError`, like `request.state.user.id` with nobody logged in, counts as `None`. Ints are sent as strings. Requests with no user are not reported. |
+| `session` | detected | Function `request -> id or None`. Without it, the session is the hash of the first of these cookies: `sessionid`, `connect.sid`, `sid`, `session_id`, `PHPSESSID`, `JSESSIONID`; else the hash of an `Authorization: Bearer` token; else none. Starlette's `session` cookie is ignored because it changes on every response: with it, pass `session` yourself (a hash, never the cookie). **Critical routes are only checked when there is a session.** |
+| `api_key` | `VERIDIAN_API_KEY` | The project's key. Missing: `VeridianConfigError` when the app starts. |
+| `base_url` | `VERIDIAN_URL`, else `https://veridian-engine.onrender.com` | The engine. A value that is not a full `http(s)` URL: `VeridianConfigError`. |
+| `trusted_proxies` | `0` | Number of your own proxies in front of the app. With `0` the connection IP is used and `X-Forwarded-For` is ignored, because any client can write it. Behind one load balancer (Render, Heroku), `1`. |
+| `exclude_paths` | `("/static",)` | Path prefixes that pass straight through with no event and no blocklist check. |
+| `routes_poll_interval` | `30.0` s | How often the critical routes are read from the engine. |
+| `check_timeout` | `12.0` s | How long a critical request waits for the engine's verdict. |
+
+Middleware order: in Starlette, the middleware added last runs first. If your login puts the user in `request.state` from another middleware, add that one after Veridian's.
+
+The older names still work: `token` for `api_key`, `user_id` for `user`, `session_id` for `session`, and wrapping the app (`app = VeridianMiddleware(app, ...)`).
+
+### Check that it is connected
+
+Log in to your app and open a page. Within a few seconds the access shows up in Actividad, in the Veridian panel. If it does not, look for `veridian:` lines in your app's log (`401` means the key is wrong or revoked).
 
 ## Critical routes
 

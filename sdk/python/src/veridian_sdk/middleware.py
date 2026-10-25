@@ -9,7 +9,9 @@ Request and response bodies are never read into events.
 """
 
 import asyncio
+import hashlib
 import logging
+import os
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -28,6 +30,71 @@ MAX_BATCH = 200
 DEFAULT_EXCLUDE_PATHS = ("/static",)
 CHECK_TIMEOUT = 12.0  # contract 9: the engine's judge may take up to ~10 s on a gray deviation
 ROUTES_POLL_INTERVAL = 30.0
+DEFAULT_BASE_URL = "https://veridian-engine.onrender.com"
+API_KEY_ENV = "VERIDIAN_API_KEY"
+URL_ENV = "VERIDIAN_URL"
+# Session cookies whose value stays the same for the whole session. Starlette's
+# `session` is left out on purpose: it is re-signed on every response.
+SESSION_COOKIES = ("sessionid", "connect.sid", "sid", "session_id", "PHPSESSID", "JSESSIONID")
+# A lookup like `request.state.user.id` raises one of these when nobody is logged in.
+_NO_IDENTITY = (AttributeError, LookupError)
+
+
+class VeridianConfigError(ValueError):
+    """The middleware cannot start: a setting is missing or wrong."""
+
+
+def _session_hash(value: str) -> str:
+    """What the engine sees as a detected session: a hash, never the secret itself."""
+    return "s_" + hashlib.sha256(value.encode()).hexdigest()[:16]
+
+
+def detect_session(request: Request) -> str | None:
+    """Session of a request when the integrator gave none: a known session
+    cookie first, then a Bearer token; only a hash leaves the app."""
+    for name in SESSION_COOKIES:
+        value = request.cookies.get(name)
+        if value:
+            return _session_hash(value)
+    scheme, _, credentials = (request.headers.get("authorization") or "").partition(" ")
+    if scheme.lower() == "bearer" and credentials.strip():
+        return _session_hash(credentials.strip())
+    return None
+
+
+def _one_of(new, old, new_name: str, old_name: str):
+    if new is not None and old is not None:
+        raise VeridianConfigError(f"veridian: pass `{new_name}` or `{old_name}`, not both")
+    return new if new is not None else old
+
+
+def _resolve_key(api_key: str | None) -> str:
+    key = (api_key if api_key is not None else os.environ.get(API_KEY_ENV, "")).strip()
+    if not key:
+        raise VeridianConfigError(
+            f"veridian: no API key. Create one in the Veridian panel (Claves de API) and set it in "
+            f"the {API_KEY_ENV} environment variable, or pass api_key=..."
+        )
+    return key
+
+
+def _resolve_url(base_url: str | None) -> str:
+    url = (base_url if base_url is not None else os.environ.get(URL_ENV, "") or DEFAULT_BASE_URL).strip()
+    scheme, sep, rest = url.partition("://")
+    if scheme not in ("http", "https") or not sep or not rest.strip("/"):
+        raise VeridianConfigError(
+            f"veridian: the engine URL {url!r} is not valid. Set {URL_ENV} to a full http(s) URL, "
+            f"or leave it unset to use {DEFAULT_BASE_URL}"
+        )
+    return url.rstrip("/")
+
+
+def _check_callable(value, name: str):
+    if value is not None and not callable(value):
+        raise VeridianConfigError(
+            f"veridian: `{name}` must be a function that takes the request, e.g. {name}=lambda request: ..."
+        )
+    return value
 
 
 def resolve_client_ip(scope: dict, trusted_proxies: int = 0) -> str:
@@ -114,10 +181,10 @@ class VeridianMiddleware:
     def __init__(
         self,
         app,
-        token: str,
-        base_url: str,
-        user_id=lambda request: None,
-        session_id=lambda request: None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        user=None,
+        session=None,
         trusted_proxies: int = 0,
         http_client: httpx.AsyncClient | None = None,
         flush_interval: float = 2.0,
@@ -127,12 +194,29 @@ class VeridianMiddleware:
         check_timeout: float = CHECK_TIMEOUT,
         background: bool = True,
         exclude_paths: tuple[str, ...] = DEFAULT_EXCLUDE_PATHS,
+        *,
+        token: str | None = None,
+        user_id=None,
+        session_id=None,
     ):
-        """`user_id` and `session_id` are callables taking a Starlette Request
-        and returning a string or None. They run before the app (to enforce the
-        blocklist) and again after it (the app may have just logged the user in,
-        e.g. by setting request.state). `background=False` disables the
-        flush/poll tasks so tests can drive flush() and refresh_blocklist().
+        """Install it with `app.add_middleware(VeridianMiddleware, user=...)`.
+
+        `api_key` defaults to the VERIDIAN_API_KEY environment variable and
+        `base_url` to VERIDIAN_URL, then to the production engine; a missing
+        key or a malformed URL raises VeridianConfigError when the app starts.
+        `token`, `user_id` and `session_id` are the older names of `api_key`,
+        `user` and `session`, still accepted.
+
+        `user` and `session` are callables taking a Starlette Request and
+        returning an id or None (non-strings are turned into strings). They run
+        before the app (to enforce the blocklist) and again after it (the app
+        may have just logged the user in, e.g. by setting request.state). A
+        lookup that raises AttributeError or LookupError, like
+        `request.state.user.id` with nobody logged in, counts as None without
+        logging. Without `session`, it is detected: a known session cookie
+        (SESSION_COOKIES), then a Bearer token, sent only as a hash.
+        `background=False` disables the flush/poll tasks so tests can drive
+        flush() and refresh_blocklist().
 
         `exclude_paths` are path prefixes (whole segments) that pass straight
         through: no event, no device cookie and no blocklist check. Static
@@ -146,10 +230,15 @@ class VeridianMiddleware:
         verdict, more than `check_timeout` seconds) lets the request through,
         and with no routes loaded nothing is checked."""
         self.app = app
-        self.token = token
-        self.base_url = base_url.rstrip("/")
-        self.user_id = user_id
-        self.session_id = session_id
+        self.token = _resolve_key(_one_of(api_key, token, "api_key", "token"))
+        self.base_url = _resolve_url(base_url)
+        user = _check_callable(_one_of(user, user_id, "user", "user_id"), "user")
+        session = _check_callable(_one_of(session, session_id, "session", "session_id"), "session")
+        if user is None:
+            log.warning("veridian: no `user` given, so no request will be reported. "
+                        "Pass user=lambda request: <your user's id or None>")
+        self.user_id = user or (lambda request: None)
+        self.session_id = session or detect_session
         self.trusted_proxies = trusted_proxies
         self.exclude_paths = tuple(p.rstrip("/") for p in exclude_paths)
         self.client = http_client or httpx.AsyncClient(timeout=2.0)
@@ -251,7 +340,11 @@ class VeridianMiddleware:
     def _safe(self, fn, request):
         try:
             value = fn(request)
-            return value if value else None
+            if value is None or value is False or value == "":
+                return None
+            return str(value)  # ids are often ints; the engine takes strings
+        except _NO_IDENTITY:
+            return None
         except Exception:
             log.exception("veridian: identity callable failed")
             return None

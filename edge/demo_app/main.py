@@ -4,6 +4,7 @@ Routes match the table in docs/REPARTO.md. Data lives in memory.
 
 Env (see edge/README.md):
   VERIDIAN_URL, VERIDIAN_TOKEN  where the engine is and how to authenticate
+                                (VERIDIAN_API_KEY also works for the key)
   TRUSTED_PROXIES               number of our own proxies in front (default 0)
   DEMO_PASSWORD                 owner password; the default is for local use only
 """
@@ -186,10 +187,11 @@ def create_app(
 
     return VeridianMiddleware(
         app,
-        token=token if token is not None else os.environ.get("VERIDIAN_TOKEN", ""),
+        # VERIDIAN_TOKEN is the name the deployed demo already uses; the SDK reads VERIDIAN_API_KEY.
+        api_key=token or os.environ.get("VERIDIAN_TOKEN") or None,
         base_url=engine_url or os.environ.get("VERIDIAN_URL", "http://localhost:8000"),
-        user_id=user_id_of,
-        session_id=session_id_of,
+        user=user_id_of,
+        session=session_id_of,
         trusted_proxies=trusted_proxies if trusted_proxies is not None
         else int(os.environ.get("TRUSTED_PROXIES", "0")),
         http_client=http_client,

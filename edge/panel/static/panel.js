@@ -31,13 +31,16 @@
       el.textContent = hours.length === 2 ? hours[0] + " – " + hours[1] : hours.join(", ");
     });
   }
-  // The one-time API key: the copy button is hidden until JS can make it work (the key is selectable text without it).
+  // The one-time API key and the snippet: copy buttons are hidden until JS can make them work (the text is
+  // selectable without it). `data-copy` holds the text; `data-copy-from` names the element whose text is copied.
   function wireCopy() {
-    document.querySelectorAll("[data-copy]").forEach(function (btn) {
+    document.querySelectorAll("[data-copy], [data-copy-from]").forEach(function (btn) {
       if (!navigator.clipboard) return;
       btn.hidden = false;
       btn.addEventListener("click", function () {
-        navigator.clipboard.writeText(btn.getAttribute("data-copy")).then(function () {
+        var from = btn.getAttribute("data-copy-from");
+        var text = from ? document.getElementById(from).textContent : btn.getAttribute("data-copy");
+        navigator.clipboard.writeText(text).then(function () {
           var old = btn.textContent;
           btn.textContent = "Copiada";
           setTimeout(function () { btn.textContent = old; }, 2000);

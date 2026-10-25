@@ -21,10 +21,41 @@
         <code class="tm-code">{{ created.key }}</code>
         <button class="btn btn-secondary" type="button" data-copy="{{ created.key }}" hidden>Copiar</button>
       </div>
-      <pre class="tm-snippet">app.add_middleware(
+      <h3 class="tm-h3">Conecta tu app</h3>
+      <p class="tm-reveal-text">Pon la clave en el entorno de tu app, nunca en el código:</p>
+      <div class="tm-copy">
+        <code class="tm-code" id="snippet-env">VERIDIAN_API_KEY={{ created.key }}</code>
+        <button class="btn btn-secondary" type="button" data-copy-from="snippet-env" hidden>Copiar</button>
+      </div>
+      <p class="tm-reveal-text">Y agrega el middleware (Python, con FastAPI o Starlette):</p>
+      <div class="tm-snippet-wrap">
+        <button class="btn btn-secondary tm-snippet-copy" type="button" data-copy-from="snippet-python" hidden>Copiar código</button>
+        <pre class="tm-snippet"><code id="snippet-python"><span class="c"># 1. Instala el SDK:            pip install veridian-sdk</span>
+<span class="c"># 2. Pon tu clave en el entorno (nunca en el código), la que creaste en el panel:</span>
+<span class="c">#                               VERIDIAN_API_KEY=vrd_...</span>
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> veridian_sdk <span class="k">import</span> VeridianMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
     VeridianMiddleware,
-    token=os.environ["VERIDIAN_TOKEN"],
-)</pre>
+    <span class="c"># Quién hace la petición: el id de tu usuario, o None si nadie inició sesión.</span>
+    <span class="c"># Si nadie inició sesión y request.state.user no existe, cuenta como None, sin errores.</span>
+    <span class="c"># Corre antes de tus rutas: si tu login pone el usuario en request.state desde</span>
+    <span class="c"># otro middleware, agrega ese middleware después de este, así corre primero.</span>
+    user=<span class="k">lambda</span> request: request.state.user.id,
+    <span class="c"># Cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1).</span>
+    <span class="c"># Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.</span>
+    trusted_proxies=0,
+)
+
+<span class="c"># La sesión se detecta sola: cookie sessionid, connect.sid, sid, session_id, PHPSESSID</span>
+<span class="c"># o JSESSIONID, o el token Bearer. Veridian solo recibe un hash, nunca el valor.</span>
+<span class="c"># Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</span>
+<span class="c"># Para comprobar la conexión: entra a tu app con un usuario y, en unos segundos,</span>
+<span class="c"># ese acceso aparece en Actividad, en el panel de Veridian.</span></code></pre>
+      </div>
       <a class="btn btn-ghost tm-saved" href="/claves">Ya la guardé</a>
     </section>
     {% else %}
