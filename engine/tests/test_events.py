@@ -21,15 +21,32 @@ def test_valid_batch_is_accepted(client):
 
 
 def test_invalid_body_returns_422(client):
-    assert post_events(client, [{"id": "e1"}]).status_code == 422
     assert client.post("/v1/events", json={"nope": []}, headers=AUTH_A).status_code == 422
+    assert client.post("/v1/events", json={"events": "nope"}, headers=AUTH_A).status_code == 422
 
 
-def test_invalid_ip_or_naive_ts_returns_422(client):
-    assert post_events(client, [make_event("e1", NOW, ip="not-an-ip")]).status_code == 422
-    naive = make_event("e1", NOW)
+def test_one_invalid_event_never_sinks_the_batch(client):
+    """The SDKs only drop a batch on 202, so a 422 for one bad event would stall reporting forever."""
+    events = [make_event("e1", NOW), make_event("e2", NOW, session_id=None), make_event("e3", NOW)]
+    response = post_events(client, events)
+    assert response.status_code == 202
+    assert response.json() == {"accepted": 2, "rejected": 1}
+
+
+def test_each_invalid_event_is_counted_as_rejected(client):
+    naive = make_event("e4", NOW)
     naive["ts"] = "2026-10-26T10:00:00"
-    assert post_events(client, [naive]).status_code == 422
+    events = [
+        {"id": "e1"},
+        make_event("e2", NOW, ip="not-an-ip"),
+        make_event("e3", NOW, status=0),
+        naive,
+        make_event("e5", NOW, session_id=""),
+        "not-an-object",
+    ]
+    response = post_events(client, events)
+    assert response.status_code == 202
+    assert response.json() == {"accepted": 0, "rejected": 6}
 
 
 def test_resending_a_batch_counts_only_new_events(client):

@@ -14,7 +14,7 @@ from .control_api import build_router, install_error_handlers
 from .control_plane.legacy import seed_legacy
 from .control_plane.repository import record_audit
 from .decisions import blocklist, current_version, list_decisions, mark_normal
-from .events import EventBatch, insert_events
+from .events import EventBatch, insert_events, valid_events
 from .judging import judge_deviations, latest_per_session
 from .notifications.email_sender import build_email_sender
 from .notifications.sender import build_webhook_sender, webhook_lifespan
@@ -94,11 +94,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ingest_events(
         batch: EventBatch, background_tasks: BackgroundTasks, project_id: str = Depends(sdk_project)
     ) -> dict:
+        events, rejected = valid_events(batch.events)
         deviations = []
         with write_lock, db.connect(settings.db_path) as conn:
             ai_enabled = get_project_flags(conn, project_id).ai_enabled
             route_classes = RouteClasses.for_project(conn, project_id)
-            inserted = insert_events(conn, project_id, batch.events)
+            inserted = insert_events(conn, project_id, events)
             for event in sorted(inserted, key=lambda e: e.ts):
                 deviation = evaluate_event(conn, settings, route_classes, project_id, event)
                 if deviation is not None:
@@ -106,7 +107,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.judge is not None and ai_enabled and deviations:
             # Runs after the 202 is sent: ingestion never waits for the AI.
             background_tasks.add_task(judge_deviations, settings, write_lock, latest_per_session(deviations))
-        return {"accepted": len(inserted)}
+        answer = {"accepted": len(inserted)}
+        if rejected:
+            answer["rejected"] = rejected  # only when some were, so the usual answer keeps its shape
+        return answer
 
     @app.post("/v1/check")
     def post_check(

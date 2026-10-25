@@ -2,9 +2,9 @@ import re
 import sqlite3
 from datetime import timezone
 from ipaddress import IPv4Address, IPv6Address
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field, ValidationError
 
 MAX_BATCH = 1000
 EMAIL_PATTERN = re.compile(r"^[^@\s<>,;\"]+@[^@\s<>,;\"]+\.[^@\s<>,;\"]+$")
@@ -39,7 +39,20 @@ class Event(BaseModel):
 
 
 class EventBatch(BaseModel):
-    events: list[Event] = Field(max_length=MAX_BATCH)
+    # Items stay raw here and are validated one by one (`valid_events`): a single bad event
+    # must not 422 the batch, because the SDKs keep re-sending a batch until it gets a 202.
+    events: list[Any] = Field(max_length=MAX_BATCH)
+
+
+def valid_events(items: list[Any]) -> tuple[list[Event], int]:
+    """The items that are valid events, and how many were rejected."""
+    valid = []
+    for item in items:
+        try:
+            valid.append(Event.model_validate(item))
+        except ValidationError:
+            pass
+    return valid, len(items) - len(valid)
 
 
 def format_ts(value) -> str:
