@@ -20,27 +20,27 @@ Se lee en voz alta a ritmo normal (unas 2,5 palabras por segundo). Cada bloque i
 
 **Pantalla:** «Un sistema no sabe si quien entra es realmente el dueño de la cuenta», con las tarjetas «Contraseña filtrada», «Código 2FA robado» y «Sesión robada».
 
-**Escena** (es un ejemplo, no un caso real; es el mismo ataque que muestra la demo):
+**Apertura** (dato del [Verizon DBIR 2025](https://www.verizon.com/business/resources/articles/credential-stuffing-attacks-2025-dbir-research/): 22 %):
 
-> Son las 3 de la mañana. Alguien entra a tu sistema con la contraseña de tu contadora y cambia la cuenta donde cobras. Para el sistema, es ella.
+> Una de cada cinco filtraciones de datos comienza con una credencial robada.
 
 **Título:**
 
-> Porque un sistema no sabe si quien entra es realmente el dueño de la cuenta. Y una vez dentro, no vuelve a comprobar quién eres.
+> Por eso creamos Veridian. Porque un sistema no sabe si quien entra es realmente el dueño de la cuenta. Una vez dentro, no vuelve a comprobar quién eres.
 
 **Tarjetas:**
 
-> Y no importa cuánto protejas la entrada: la contraseña se filtra, el código de verificación se roba, la sesión se copia. En los tres casos, el sistema ve credenciales válidas y deja pasar.
+> Con una contraseña filtrada, un código 2FA robado o una sesión robada, el sistema deja pasar a otra persona como si fueras tú.
 
-Son unas 55 palabras. Si hay que recortar para llegar a 20 s, se quita «Y una vez dentro, no vuelve a comprobar quién eres», que ya está escrita en la slide.
+La frase de las tarjetas no llama «credencial» a la sesión ni la cuelga de la cifra: el dato de Verizon habla de credenciales robadas, y la sesión es lo que el sistema entrega después de usarlas.
 
-**Apertura alternativa (no definitiva):** en lugar de la escena, una pregunta al público: «¿Cuántos saben si alguien más está usando su cuenta ahora mismo?». Riesgo: puede abrir el tema de las cuentas compartidas.
+**Apertura alternativa (no definitiva):** una pregunta al público: «¿Cuántos saben si alguien más está usando su cuenta ahora mismo?». Riesgo: puede abrir el tema de las cuentas compartidas.
 
 ## 3. Solución (~25 s)
 
 **Pantalla:** «Veridian aprende cómo trabajas y nota cuando no eres tú».
 
-> Por eso creamos Veridian. Aprende cómo usa cada persona su cuenta: desde dónde entra, a qué hora y qué partes del sistema usa.
+> Veridian aprende cómo usa cada persona su cuenta: desde dónde entra, a qué hora y qué partes del sistema usa.
 >
 > Cuando algo no encaja, una IA mira el contexto y decide si es otra persona o solo un día distinto. Si es otra persona, le corta el acceso.
 >
