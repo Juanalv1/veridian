@@ -222,9 +222,9 @@ async def test_blocked_bank_change_still_answers_the_sdk_json_the_page_reads():
         assert r.status_code == 403 and r.json()["error"] == "blocked"
 
 
-# --- one-tap demo preparation (/demo/preparar) -------------------------------
+# --- one-tap demo preparation (/preparar) -------------------------------
 
-PREPARE_KEY = "k-prepare"
+PREPARE_PIN = "4821"
 PANEL_TOKEN = "panel-tok"
 PHONE_IP = "190.202.14.7"
 
@@ -272,39 +272,45 @@ class StubEngine:
         return httpx.Response(404)
 
 
-def make_prepared_demo(stub, prepare_key=PREPARE_KEY):
+def make_prepared_demo(stub, prepare_pin=PREPARE_PIN):
     ec = httpx.AsyncClient(transport=httpx.MockTransport(stub.handler), base_url="http://engine")
     return create_app(
         engine_url="http://engine", token=TOKEN, password=PASSWORD, http_client=ec, background=False,
-        prepare_key=prepare_key, panel_token=PANEL_TOKEN,
+        prepare_pin=prepare_pin, panel_token=PANEL_TOKEN,
     )
 
 
-async def test_prepare_page_is_off_without_the_key_env_and_404_with_a_wrong_key():
+async def test_prepare_page_is_off_without_the_pin_env():
     stub = StubEngine()
-    async with browser(make_prepared_demo(stub, prepare_key=None)) as c:
-        assert (await c.get("/demo/preparar", params={"clave": "anything"})).status_code == 404
-        assert (await c.post("/demo/preparar", params={"clave": "anything"})).status_code == 404
-    async with browser(make_prepared_demo(stub)) as c:
-        assert (await c.get("/demo/preparar")).status_code == 404
-        assert (await c.get("/demo/preparar", params={"clave": "wrong"})).status_code == 404
-        assert (await c.post("/demo/preparar", params={"clave": "wrong"})).status_code == 404
+    async with browser(make_prepared_demo(stub, prepare_pin=None)) as c:
+        assert (await c.get("/preparar")).status_code == 404
+        assert (await c.post("/preparar", data={"pin": "anything"})).status_code == 404
     assert ("DELETE", "/v1/projects/demo/data") not in stub.calls
 
 
-async def test_prepare_page_shows_one_button_issues_the_device_cookie_and_hides_secrets():
+async def test_prepare_page_asks_the_pin_issues_the_device_cookie_and_hides_secrets():
     async with browser(make_prepared_demo(StubEngine())) as c:
-        r = await c.get("/demo/preparar", params={"clave": PREPARE_KEY})
+        r = await c.get("/preparar")
         assert r.status_code == 200
-        assert "Preparar demo" in r.text and '<form method="post"' in r.text
-        assert PREPARE_KEY not in r.text and PANEL_TOKEN not in r.text
+        assert "Preparar demo" in r.text and '<form method="post"' in r.text and 'name="pin"' in r.text
+        assert PREPARE_PIN not in r.text and PANEL_TOKEN not in r.text
         assert "vrd_did=" in r.headers.get("set-cookie", "")
+
+
+async def test_a_wrong_pin_is_explained_on_the_page_and_touches_nothing():
+    stub = StubEngine()
+    async with browser(make_prepared_demo(stub)) as c:
+        await c.get("/preparar")
+        r = await c.post("/preparar", data={"pin": "0000"})
+        assert r.status_code == 403 and "PIN incorrecto" in r.text and 'name="pin"' in r.text
+        assert "demo_prep" not in r.headers.get("set-cookie", "")
+    assert ("DELETE", "/v1/projects/demo/data") not in stub.calls and stub.events == []
 
 
 async def test_prepare_without_the_device_cookie_explains_and_touches_nothing():
     stub = StubEngine()
     async with browser(make_prepared_demo(stub)) as c:
-        r = await c.post("/demo/preparar", params={"clave": PREPARE_KEY})
+        r = await c.post("/preparar", data={"pin": PREPARE_PIN})
         assert r.status_code == 400 and "dispositivo" in r.text
     assert ("DELETE", "/v1/projects/demo/data") not in stub.calls and stub.events == []
 
@@ -315,26 +321,42 @@ async def test_prepare_erases_seeds_the_phone_and_clears_the_blocklist_in_memory
     await app.refresh_blocklist()
     assert app.blocked["sessions"] == {"s_attacker"}
     async with browser(app, peer=PHONE_IP) as c:
-        await c.get("/demo/preparar", params={"clave": PREPARE_KEY})  # the phone gets its device cookie
+        await login(c)  # even logged in, the preparation pages are not reported as activity
+        app.queue.clear()
+        await c.get("/preparar")  # the phone gets its device cookie
         device = c.cookies["vrd_did"]
-        r = await c.post("/demo/preparar", params={"clave": PREPARE_KEY})
+        r = await c.post("/preparar", data={"pin": PREPARE_PIN})
         assert r.status_code == 200, r.text
         assert "Listo: 1 red, 1 dispositivo, 14 días" in r.text
-        assert PREPARE_KEY not in r.text and PANEL_TOKEN not in r.text
+        assert PREPARE_PIN not in r.text and PANEL_TOKEN not in r.text
+        cookie = r.headers.get("set-cookie", "")
+        assert "demo_prep=" in cookie and "httponly" in cookie.lower() and PREPARE_PIN not in cookie
     assert stub.calls.index(("DELETE", "/v1/projects/demo/data")) < stub.calls.index(("POST", "/v1/events"))
     assert ("POST", "/v1/admin/reset") not in stub.calls
     seeded = stub.events
     assert seeded and {e["ip"] for e in seeded} == {PHONE_IP} and {e["device_id"] for e in seeded} == {device}
     assert {e["user_id"] for e in seeded} == {"u_42"}
     assert app.blocked == {"users": set(), "sessions": set(), "ips": set()}
-    # the preparation pages are never reported as the presenter's activity
     assert list(app.queue) == []
+
+
+async def test_after_a_correct_pin_the_next_visit_only_shows_the_button():
+    stub = StubEngine()
+    async with browser(make_prepared_demo(stub)) as c:
+        await c.get("/preparar")
+        await c.post("/preparar", data={"pin": PREPARE_PIN})
+        page = (await c.get("/preparar")).text
+        assert "Preparar demo" in page and 'name="pin"' not in page
+        stub.calls.clear()
+        r = await c.post("/preparar")  # no PIN typed: the cookie is enough
+        assert r.status_code == 200 and "Listo:" in r.text
+        assert ("DELETE", "/v1/projects/demo/data") in stub.calls
 
 
 async def test_prepare_reports_an_engine_problem_without_leaking_the_token():
     stub = StubEngine(owner=False)
     async with browser(make_prepared_demo(stub)) as c:
-        await c.get("/demo/preparar", params={"clave": PREPARE_KEY})
-        r = await c.post("/demo/preparar", params={"clave": PREPARE_KEY})
+        await c.get("/preparar")
+        r = await c.post("/preparar", data={"pin": PREPARE_PIN})
         assert r.status_code == 502 and "owner" in r.text and PANEL_TOKEN not in r.text
     assert ("DELETE", "/v1/projects/demo/data") not in stub.calls
