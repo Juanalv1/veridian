@@ -228,3 +228,32 @@ def test_ai_decision_starts_open(make_client):
     post_events(client, [make_event("o1", NOW, route="/invoices/{id}", **NEW_NETWORK)])
     [decision] = decisions(client)
     assert decision["status"] == "open"
+
+
+def test_a_background_step_up_is_enforced_as_a_block(make_client):
+    """Found in the behavior evaluation: a slow theft (new network and device, a few reads, then an
+    export) got step_up from the AI 3 of 3 times, and nothing enforced it. The middleware has no
+    second factor, so a step_up stops the session like a block, as POST /v1/check already does."""
+    judge = FakeJudge(decision="step_up", rationale="Red y dispositivo nuevos que terminan exportando.")
+    client, _ = make_client(judge)
+    seed_owner_history(client)
+    thief = {"ip": "203.0.113.70", "device_id": "d_thief", "session_id": "s_slow"}
+
+    post_events(client, [make_event("t1", NOW, route="/invoices/{id}", **thief)])
+
+    [decision] = decisions(client)
+    assert decision["decision"] == "block"
+    assert decision["rationale"] == judge.rationale
+    listed = blocklist(client).json()
+    assert listed["sessions"] == ["s_slow"] and listed["ips"] == ["203.0.113.70"]
+
+
+def test_a_background_alert_is_still_only_an_alert(make_client):
+    judge = FakeJudge(decision="alert")
+    client, _ = make_client(judge)
+    seed_owner_history(client)
+
+    post_events(client, [make_event("o1", NOW, route="/invoices/{id}", **NEW_NETWORK)])
+
+    assert [d["decision"] for d in decisions(client)] == ["alert"]
+    assert blocklist(client).json()["sessions"] == []

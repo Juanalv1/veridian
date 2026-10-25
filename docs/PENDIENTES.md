@@ -62,11 +62,16 @@ Referencia reutilizable en el repo de Centinela:
     - **Por eso la consulta síncrona usa Haiku** (`VERIDIAN_SYNC_MODEL`), y el juicio en segundo plano sigue con Opus.
     - **En rutas críticas, la IA bloquea todo desvío,** incluido el dueño en otra red con su propio dispositivo.
 - **Tiempo de instalación** del middleware en una app nueva.
+- **Robo lento real,** repartido en horas o días: la evaluación solo cubrió 8 minutos. Pasada la espera de aprendizaje (10 min), lo que no tuvo una decisión abierta se aprende.
 
 ## Riesgos
 
 - **La IA no es determinista:** puede bloquear un uso legítimo en vivo.
-- **Dueño con dispositivo nuevo en una ruta crítica:** en la prueba síncrona, la IA bloqueó un acceso desde la red del dueño con un dispositivo nuevo. Si el dueño estrena laptop y cambia la cuenta bancaria, queda bloqueado.
+- **El dueño cambiando la cuenta bancaria fuera de lo habitual queda bloqueado** (medido el 2026-10-25, 3 de 3 en cada caso, ver `HALLAZGOS.md`):
+  - de viaje (otra red, su dispositivo): lo bloquea la regla crítica;
+  - con un dispositivo nuevo en su red: lo bloquea la IA.
+
+  Cada caso se parece a un ataque real: el dispositivo es una cookie que un ladrón de sesión también puede llevarse, y alguien en la misma red del dueño (oficina, casa) usaría un dispositivo nuevo. Hace falta una decisión de producto, y una vía para que el dueño se desbloquee (hoy, un admin marca "esto era normal").
 - **Token del cliente `demo` expuesto** en una conversación de trabajo: rotarlo antes de la demo (Render: `VERIDIAN_TOKENS` del motor y `VERIDIAN_TOKEN` de la app y el panel).
 - **Si la IA no le gana a un puntaje sin IA,** el mensaje se limita a "entiende tu sistema y explica".
 - **Datos personales:** las IPs cuentan como datos personales en muchas leyes. Hay que cuidar la retención y el cifrado.

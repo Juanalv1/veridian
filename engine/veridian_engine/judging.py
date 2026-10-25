@@ -34,8 +34,13 @@ def judge_deviations(settings: Settings, write_lock: threading.Lock, deviations:
                     continue
                 reserve_judgment(conn, deviation)
             judgment = settings.judge(deviation.signals, deviation.profile)
+            # The middleware never asks for a second factor, so a step_up is enforced as a block,
+            # as POST /v1/check does. Recorded as step_up, nothing ever applied it. After a rule
+            # block the rule's rationale stays: a "second factor" text would not explain a block.
+            step_up = judgment.decision == "step_up" and deviation.block_id is None
+            decision = "block" if step_up else judgment.decision
             with write_lock, db.connect(settings.db_path) as conn:
-                apply_judgment(conn, settings, deviation, judgment.decision, judgment.rationale)
+                apply_judgment(conn, settings, deviation, decision, judgment.rationale)
         except Exception:  # noqa: BLE001 - a judge failure must never break ingestion
             logger.exception("AI judgment failed for session %s", deviation.event.session_id)
 
