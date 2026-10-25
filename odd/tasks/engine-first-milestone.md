@@ -33,7 +33,7 @@ This is the Dev 1 milestone in `docs/REPARTO.md`. It makes the demo work before 
 | ID | Task | Route | Status |
 |---|---|---|---|
 | T1 | Scaffold `engine/`; `POST /v1/events` (auth 401, validation 422, idempotent by `id`, `202 {"accepted": n}` counting new events only) | delegated (writer trigger: 2+ non-trivial files) | [x] |
-| T2 | `routes.yaml` classification; profile learning; `GET /v1/users/{user_id}/profile` | delegated | [ ] |
+| T2 | `routes.yaml` classification; profile learning; `GET /v1/users/{user_id}/profile` | delegated | [x] |
 | T3 | Block rule; `GET /v1/decisions`; `GET /v1/blocklist` (304, full list); `POST /v1/decisions/{id}/normal` | delegated | [ ] |
 | T4 | `engine/scripts/send_sample_events.py` (seeded history + attacker scenario); `engine/README.md` with run instructions | delegated | [ ] |
 

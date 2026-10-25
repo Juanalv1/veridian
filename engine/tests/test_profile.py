@@ -33,9 +33,7 @@ def test_same_route_with_different_method_gets_different_class():
 
 def test_route_keys_without_method_are_rejected(tmp_path):
     bad = tmp_path / "routes.yaml"
-    bad.write_text("routes:
-  /payouts/bank-account: critical
-", encoding="utf-8")
+    bad.write_text("routes:\n  /payouts/bank-account: critical\n", encoding="utf-8")
     with pytest.raises(ValueError):
         RouteClasses.load(str(bad))
 
