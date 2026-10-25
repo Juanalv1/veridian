@@ -87,6 +87,12 @@ class Settings:
     org_creators: frozenset[str] = frozenset()
     # How long an invitation stays valid. A design default, not a measured value.
     invitation_days: int = 14
+    # Automatic route classification (contract 16): the worker that classifies the routes the SDK
+    # reports. Off unless set: from_env turns it on (VERIDIAN_AUTO_CLASSIFY=off disables).
+    # route_classifier None: openapi.classify (the AI; without ANTHROPIC_API_KEY every route fails).
+    auto_classify: bool = False
+    route_classifier: Any = None
+    classify_poll_s: float = 5.0
     # U13: the retention worker (purge by retention_days, wipe deleted projects) and its interval.
     retention: bool = True
     retention_interval_s: float = 3600.0
@@ -122,6 +128,8 @@ class Settings:
             bootstrap_owners=parse_emails(os.environ.get("VERIDIAN_BOOTSTRAP_OWNERS", "")),
             org_creators=parse_emails(os.environ.get("VERIDIAN_ORG_CREATORS", "")),
             invitation_days=int(os.environ.get("VERIDIAN_INVITATION_DAYS", "14")),
+            auto_classify=os.environ.get("VERIDIAN_AUTO_CLASSIFY", "on").strip().lower()
+            not in ("off", "0", "false", "no"),
             retention=os.environ.get("VERIDIAN_RETENTION", "on").strip().lower() not in ("off", "0", "false", "no"),
             retention_interval_s=float(os.environ.get("VERIDIAN_RETENTION_INTERVAL_S", "3600")),
         )

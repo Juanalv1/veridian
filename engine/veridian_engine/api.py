@@ -23,6 +23,7 @@ from .principal import Forbidden, PanelProject, panel_project, sdk_project, shar
 from .project_settings import get_project_flags
 from .profile import build_profile, is_blocked
 from .retention_worker import build_retention_worker
+from .route_catalog import RouteCatalogIn, build_route_classifier, record_report
 from .route_classes import RouteClasses, seed_unseeded
 from .rules import evaluate_event
 from .settings import Settings
@@ -31,15 +32,16 @@ from .summary import as_utc, build_summary, list_users
 
 @asynccontextmanager
 async def background_lifespan(app):
-    """The webhook sender and the retention worker run while the app does."""
-    worker = getattr(app.state, "retention_worker", None)
-    if worker is not None:
+    """The webhook and email senders, the retention worker and the route classifier run while
+    the app does."""
+    workers = [w for w in (getattr(app.state, "retention_worker", None), getattr(app.state, "route_classifier", None)) if w]
+    for worker in workers:
         worker.start()
     try:
         async with webhook_lifespan(app):
             yield
     finally:
-        if worker is not None:
+        for worker in workers:
             worker.stop()
 
 
@@ -66,6 +68,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.retention_worker = build_retention_worker(settings, write_lock)
     # Block alert email to owners/admins (U17), same switch and lifespan.
     app.state.email_sender = build_email_sender(settings, write_lock)
+    # Automatic route classification (contract 16); None when off.
+    app.state.route_classifier = build_route_classifier(settings, write_lock)
 
     @app.exception_handler(Unauthorized)
     async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONResponse:
@@ -141,6 +145,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """The caller's project classification (U7): the SDK key's project, or the panel's header."""
         with db.connect(settings.db_path) as conn:
             return {"routes": RouteClasses.for_project(conn, project_id).listing(), "default": "normal"}
+
+    @app.put("/v1/routes/catalog")
+    def put_route_catalog(body: RouteCatalogIn, project_id: str = Depends(sdk_project)) -> dict:
+        """Contract 16: the SDK reports the app's routes at startup; new or changed ones are
+        classified in the background and land in GET /v1/routes."""
+        keys = {(r.method, r.route) for r in body.routes}
+        if len(keys) != len(body.routes):
+            return JSONResponse(status_code=422, content={"error": "duplicate_route"})
+        with write_lock, db.connect(settings.db_path) as conn:
+            pending = record_report(conn, project_id, [r.model_dump() for r in body.routes], settings.clock())
+        return {"received": len(body.routes), "to_classify": pending}
 
     @app.get("/v1/users/{user_id}/profile")
     def get_profile(user_id: str, project: PanelProject = Depends(view)) -> dict:

@@ -53,12 +53,13 @@ class RouteClasses:
         return sorted(rows, key=lambda r: (order[r["class"]], r["route"], r["method"]))
 
 
-def replace_rules(conn: sqlite3.Connection, project_id: str, mapping: dict[str, str]) -> None:
-    """Replace every rule of the project and mark it seeded. The caller owns the transaction."""
+def replace_rules(conn: sqlite3.Connection, project_id: str, mapping: dict[str, str], source: str = "template") -> None:
+    """Replace every rule of the project and mark it seeded. The caller owns the transaction.
+    `source`: `template` (routes.yaml) or `admin` (U7 PUT); the AI never overwrites either."""
     conn.execute("DELETE FROM route_rules WHERE project_id = ?", (project_id,))
     conn.executemany(
-        "INSERT INTO route_rules (project_id, method, route, class) VALUES (?, ?, ?, ?)",
-        [(project_id, *key.split(" ", 1), route_class) for key, route_class in mapping.items()],
+        "INSERT INTO route_rules (project_id, method, route, class, source) VALUES (?, ?, ?, ?, ?)",
+        [(project_id, *key.split(" ", 1), route_class, source) for key, route_class in mapping.items()],
     )
     conn.execute("UPDATE project SET routes_seeded = 1 WHERE id = ?", (project_id,))
 

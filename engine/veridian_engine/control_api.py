@@ -36,6 +36,7 @@ from .notifications.webhook import (
 from .principal import Forbidden, PanelProject, ProjectRequired, panel_actor, path_project
 from .project_settings import set_project_flags
 from .retention import delete_project_data, delete_user_data
+from .route_catalog import list_catalog, protect_unlisted
 from .route_classes import RouteClasses, replace_rules, route_key
 from .settings import Settings
 
@@ -224,13 +225,20 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
         if len(mapping) != len(body.routes):
             return JSONResponse(status_code=422, content={"error": "duplicate_route"})
         with write_lock, db.connect(settings.db_path) as conn:
-            replace_rules(conn, project.project_id, mapping)
+            replace_rules(conn, project.project_id, mapping, source="admin")
+            protect_unlisted(conn, project.project_id)
             repository.record_audit(
                 conn, org_id=project.org_id, project_id=project.project_id, actor_person_id=project.person_id,
                 actor_kind="person", action="routes.replaced", target_type="project", target_id=project.project_id,
                 now=settings.clock(), meta={"count": len(mapping)},
             )
             return {"routes": RouteClasses.for_project(conn, project.project_id).listing(), "default": "normal"}
+
+    @router.get("/v1/projects/{project_id}/routes/catalog")
+    def get_route_catalog(project: PanelProject = Depends(path_project("view"))) -> dict:
+        """Every route the SDK reported, with the AI's answer, the effective class and who set it."""
+        with db.connect(settings.db_path) as conn:
+            return {"routes": list_catalog(conn, project.project_id)}
 
     @router.get("/v1/projects/{project_id}")
     def get_project(project: PanelProject = Depends(path_project("view"))) -> dict:
