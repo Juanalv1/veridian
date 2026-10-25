@@ -5,6 +5,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from . import db
+from .activity import list_activity
 from .auth import Unauthorized, client_id_from_request
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
@@ -65,6 +66,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict:
         with db.connect(settings.db_path) as conn:
             return {"decisions": list_decisions(conn, client_id, limit)}
+
+    @app.get("/v1/activity")
+    def get_activity(
+        limit: int = Query(50, ge=1, le=200), client_id: str = Depends(client_id_from_request)
+    ) -> dict:
+        with db.connect(settings.db_path) as conn:
+            return {"activity": list_activity(conn, client_id, limit)}
 
     @app.post("/v1/decisions/{decision_id}/normal")
     def post_mark_normal(decision_id: str, client_id: str = Depends(client_id_from_request)):

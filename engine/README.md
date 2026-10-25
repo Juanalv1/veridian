@@ -37,6 +37,10 @@ They can also live in a `.env` file (git-ignored), found by searching upward fro
 
 A deviation is an event with a new network, a new device (non-empty `device_id` not in the profile), or a never-used `critical`/`sensitive` route. The critical rule still blocks synchronously; after the `202`, the judge runs in the background and either replaces the block's rationale or records an `allow`/`alert`/`step_up`/`block` decision. Each session is judged once; it is judged again only on a rule block or a never-used `critical`/`sensitive` route, and a blocked session gets no more decisions. A judge failure never breaks ingestion.
 
+## Activity feed
+
+`GET /v1/activity?limit=50` (1–200) lists the client's latest accesses, newest first, each with a panel verdict (`normal`/`review`/`block`) and its `decision_id`; requests of a blocked session after the block show as `block` (contract 5 in `docs/REPARTO.md`).
+
 ## Tests
 
 ```bash
