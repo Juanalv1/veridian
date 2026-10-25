@@ -41,6 +41,8 @@ Qué decidimos y por qué. Las cifras y fuentes están en [HALLAZGOS.md](HALLAZG
 | **Respuesta por grados:** alerta en el panel → pedir un segundo factor en ese momento → bloquear. | Bloquear todo lo raro rompe el negocio; solo alertar no frena a nadie. |
 | **Descartado: preguntar "¿fuiste tú?" al dueño.** | Si la pregunta llega a la misma sesión, el atacante responde que sí. Pedir un segundo factor en la sesión cumple el mismo rol sin ese problema. |
 | **Endpoint crítico + desvío = bloqueo inmediato,** aunque sea una sola petición. | Un cambio de cuenta bancaria no necesita volumen para ser grave. |
+| **Se bloquea la sesión y la IP del atacante, no el usuario.** | El atacante usa la misma credencial que el dueño: bloquear el usuario también deja afuera a la víctima. |
+| **El primer hito bloquea la siguiente petición, no la sospechosa.** | Envío y consulta en segundo plano cada ~2 s, sin frenar la app. La consulta síncrona para rutas críticas queda como mejora. |
 
 ## Pitch y demo
 
