@@ -35,6 +35,8 @@ class Settings:
     clock: Callable[[], datetime] = field(default=utc_now)
     # judge(signals, profile) -> Judgment. None means rule-only: no AI decisions.
     judge: Callable[[dict, dict], Any] | None = None
+    # Demo rehearsals only: enables POST /v1/admin/reset. Keep off for real customers.
+    allow_reset: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -50,6 +52,7 @@ class Settings:
             routes_file=os.environ.get("VERIDIAN_ROUTES_FILE", str(DEFAULT_ROUTES_FILE)),
             learn_delay_min=int(os.environ.get("VERIDIAN_LEARN_DELAY_MIN", "10")),
             judge=default_judge(),
+            allow_reset=os.environ.get("VERIDIAN_ALLOW_RESET", "").strip().lower() == "true",
         )
 
 

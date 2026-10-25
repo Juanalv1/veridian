@@ -175,6 +175,10 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 - **`routes` incluye el método** (`"GET /invoices"`), igual que la clasificación de rutas: `GET` y `POST` sobre la misma ruta son usos distintos.
 - **`hours` va en UTC,** igual que `ts`: horas enteras de 0 a 23 (`[9, 13]` = de 09:00 a 13:00 UTC). El panel las convierte a la hora local de quien mira.
 
+### Solo para ensayos: reinicio
+
+`POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_ALLOW_RESET=true`; si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
+
 ## Primer hito de cada dev
 
 - **Dev 1:**

@@ -1,3 +1,5 @@
+import importlib.util
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -9,6 +11,9 @@ from veridian_engine.settings import Settings
 
 NOW = datetime(2026, 10, 26, 12, 0, 0, tzinfo=timezone.utc)
 ROUTES_FILE = Path(__file__).resolve().parent.parent / "routes.yaml"
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+# The stdlib scripts import their shared helpers as top-level modules, as when run directly.
+sys.path.insert(0, str(SCRIPTS_DIR))
 
 TOKEN_A = "tok_a"
 TOKEN_B = "tok_b"
@@ -51,16 +56,29 @@ def clock() -> FakeClock:
     return FakeClock(NOW)
 
 
+def load_script(name: str):
+    """Import a stdlib script from engine/scripts by file name (without .py)."""
+    spec = importlib.util.spec_from_file_location(name, SCRIPTS_DIR / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def make_settings(tmp_path, clock, **overrides) -> Settings:
+    fields = {
+        "db_path": str(tmp_path / "veridian.db"),
+        "tokens": {TOKEN_A: "client_a", TOKEN_B: "client_b"},
+        "routes_file": str(ROUTES_FILE),
+        "learn_delay_min": 10,
+        "clock": clock,
+    }
+    fields.update(overrides)
+    return Settings(**fields)
+
+
 @pytest.fixture
 def client(tmp_path, clock) -> TestClient:
-    settings = Settings(
-        db_path=str(tmp_path / "veridian.db"),
-        tokens={TOKEN_A: "client_a", TOKEN_B: "client_b"},
-        routes_file=str(ROUTES_FILE),
-        learn_delay_min=10,
-        clock=clock,
-    )
-    with TestClient(create_app(settings)) as test_client:
+    with TestClient(create_app(make_settings(tmp_path, clock))) as test_client:
         yield test_client
 
 

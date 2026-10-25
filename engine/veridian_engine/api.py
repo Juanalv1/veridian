@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .auth import Unauthorized, client_id_from_request
-from .decisions import blocklist, current_version, list_decisions, mark_normal
+from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
 from .profile import build_profile, is_blocked
@@ -73,6 +73,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if result is None:
             return JSONResponse(status_code=404, content={"error": "not_found"})
         return result
+
+    @app.post("/v1/admin/reset")
+    def post_reset(request: Request):
+        """Rehearsal-only wipe of the caller's data. Hidden (404 before auth) unless enabled."""
+        if not settings.allow_reset:
+            return JSONResponse(status_code=404, content={"error": "not_found"})
+        client_id = client_id_from_request(request)
+        with write_lock, db.connect(settings.db_path) as conn:
+            version = reset_client(conn, client_id)
+        return {"reset": True, "version": version}
 
     @app.get("/v1/blocklist")
     def get_blocklist(since: int | None = None, client_id: str = Depends(client_id_from_request)):

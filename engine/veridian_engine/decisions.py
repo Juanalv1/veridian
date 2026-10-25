@@ -118,3 +118,15 @@ def blocklist(conn: sqlite3.Connection, client_id: str) -> dict:
         "sessions": sorted({row["session_id"] for row in rows}),
         "ips": sorted({row["ip"] for row in rows}),
     }
+
+
+def reset_client(conn: sqlite3.Connection, client_id: str) -> int:
+    """Delete the client's events and decisions (the profile is learned from them).
+
+    The blocklist ends empty, and its version moves forward instead of back to 0, so a
+    middleware polling with an older version gets the empty list, not a stale 304.
+    """
+    for table in ("decision_events", "decisions", "events"):
+        conn.execute(f"DELETE FROM {table} WHERE client_id = ?", (client_id,))
+    bump_version(conn, client_id)
+    return current_version(conn, client_id)

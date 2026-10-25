@@ -29,6 +29,7 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_LEARN_DELAY_MIN` | `10` | Events younger than this (by `ts`) are not learned yet |
 | `ANTHROPIC_API_KEY` | | Enables the AI judge. Without it the engine is rule-only: the critical block, no AI decisions |
 | `VERIDIAN_MODEL` | `claude-opus-5-5` | Model used by the AI judge |
+| `VERIDIAN_ALLOW_RESET` | `false` | `true` enables `POST /v1/admin/reset` (demo rehearsals only) |
 
 They can also live in a `.env` file (git-ignored), found by searching upward from the working directory. Real environment variables take precedence.
 
@@ -52,6 +53,20 @@ VERIDIAN_TOKEN=dev py -3.12 engine/scripts/send_sample_events.py --base-url http
 ```
 
 It prints the blocklist (attacker session and IP) and the block decision.
+
+## Demo rehearsal
+
+With `VERIDIAN_ALLOW_RESET=true` on the engine (otherwise the endpoint answers 404), each rehearsal starts from a clean client. Both scripts read `VERIDIAN_BASE_URL` and `VERIDIAN_TOKEN` from the environment or a `.env`, and never print the token.
+
+1. Reset: `py -3.12 engine/scripts/reset_client.py` deletes this token's client events and decisions (so its profiles) and empties its blocklist, keeping the version moving forward. It asks you to type the base URL, or pass `--yes`.
+2. Seed the presenter's history with the event wifi IP measured that morning (see `docs/DEMO.md`), every day including weekends, at the demo hours in UTC:
+
+   ```bash
+   py -3.12 engine/scripts/seed_demo_history.py --user-id u_presenter --ip <wifi IP> --hours 13,14,15,16 --device-id <cookie, if known>
+   ```
+
+   It prints the accepted count and the resulting profile. Without `--device-id`, the presenter's real device is new to the profile and counts as a deviation.
+3. Run the demo.
 
 ## Deploy (Render)
 
