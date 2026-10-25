@@ -262,7 +262,8 @@ async def test_the_blocked_page_shows_the_sdk_unlock_message_when_there_is_one()
         await get_blocked(app, atk)
         app.self_unlock_sessions.update(app.blocked["sessions"])
         r = await atk.get("/invoices", headers=NAVIGATE)
-        assert r.status_code == 403 and SELF_UNLOCK_MESSAGE in r.text
+        assert r.status_code == 403 and r.headers["content-type"].startswith("text/html")
+        assert SELF_UNLOCK_MESSAGE in r.text
 
 
 # --- one-tap demo preparation (/preparar) -------------------------------

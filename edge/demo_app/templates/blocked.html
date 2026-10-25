@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Acceso bloqueado{% endblock %}
+{% block body_class %}solo{% endblock %}
+{% block content %}
+<div class="solo-col">
+  <span class="mark lg" aria-hidden="true">F</span>
+  <h1>Acceso bloqueado</h1>
+  <p class="sub">{{ unlock_message or "Detectamos un acceso inusual en esta cuenta y lo bloqueamos para protegerla." }}</p>
+  {% if not unlock_message %}<p class="sub">Si eres el titular, contacta a soporte para recuperar el acceso.</p>{% endif %}
+</div>
+{% endblock %}

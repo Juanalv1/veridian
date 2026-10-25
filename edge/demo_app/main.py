@@ -19,6 +19,7 @@ import csv
 import hashlib
 import hmac
 import io
+import json
 import os
 import secrets
 import time
@@ -90,6 +91,53 @@ def session_public_id(cookie_value: str) -> str:
     return "s_" + hashlib.sha256(cookie_value.encode()).hexdigest()[:12]
 
 
+class BlockedPage:
+    """Shows a page instead of the SDK's 403 JSON when a browser navigates while blocked.
+
+    Only real navigations (Sec-Fetch-Mode: navigate) are rewritten: fetch calls such as the
+    bank form keep the SDK's unchanged body, which busy.js reads. Attributes fall through to
+    the wrapped VeridianMiddleware (flush, blocked, refresh_blocklist...).
+    """
+
+    def __init__(self, app: VeridianMiddleware):
+        self.app = app
+
+    def __getattr__(self, name):
+        return getattr(self.app, name)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or dict(scope["headers"]).get(b"sec-fetch-mode") != b"navigate":
+            return await self.app(scope, receive, send)
+        held: dict = {}
+
+        async def capture(message):
+            if message["type"] == "http.response.start" and message["status"] == 403:
+                held["start"], held["body"] = message, b""
+                return
+            if "start" not in held:
+                return await send(message)
+            held["body"] += message.get("body", b"")
+            if message.get("more_body"):
+                return
+            try:
+                answer = json.loads(held["body"])
+            except ValueError:
+                answer = None
+            if not (isinstance(answer, dict) and answer.get("error") == "blocked"):
+                await send(held["start"])
+                return await send({"type": "http.response.body", "body": held["body"]})
+            html = templates.get_template("blocked.html").render(
+                user=None, asset_version=ASSET_VERSION, unlock_message=answer.get("message")).encode()
+            await send({"type": "http.response.start", "status": 403, "headers": [
+                (b"content-type", b"text/html; charset=utf-8"),
+                (b"content-length", str(len(html)).encode()),
+                (b"cache-control", b"no-store"),
+            ]})
+            await send({"type": "http.response.body", "body": html})
+
+        await self.app(scope, receive, capture)
+
+
 def create_app(
     engine_url: str | None = None,
     token: str | None = None,
@@ -99,7 +147,7 @@ def create_app(
     background: bool = True,
     prepare_pin: str | None = None,
     panel_token: str | None = None,
-) -> VeridianMiddleware:
+) -> BlockedPage:
     """Returns the app wrapped by VeridianMiddleware (an ASGI app)."""
     prepare_pin = prepare_pin or os.environ.get("DEMO_PREPARE_PIN") or None
     panel_token = panel_token or os.environ.get("VERIDIAN_PANEL_TOKEN") or ""
@@ -316,7 +364,7 @@ def create_app(
         http_client=http_client,
         background=background,
     )
-    return middleware
+    return BlockedPage(middleware)
 
 
 app = create_app()
