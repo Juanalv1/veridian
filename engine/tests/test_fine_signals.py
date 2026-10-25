@@ -46,7 +46,8 @@ def test_burst_from_owner_network_and_device_is_judged_and_blocks_only_the_sessi
     assert signals["new_network"] is False
     assert signals["new_device"] is False
     assert signals["rate_spike"] is True
-    assert signals["rate_per_min"] == 40
+    # The rule blocks at the first event over the floor of 30; later events of a blocked session are not judged.
+    assert signals["rate_per_min"] == 31
     assert signals["usual_max_rate_per_min"] == 1
     assert profile["usual_max_rate_per_min"] == 1
     [decision] = decisions(client)
@@ -116,7 +117,8 @@ def test_spiking_session_judged_earlier_is_judged_again_only_on_its_first_spike(
 
     post_events(client, burst("c", 10, NOW, seconds=10, **NEW_NETWORK))
     assert len(judge.calls) == 2
-    assert [d["decision"] for d in decisions(client)] == ["alert"]
+    # The spike itself is a rule block; the earlier alert stays.
+    assert [d["decision"] for d in decisions(client)] == ["block", "alert"]
 
 
 def test_ai_block_on_a_new_network_still_blocks_session_and_ip(judged_client):
@@ -201,3 +203,43 @@ def test_rate_settings_from_env(monkeypatch):
     monkeypatch.setenv("VERIDIAN_RATE_FLOOR", "12")
     settings = Settings.from_env()
     assert (settings.rate_factor, settings.rate_floor) == (2.5, 12)
+
+
+def test_rate_spike_blocks_the_session_by_rule_even_without_a_judge(judged_client):
+    client = judged_client(None)
+    seed_owner_history(client)
+
+    post_events(client, burst("b", 40, NOW))
+
+    [decision] = decisions(client)
+    assert decision["decision"] == "block"
+    assert decision["signals"]["rate_spike"] is True
+    assert "31" in decision["rationale"]
+    listed = blocklist(client).json()
+    assert listed["sessions"] == ["s_bot"]
+    assert listed["ips"] == []
+
+
+def test_rate_spike_rule_block_stands_when_the_ai_answers_step_up(judged_client):
+    judge = FakeJudge(decision="step_up", rationale="Pedir segundo factor.")
+    client = judged_client(judge)
+    seed_owner_history(client)
+
+    post_events(client, burst("b", 40, NOW))
+
+    assert len(judge.calls) == 1
+    [decision] = decisions(client)
+    assert decision["decision"] == "block"
+    assert decision["rationale"] != judge.rationale
+    assert blocklist(client).json()["sessions"] == ["s_bot"]
+
+
+def test_rate_spike_from_a_new_network_blocks_session_and_ip(judged_client):
+    client = judged_client(None)
+    seed_owner_history(client)
+
+    post_events(client, burst("b", 40, NOW, **NEW_NETWORK))
+
+    listed = blocklist(client).json()
+    assert listed["sessions"] == ["s_bot"]
+    assert listed["ips"] == [NEW_NETWORK["ip"]]

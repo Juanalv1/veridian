@@ -13,6 +13,11 @@ RATIONALE = (
     "nueva ({network}). Se bloquean la sesión y la IP, no el usuario."
 )
 
+RATE_RATIONALE = (
+    "Ráfaga de {rate} pedidos por minuto, frente a un máximo habitual de {usual}: es el ritmo de "
+    "un script, no de una persona. Se bloquea la sesión{ip_scope}."
+)
+
 GUARDED_CLASSES = ("critical", "sensitive")
 
 
@@ -101,17 +106,26 @@ def evaluate_event(
         profile=profile.to_dict(blocked=is_blocked(conn, client_id, event.user_id)),
     )
     if route_class == "critical" and route_never_used and new_network:
-        deviation.block_id = create_decision(
-            conn,
-            client_id,
-            ts=settings.clock(),
-            user_id=event.user_id,
-            session_id=event.session_id,
-            ip=str(event.ip),
-            decision="block",
-            signals=signals,
-            rationale=RATIONALE.format(route_key=key, network=network),
-            event_ids=[event.id],
+        block_ip, rationale = str(event.ip), RATIONALE.format(route_key=key, network=network)
+    elif rate_spike:
+        # A script on the owner's own network shares the owner's IP: block only its session there.
+        block_ip = str(event.ip) if new_network else ""
+        rationale = RATE_RATIONALE.format(
+            rate=rate, usual=profile.usual_max_rate_per_min, ip_scope=" y la IP" if new_network else ""
         )
-        bump_version(conn, client_id)
+    else:
+        return deviation
+    deviation.block_id = create_decision(
+        conn,
+        client_id,
+        ts=settings.clock(),
+        user_id=event.user_id,
+        session_id=event.session_id,
+        ip=block_ip,
+        decision="block",
+        signals=signals,
+        rationale=rationale,
+        event_ids=[event.id],
+    )
+    bump_version(conn, client_id)
     return deviation

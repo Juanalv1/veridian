@@ -50,3 +50,4 @@ All signals are deterministic code. The AI only judges them.
 - 2026-10-25: document created.
 - 2026-10-25: F1 done. RED: 9 of 13 new tests in `engine/tests/test_fine_signals.py` failed before the change (the 4 that passed are negative cases). GREEN: full suite 107 passed (93 before). The "first spike once" marker lives in a new table `rate_spike_judgments`; a session-only block stores an empty `ip` in its decision and the blocklist skips it. Live `send_sample_events.py --scenario bot` without `ANTHROPIC_API_KEY`: 84 + 60 accepted, no decision and empty blocklist, as expected rule-only.
 - F1 commit: `45e9d4b`.
+- 2026-10-25: follow-up: a rate spike is now a synchronous rule block (session only on a known network, session and IP on a new one), because the AI answered `step_up` live and the middleware does not enforce it. The rule fires at the first event over the threshold. 3 tests RED, then 124 passed.
