@@ -45,7 +45,7 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
 
 ### Dev B: notificaciones y operación
 
-1. **U12, endpoints del webhook** (contrato 13, admin+, cuando U6 esté en `main`). La conexión ya está en `main`: cada `block` encola una notificación en la misma transacción (`decisions.create_decision`) y un hilo la envía firmada, con reintentos. Falta exponerlo por HTTP:
+1. **Hecho (2026-10-25): U12, endpoints del webhook** (contrato 13, documentado en `REPARTO.md`). Los proyectos en `observe` notifican con `decision.enforced: false`; la migración `0006` borró `project.webhook_url` y `project.webhook_secret_enc`. Lo que sigue es lo que se pedía: La conexión ya está en `main`: cada `block` encola una notificación en la misma transacción (`decisions.create_decision`) y un hilo la envía firmada, con reintentos. Falta exponerlo por HTTP:
    - `PUT .../webhook` → `webhook_store.set_webhook_endpoint(conn, pid, url, now=, resolver=)`. Devuelve el secreto una sola vez. Si la URL es insegura (`UnsafeUrlError`) responde `422`; si falta `VERIDIAN_SECRET_KEY` (`SecretKeyMissing`), `503`.
    - `DELETE .../webhook` → `clear_webhook_endpoint`. Para leer y activar o desactivar: `get_webhook_endpoint` y `set_webhook_enabled`.
    - `GET .../webhook/deliveries` → `notifications/outbox.list_notifications`.
