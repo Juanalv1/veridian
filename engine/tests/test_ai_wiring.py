@@ -165,16 +165,27 @@ def test_never_used_normal_route_is_not_a_deviation(make_client):
     assert judge.calls == []
 
 
-def test_one_ai_decision_of_each_kind_per_session(make_client):
+def test_repeated_deviation_in_a_judged_session_is_not_judged_again(make_client):
     judge = FakeJudge(decision="alert")
     client, _ = make_client(judge)
     seed_owner_history(client)
     post_events(client, [make_event("o1", NOW, route="/invoices/{id}", **NEW_NETWORK)])
     post_events(client, [make_event("o2", NOW + timedelta(seconds=5), route="/invoices", **NEW_NETWORK)])
+    post_events(client, [make_event("o3", NOW + timedelta(seconds=10), route="/invoices", **NEW_NETWORK)])
+    assert len(judge.calls) == 1
+    assert [d["decision"] for d in decisions(client)] == ["alert"]
+
+
+def test_never_used_sensitive_route_is_judged_again_in_a_judged_session(make_client):
+    judge = FakeJudge(decision="alert")
+    client, _ = make_client(judge)
+    seed_owner_history(client)
+    post_events(client, [make_event("o1", NOW, route="/invoices/{id}", **NEW_NETWORK)])
     assert [d["decision"] for d in decisions(client)] == ["alert"]
 
     judge.decision = "block"
-    post_events(client, [make_event("o3", NOW + timedelta(seconds=10), route="/invoices", **NEW_NETWORK)])
+    post_events(client, [make_event("o3", NOW + timedelta(seconds=10), route="/invoices/export", **NEW_NETWORK)])
+    assert len(judge.calls) == 2
     assert [d["decision"] for d in decisions(client)] == ["block", "alert"]
     listed = blocklist(client).json()
     assert listed["sessions"] == ["s_owner"]

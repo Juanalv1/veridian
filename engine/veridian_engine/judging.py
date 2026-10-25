@@ -24,11 +24,32 @@ def judge_deviations(settings: Settings, write_lock: threading.Lock, deviations:
     """Ask the judge about each deviation and record the result. Never raises."""
     for deviation in deviations:
         try:
+            with write_lock, db.connect(settings.db_path) as conn:
+                if not needs_judgment(conn, deviation):
+                    continue
             judgment = settings.judge(deviation.signals, deviation.profile)
             with write_lock, db.connect(settings.db_path) as conn:
                 apply_judgment(conn, settings, deviation, judgment.decision, judgment.rationale)
         except Exception:  # noqa: BLE001 - a judge failure must never break ingestion
             logger.exception("AI judgment failed for session %s", deviation.event.session_id)
+
+
+def needs_judgment(conn: sqlite3.Connection, deviation: Deviation) -> bool:
+    """Ask the AI once per session; only a rule block or a never-used risky route asks again.
+
+    Batches arrive every ~2 s, so re-judging the same deviation would multiply model calls
+    and give a non-deterministic judge many chances to flip a legitimate session.
+    """
+    if deviation.block_id is not None:
+        return True
+    signals = deviation.signals
+    if signals.get("route_never_used") and signals.get("route_class") in ("critical", "sensitive"):
+        return True
+    judged = conn.execute(
+        "SELECT 1 FROM decisions WHERE client_id = ? AND session_id = ?",
+        (deviation.client_id, deviation.event.session_id),
+    ).fetchone()
+    return judged is None
 
 
 def apply_judgment(
