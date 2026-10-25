@@ -95,12 +95,17 @@ def create_app(engine_url: str | None = None, token: str | None = None,
         except (httpx.HTTPError, ValueError):
             return None
 
+    def user_url(user_id: str | None) -> str:
+        # user_id is opaque and comes from the customer's app: escape it fully.
+        return f"/users/{quote(user_id, safe='')}" if user_id else "/"
+
     @app.get("/", response_class=HTMLResponse)
+    @app.get("/users/{user:path}", response_class=HTMLResponse)
     async def index(request: Request, user: str | None = None, error: str | None = None):
         decisions, engine_error = await load_decisions()
         user_ids = list(dict.fromkeys(d.get("user_id", "") for d in decisions))
         profiles = dict(zip(user_ids, await asyncio.gather(*(load_profile(u) for u in user_ids))))
-        users = [{"id": u, "state": (profiles[u] or {}).get("state", "normal"),
+        users = [{"id": u, "href": user_url(u), "state": (profiles[u] or {}).get("state", "normal"),
                   "blocked": (profiles[u] or {}).get("state") == "blocked"} for u in user_ids]
         selected = user if user in profiles else (user_ids[0] if user_ids else None)
         profile = profiles.get(selected) if selected else None
@@ -110,7 +115,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             "decisions": decisions, "engine_error": engine_error, "refresh": REFRESH_SECONDS,
             "users": users, "selected": selected, "profile": profile,
             "notice": MARK_ERROR if error else None,
-            "refresh_url": "/?" + urlencode({"user": selected}) if selected else "/",
+            "refresh_url": user_url(selected),
         })
 
     @app.post("/decisions/{decision_id}/normal")
@@ -121,10 +126,10 @@ def create_app(engine_url: str | None = None, token: str | None = None,
             ok = r.status_code == 200
         except httpx.HTTPError:
             pass
-        query = {"user": user} if user else {}
+        url = user_url(user)
         if not ok:
-            query["error"] = "mark"
-        return RedirectResponse("/?" + urlencode(query) if query else "/", status_code=303)
+            url += "?" + urlencode({"error": "mark"})
+        return RedirectResponse(url, status_code=303)
 
     return app
 

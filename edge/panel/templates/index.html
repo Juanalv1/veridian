@@ -85,7 +85,7 @@
     <span class="label">Usuarios</span>
     {% for u in users %}
       <a class="user{% if u.blocked %} blocked{% endif %}{% if u.id == selected %} selected{% endif %}"
-         href="/?user={{ u.id | urlencode }}"{% if u.id == selected %} aria-current="true"{% endif %}>
+         href="{{ u.href }}"{% if u.id == selected %} aria-current="true"{% endif %}>
         <span class="id">{{ u.id }}</span>
         <span class="tag{% if u.blocked %} blocked{% endif %}">{% if u.blocked %}BLOQUEADO{% else %}NORMAL{% endif %}</span>
       </a>

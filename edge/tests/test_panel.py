@@ -68,7 +68,7 @@ def test_post_mark_normal_calls_engine_and_redirects():
     did = decision_id(engine)
     r = panel.post(f"/decisions/{did}/normal", data={"user": "u_42"})
     assert r.status_code == 303
-    assert r.headers["location"] == "/?user=u_42"
+    assert r.headers["location"] == "/users/u_42"
     status = TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["status"]
     assert status == "marked_normal"
 
@@ -108,7 +108,8 @@ def test_unknown_status_counts_as_open():
 def test_users_list_and_selected_profile_with_method_routes():
     engine, panel = blocked_setup()
     r = panel.get("/")
-    assert "?user=u_42" in r.text
+    assert 'href="/users/u_42"' in r.text
+    assert "?user=" not in r.text
     assert "GET /invoices" in r.text
     assert "190.202.14.0/24" in r.text
     assert "días de historial" in r.text
@@ -122,7 +123,7 @@ def test_user_param_selects_profile():
     c.post("/v1/events", json={"events": [event()]}, headers=AUTH)
     c.post("/v1/events", json={"events": [event(id="e_2", user_id="u_17", ip="172.16.5.4")]}, headers=AUTH)
     panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine)))
-    r = panel.get("/?user=u_17")
+    r = panel.get("/users/u_17")
     assert "10.1.2.0/24" in r.text and "GET /ledger" in r.text and "190.202.14.0/24" not in r.text
 
 
@@ -197,3 +198,18 @@ def test_panel_escapes_untrusted_text():
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     r = TestClient(create_app("http://engine", TOKEN, http_client=client)).get("/")
     assert "<script>alert(1)</script>" not in r.text
+
+
+def test_user_url_escapes_ids_with_slashes_and_spaces():
+    def handler(request):
+        if request.url.path == "/v1/decisions":
+            return httpx.Response(200, json={"decisions": [{
+                "id": "d_1", "ts": "2026-10-26T10:14:05Z", "user_id": "acme/ana torres", "decision": "block",
+                "signals": {}, "rationale": "x", "event_ids": [], "status": "open"}]})
+        return httpx.Response(404, json={"error": "not_found"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    panel = TestClient(create_app("http://engine", TOKEN, http_client=client))
+    assert 'href="/users/acme%2Fana%20torres"' in panel.get("/").text
+    r = panel.get("/users/acme%2Fana%20torres")
+    assert r.status_code == 200 and 'aria-current="true"' in r.text
