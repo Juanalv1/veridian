@@ -4,25 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Facturas{% endblock %} · Facturas Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
 </head>
-<body>
-<header class="top"><div class="bar">
-  <a class="logo" href="{{ '/invoices' if user else '/login' }}">
-    <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5z" fill="currentColor" opacity=".18"/><path d="M5 2.5h7l3.5 3.5v11.5H5z M12 2.5V6h3.5 M7.5 10h5 M7.5 13h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-    Facturas Demo
-  </a>
-  {% if user %}
-  <nav aria-label="Principal">
-    <a href="/invoices"{% if active == "invoices" %} aria-current="page"{% endif %}>Facturas</a>
-    <a href="/payouts/bank-account"{% if active == "bank" %} aria-current="page"{% endif %}>Cuenta de cobros</a>
-  </nav>
-  <div class="account">
-    <span class="who"><strong>{{ user.name }}</strong><span>{{ user.company }}</span></span>
-    <form class="inline" method="post" action="/logout"><button class="link" type="submit">Salir</button></form>
+<body class="{% block body_class %}{% endblock %}">
+{% if user %}
+<header class="top">
+  <div class="bar">
+    <a class="brand" href="/invoices"><span class="mark" aria-hidden="true">F</span>Facturas Demo</a>
+    <nav aria-label="Principal">
+      <a href="/invoices"{% if active == "invoices" %} aria-current="page"{% endif %}>Facturas</a>
+      <a href="/payouts/bank-account"{% if active == "bank" %} aria-current="page"{% endif %}>Cuenta de cobros</a>
+    </nav>
+    <div class="account">
+      <span class="avatar" aria-hidden="true">{{ user.name.split()|map("first")|join }}</span>
+      <span class="who"><span class="name">{{ user.name }}</span><span class="org">{{ user.company }}</span></span>
+      <form method="post" action="/logout"><button class="quiet" type="submit">Salir</button></form>
+    </div>
   </div>
-  {% endif %}
-</div></header>
+</header>
+{% endif %}
 <main>{% block content %}{% endblock %}</main>
 <script src="/static/busy.js?v={{ asset_version }}"></script>
 </body>

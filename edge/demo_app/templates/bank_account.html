@@ -4,25 +4,40 @@
 <div class="page-head">
   <div>
     <h1>Cuenta de cobros</h1>
-    <p class="lead">Aquí depositamos los pagos de tus clientes.</p>
+    <p class="sub">Aquí depositamos los pagos de tus clientes.</p>
   </div>
 </div>
-{% if saved %}<div class="msg okmsg" role="status">Listo. Tus próximos cobros llegarán a {{ bank }} {{ masked }}.</div>{% endif %}
-<div class="card">
-  <dl class="facts">
-    <div><dt>Banco</dt><dd>{{ bank }}</dd></div>
-    <div><dt>Número de cuenta</dt><dd class="mono">{{ masked }}</dd></div>
-  </dl>
-  <hr>
-  <h2>Cambiar cuenta</h2>
-  <form method="post" action="/payouts/bank-account" data-fetch data-blocked-notice="blocked-notice">
-    <label for="bank">Banco</label>
-    <input id="bank" name="bank" autocomplete="off" required>
-    <label for="account_number">Número de cuenta</label>
-    <input id="account_number" name="account_number" inputmode="numeric" pattern="[0-9]{10,20}" title="Solo números, entre 10 y 20 dígitos" autocomplete="off" aria-describedby="account_hint" required>
-    <p class="hint" id="account_hint">Entre 10 y 20 dígitos, sin espacios ni guiones.</p>
-    <button type="submit" data-busy="Guardando…">Guardar cuenta</button>
+{% if saved %}<p class="notice" role="status">Cuenta actualizada. Tus próximos cobros llegarán a {{ bank }} {{ masked }}.</p>{% endif %}
+<section class="setting">
+  <div class="setting-intro">
+    <h2>Cuenta actual</h2>
+    <p>Recibe los cobros de todas tus facturas.</p>
+  </div>
+  <div class="bank-row">
+    <span class="bank-tile" aria-hidden="true">{{ (bank.split()|map("first")|select("upper")|join)[:2] }}</span>
+    <div>
+      <p class="bank-name">{{ bank }}</p>
+      <p class="bank-number">{{ masked }}</p>
+    </div>
+  </div>
+</section>
+<section class="setting">
+  <div class="setting-intro">
+    <h2>Cambiar cuenta</h2>
+    <p>El cambio aplica a los cobros que lleguen desde ahora.</p>
+  </div>
+  <form method="post" action="/payouts/bank-account" class="stack" data-fetch data-blocked-notice="blocked-notice">
+    <div class="alert" id="blocked-notice" role="alert" hidden>Detectamos un acceso inusual y bloqueamos esta acción.</div>
+    <div class="field">
+      <label for="bank">Banco</label>
+      <input id="bank" name="bank" autocomplete="off" required>
+    </div>
+    <div class="field">
+      <label for="account_number">Número de cuenta</label>
+      <input id="account_number" name="account_number" inputmode="numeric" pattern="[0-9]{10,20}" title="Solo números, entre 10 y 20 dígitos" autocomplete="off" aria-describedby="account_hint" required>
+      <p class="hint" id="account_hint">Entre 10 y 20 dígitos, sin espacios ni guiones.</p>
+    </div>
+    <div><button class="primary" type="submit" data-busy="Guardando…">Guardar cuenta</button></div>
   </form>
-  <div class="msg error" id="blocked-notice" role="alert" hidden>Detectamos un acceso inusual y bloqueamos esta acción.</div>
-</div>
+</section>
 {% endblock %}

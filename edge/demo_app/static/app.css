@@ -8,6 +8,7 @@
   --radius:8px; --ease:cubic-bezier(.2,.8,.2,1);
 }
 * { box-sizing:border-box; }
+[hidden] { display:none !important; }
 html { -webkit-text-size-adjust:100%; }
 body { margin:0; font:15px/1.5 var(--font); color:var(--ink); background:var(--ground); -webkit-font-smoothing:antialiased; }
 ::selection { background:#e4e5e9; color:var(--ink); }
