@@ -62,6 +62,15 @@ test('events without a user are skipped', async () => {
   assert.equal(engine.of('POST', '/v1/events').length, 0);
 });
 
+test('events without a session are skipped, because the engine rejects them', async () => {
+  const v = make({ session: () => null });
+  const i = info();
+  await v.finish(i, await v.before(i), 200, 0);
+  assert.equal(v.queue.length, 0);
+  await v.flush();
+  assert.equal(engine.of('POST', '/v1/events').length, 0);
+});
+
 test('ids are turned into strings; null, false and empty mean nobody', async () => {
   const v = make({ user: (r) => r.u });
   for (const [u, expected] of [[42, '42'], [null, null], [false, null], ['', null], [undefined, null]]) {

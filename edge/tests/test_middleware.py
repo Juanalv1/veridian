@@ -370,6 +370,33 @@ async def test_callable_errors_never_break_the_request(rec):
     assert r.status_code == 200
 
 
+async def test_an_app_that_raises_is_reported_as_a_500(rec):
+    app = FastAPI()
+
+    @app.get("/boom")
+    async def boom():
+        raise RuntimeError("app bug")
+
+    mw = make_mw(app, rec.client())
+    transport = httpx.ASGITransport(app=mw, client=("198.51.100.1", 5555), raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://app") as c:
+        await c.get("/boom", cookies={"uid": "u_42", "sid": "s_1"})
+    await mw.flush()
+    (e,) = rec.events
+    assert e["status"] == 500  # the engine accepts 100-599 only
+
+
+async def test_a_user_without_a_session_is_not_reported(rec):
+    """The engine requires a session, so the event would only be rejected."""
+    mw = make_mw(build_app(), rec.client())
+    async with client_for(mw) as c:
+        r = await c.get("/items/1", cookies={"uid": "u_42"})
+    assert r.status_code == 200
+    assert len(mw.queue) == 0
+    await mw.flush()
+    assert rec.events == []
+
+
 # --- end to end against the fake engine ------------------------------------
 
 SEED = [{"user_id": "u_42", "ips": ["190.202.14.7"],
