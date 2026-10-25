@@ -1,47 +1,47 @@
 # Guion de la demo
 
-Borrador: la estructura está aprobada (2026-10-25); falta definir el texto en detalle.
+Borrador: se escribe por partes (2026-10-25). Parte 1 aprobada; el resto está pendiente.
 
 Va después de la slide 4 y antes de la slide 5 (`GUION.md`). Tiempo disponible: 125-140 s (sin medir todavía).
 
-Depende del desbloqueo por correo, que está en desarrollo ([DESBLOQUEO-POR-CORREO.md](DESBLOQUEO-POR-CORREO.md)). Si no está listo, la demo termina en el bloqueo y se cierra con el stack.
+Depende del desbloqueo por correo, que está en desarrollo ([DESBLOQUEO-POR-CORREO.md](DESBLOQUEO-POR-CORREO.md)). Si no está listo, la demo termina en el bloqueo.
 
-**[Proyector: la app de facturas y el panel de Veridian, lado a lado. La bandeja de correo del presentador, abierta en otra pestaña]**
+Estructura: una sola persona, la dueña de la cuenta.
+1. Entra desde su teléfono, el de siempre → «Normal».
+2. Entra desde una PC que Veridian no conoce → «Raro».
+3. Intenta cambiar la cuenta bancaria → «Bloqueado», con un mensaje amigable.
+4. Le llega el correo → «Fui yo, desbloquear» → entra con normalidad, en verde.
 
-**[El presentador entra con su cuenta y revisa sus facturas]**
+## Parte 1: entrada normal
 
-> Esta es una app de facturas que ya tiene Veridian instalado, y este es su panel. Entro con mi cuenta, como todos los días, y reviso mis facturas.
+**[Proyector: la pantalla del teléfono, espejada, y el panel de Veridian, lado a lado]**
 
-**[Panel: «Normal», en verde]**
+> Para mostrar cómo funciona Veridian, usaremos una plataforma donde una empresa factura y cobra a sus clientes, y que ya tiene Veridian instalado.
 
-> Veridian reconoce mi red, mi dispositivo y mi horario, así que me deja pasar. Para la demo precargamos mi historial; en producción, lo aprende solo.
+**[Inicia sesión en el teléfono y navega unos segundos: la lista de facturas y el detalle de una]**
 
-**[Activa la VPN, abre la app en otro navegador, entra con la misma contraseña y va a cambiar la cuenta bancaria]**
+> Inicio sesión desde mi teléfono, el dispositivo que uso siempre, y reviso mis facturas como cualquier día.
 
-> Ahora imaginen que alguien tiene mi contraseña. Entra desde otra red y otro dispositivo, y va directo a cambiar la cuenta bancaria donde cobro.
+**[Panel: «Normal»]**
 
-**[Panel: «Bloqueado»]**
+> Veridian me reconoce por mi comportamiento y mi historial, así que me deja pasar.
 
-> Veridian lo bloquea antes de que el cambio ocurra. Y la IA explica por qué:
+## Parte 2: dispositivo desconocido
 
-**[Leer la explicación del panel]**
+Pendiente.
 
-**[Abre la bandeja: llegó el correo]**
+## Parte 3: bloqueo
 
-> Al mismo tiempo, me llega este correo, con la marca de la app: detectaron un acceso sospechoso a mi cuenta.
->
-> Pero esta vez sí era yo, con una VPN y otro navegador. Así que hago clic en «Fui yo, desbloquear».
+Pendiente.
 
-**[Clic. Vuelve a la app y cambia la cuenta bancaria]**
+## Parte 4: desbloqueo por correo
 
-> Y sigo trabajando con normalidad. En el panel, el acceso queda en verde, desbloqueado por mí.
-
-**[Panel: «Desbloqueado por el usuario», en verde (texto de la especificación; confirmar cuando esté implementado)]**
-
-> Lo construimos con Python, FastAPI, SQLite y Claude Opus 5.5.
+Pendiente.
 
 ## Antes de subir
 
-- Medir en los ensayos cuánto tarda el correo en llegar con la red del evento.
-- Precargar el historial del presentador con la IP del wifi del evento.
+- Espejar el teléfono en el proyector.
+- Precargar el historial de la dueña con la IP del wifi del evento y la cookie de dispositivo (`device_id`) del teléfono; si falta la cookie, el teléfono también se ve nuevo.
+- Ensayar el bloqueo sin VPN unas 20 veces en el lugar: con un dispositivo nuevo en la misma red, lo decide la IA (3 de 3 medido el 2026-10-25). Si falla una vez, agregar la VPN: con una red nueva bloquea la regla fija.
+- Medir cuánto tarda el correo en llegar con la red del evento.
 - Tener grabado el video de respaldo de una corrida buena.
