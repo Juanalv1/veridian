@@ -19,6 +19,7 @@
    - El módulo existe (`engine/scripts/classify_openapi.py`), pero no está conectado.
    - Hoy manda `engine/routes.yaml`, escrito a mano.
    - Si la IA falla, todo queda `normal`: su salida se usa como borrador que revisa una persona.
+   - **Decisión (2026-10-25):** debe ser automático. Tarea 6 del Dev B en `HANDOFF.md`.
 6. **Historial sembrado** para la demo.
    - Herramientas listas:
      - `engine/scripts/reset_client.py` reinicia los datos del cliente;

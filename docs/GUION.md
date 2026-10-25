@@ -14,7 +14,9 @@
 
 **[Slide 3: Cómo funciona]**
 
-> Veridian sí lo comprueba, en cada acceso. Lo compara con el perfil del usuario: una regla detecta lo raro y la IA decide si es un robo.
+> Veridian sí lo comprueba, en cada acceso. Antes de empezar, una IA recorre las rutas de tu API y entiende qué hace cada una para clasificarlas según su impacto: cambiar la cuenta bancaria no es lo mismo que ver una factura. Y Veridian aprende cómo trabajas tú: desde dónde entras, a qué hora y qué rutas usas.
+>
+> Si alguien entra desde una red nueva y va directo a cambiar la cuenta donde cobras, algo que tú nunca haces, la IA decide si eres tú en un día distinto o es otra persona.
 >
 > En una ruta crítica, el bloqueo llega antes de que la acción se ejecute.
 

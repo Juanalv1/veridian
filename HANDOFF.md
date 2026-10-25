@@ -71,6 +71,17 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
      - Lo que hace falta: que la preparación de la demo verifique que la app ya no bloquea, o que reinicie la app.
 
 
+6. **Clasificación automática de rutas** (pedido de Juan, 2026-10-25). Hoy es manual: `engine/scripts/classify_openapi.py` genera un borrador de `routes.yaml` que alguien revisa y sube. Debe ser automático, porque el pitch lo presenta así.
+   - **Flujo:** al arrancar, el SDK envía al motor las rutas de la app (método, ruta y descripción, sacadas del OpenAPI que ya expone FastAPI). El motor las clasifica con la IA (`veridian_engine.openapi.classify`), guarda el resultado por proyecto y lo sirve en `GET /v1/routes`, que el middleware ya consulta.
+   - **Solo rutas, nunca código fuente.**
+   - **Depende de U7 (Dev A):** la tabla `route_rules` por proyecto. Coordinar con el Dev A: construirlo encima de U7 o acordar quién arma la tabla.
+   - **Rutas nuevas o cambiadas:** clasificar solo las que cambiaron desde la última vez, no todas en cada arranque.
+   - **Decidir:**
+     - qué pasa si la IA falla; hoy la ruta queda `normal` y eso apaga la regla de bloqueo para ella. Una opción es mantener la última clasificación conocida y reintentar;
+     - si un admin puede corregir una clase desde el panel (el `PUT` de U7) y si esa corrección sobrevive a la próxima clasificación.
+   - **Contrato nuevo** en `REPARTO.md` para el envío de rutas (SDK → motor).
+   - **Tests:** el SDK envía las rutas al arrancar; el motor las clasifica y las sirve por proyecto; una falla de la IA no borra la clasificación anterior; dos proyectos no ven las rutas del otro.
+
 ### Dev 3: borde (lo que era del Dev 2)
 
 **Qué toma:** middleware, app de demo, panel, motor falso, SDK y landing; todo vive en `edge/`.
