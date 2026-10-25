@@ -1,4 +1,4 @@
-# Handoff: motor de Veridian (rol Dev 1) para dos devs
+# Handoff: Veridian para tres devs (motor: Dev A y Dev B; borde: Dev 3)
 
 **Fecha:** 2026-10-25, ~05:30 (hora de Caracas)
 **Rama:** `main` (no se usan PR; ver `CLAUDE.md`)
@@ -15,7 +15,7 @@ Terminar las unidades del motor de `docs/DISENO-PRODUCTO.md` (U2–U8, U12, U13,
 
 **Decisión del usuario (Juan):** terminar el producto tiene prioridad sobre mantener estable la demo actual. Los tests sí son obligatorios antes de cada merge.
 
-## Reparto entre los dos devs
+## Reparto entre los devs del motor
 
 Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B necesita sus roles para exponer endpoints.
 
@@ -78,6 +78,44 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
      - Causa: no investigada. La versión había subido, así que el middleware debería haber recibido la lista nueva en ~2 s. Puede que no estuviera leyendo `/v1/blocklist`, que por contrato conserva la última lista conocida. Revisar con el Dev 2 si U6 afectó la autenticación del middleware.
      - Lo que hace falta: que la preparación de la demo verifique que la app ya no bloquea, o que reinicie la app.
 
+
+### Dev 3: borde (lo que era del Dev 2)
+
+**Qué toma:** middleware, app de demo, panel, motor falso, SDK y landing; todo vive en `edge/`.
+- Plan: `odd/tasks/edge-product-accounts.md`.
+- Otras tareas: `middleware-critical-check.md`, `panel-routes-readonly.md`, `sdk-python-pypi.md`, `edge-first-milestone.md`.
+- Diseño: `docs/DISENO-PRODUCTO.md`; ver la nota "Revisión 2026-10-25" sobre la capa de organización.
+
+**Ya hecho, en `main`:**
+- **T1:** el reset de ensayos pide un secreto aparte (`VERIDIAN_RESET_TOKEN`).
+- **T2:** el motor falso tiene el acceso del panel (credencial de servicio + `X-Veridian-Actor` + `X-Veridian-Project`) y el contrato 10.
+- **T3:** el panel tiene login con Google, sesión firmada, CSRF y logout. No hay modo abierto.
+- **T4:** el panel tiene selector de organización y proyecto, creación de ambos y borrado de organizaciones vacías, con el estilo de los mockups aprobados.
+- **T7:** el SDK (`veridian-sdk`) deja pasar las peticiones si el motor responde `401` o `429`, y el README y la landing ya dicen "crea una clave en el panel".
+- **T8:** documentos de privacidad en `docs/privacidad/`.
+- **T9 y T10:** la capa de organización (roles solo por organización) y `DELETE /v1/orgs/{id}`.
+- **Consulta previa en el middleware:** antes de una ruta crítica llama a `POST /v1/check`; si responde `block`, devuelve `403` (contrato 9).
+
+**En curso cuando se fue el Dev 2 (T5, sin marcar en el documento):**
+- Hecho, en sus últimos commits (05:56–06:02):
+  - el motor falso ya tiene los contratos 11 (miembros e invitaciones), 12 (claves de API) y 15 (auditoría);
+  - el panel ya tiene la página de miembros e invitaciones con controles según el rol (`deb7c00`).
+- **Falta del panel:** la página de **claves de API** (la clave se muestra una sola vez) y la de **auditoría**. Después, marcar T5 con la evidencia.
+
+**Pendiente:**
+- **T6:** el panel para el webhook (contrato 13) y para borrar datos de un usuario o de un proyecto (contrato 14). Depende de que el motor los exponga: el 14 lo tiene el Dev A y el 13 el Dev B.
+- **T4, seguimiento:** una revisión visual, y la decisión abierta 2 (quién crea organizaciones; hoy, solo los correos de `VERIDIAN_ORG_CREATORS`).
+- **El middleware no tomó la lista nueva después de un reset.** En el ensayo hubo que reiniciar `veridian-demo` en Render. No está investigado; ver la tarea 5 del Dev B.
+
+**Para coordinar con el motor real:**
+- El motor real tiene el contrato 10, el 12 y el acceso del panel (U6), con las mismas formas que el motor falso. **Le faltan el 11 y el 15**, que el motor falso ya tiene; los tiene asignados el Dev A.
+- Diferencias conocidas con el motor falso:
+  - todos los proyectos legacy quedan en una sola organización, "Demo";
+  - los ids son `prj_` y `org_`;
+  - una invitación no cambia el rol de quien ya es miembro.
+- Para que el panel desplegado funcione contra el motor real, hay que configurar `VERIDIAN_PANEL_TOKEN` en los dos servicios de Render, con el mismo valor.
+
+**Ojo:** el último push del Dev 2 fue a las 06:02. Si dejó cambios sin commit en su laptop después de esa hora, no están en el repo.
 
 ## Ya está en `main`
 
