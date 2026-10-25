@@ -20,7 +20,13 @@ Terminar las unidades del motor de `docs/DISENO-PRODUCTO.md` (U2–U8, U12, U13,
 - **Christian Mendoza (Dev B):** notificaciones y operación.
 - **Maikol Aguilar (antes Dev A):** todo el frontend: landing, backoffice y panel.
 
-Lo que Maikol ya cerró en el motor queda en `main`: el contrato 11 (`45f965a`) y `DELETE /v1/projects/{id}` (`ff891db`).
+Lo que Maikol cerró en el motor queda en `main`, con tests y documentado en `REPARTO.md` y `odd/tasks/engine-productization.md`:
+- el contrato 11 (`45f965a`) y `DELETE /v1/projects/{id}` (`ff891db`);
+- el contrato 15 y los nombres de acción del fake engine, con la migración `0007` (`b637776`);
+- U7 (`24c440b`, migración `0008`) y U8 (`ae134e2`);
+- U13 parte 1: los endpoints del contrato 14 y el hilo de retención (`8ad03cb`).
+
+Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Suite: 665 passed.
 
 ### Carlos Navas: motor (acceso, rutas y datos)
 
@@ -29,19 +35,14 @@ Lo que Maikol ya cerró en el motor queda en `main`: el contrato 11 (`45f965a`) 
    - los ids son `prj_` y `org_`, no `p_`;
    - una invitación no cambia el rol de quien ya es miembro;
    - `mark_normal` devuelve `{id, normal, version}`;
-   - la invitación vence a los 7 días, y el diseño dice 14.
+   - ~~la invitación vence a los 7 días~~: corregido, ahora son 14 (`VERIDIAN_INVITATION_DAYS`).
 
-   Falta además el endpoint de auditoría (contrato 15) en el motor real; el panel y el motor falso ya lo tienen.
-2. **U7: rutas por proyecto.** La clasificación automática de rutas (tarea 6 de Christian) se construye encima: coordinar con él.
-   - Qué hace: tabla `route_rules`, sembrada desde `engine/routes.yaml`, con `PUT` para admin+.
-   - Cambios en el motor: `GET /v1/routes` responde por proyecto, y `/v1/check` y las reglas leen la clasificación del proyecto, no la global.
-3. **U8: batería de aislamiento entre proyectos.**
-   - Recorre todas las rutas de la API, con el mismo `id` en dos proyectos.
-   - Debe fallar si alguien agrega un endpoint que no cubre.
-4. **U13, conexión.** Revisar primero qué dejó `f8d47d2` (*add retention purge and data deletion*). El núcleo está en `engine/veridian_engine/retention.py`. Falta:
-   - el hilo de purga;
-   - los endpoints del contrato 14: borrado por usuario y por proyecto, solo owner y con auditoría;
-   - **eliminar `POST /v1/admin/reset`** y `test_reset.py`, y cambiar los scripts de ensayo para que usen el borrado por proyecto.
+   El contrato 15 ya está en el motor real (`b637776`).
+2. **Hecho: U7, rutas por proyecto** (`24c440b`). La clasificación automática de rutas (tarea 6 de Christian) se construye encima de `route_rules` y `PUT /v1/projects/{id}/routes`.
+3. **Hecho: U8, batería de aislamiento** (`ae134e2`, `engine/tests/test_isolation.py`). Cada endpoint nuevo necesita una entrada en `OPERATIONS`, o falla `test_every_operation_is_covered`.
+4. **U13.** La parte 1 está hecha (`8ad03cb`): el hilo de purga y los endpoints del contrato 14.
+   - El borrado por usuario es para admin+ y el borrado del proyecto, solo para owner. Así lo dice `DISENO-PRODUCTO.md` (contrato 14); este handoff decía "solo owner" para los dos.
+   - **Falta:** eliminar `POST /v1/admin/reset` y `test_reset.py`, y cambiar los scripts de ensayo (`reset_client.py`, `test_rehearsal_scripts.py`) para que usen `DELETE /v1/projects/{id}/data` con el acceso del panel. Coordinarlo con la tarea 5 de Christian (preparar la demo).
 5. **Registro abierto** (decisión 2, resuelta por Juan el 2026-10-25): `POST /v1/orgs` lo puede usar cualquier persona autenticada, no solo los correos de `VERIDIAN_ORG_CREATORS`. Lo necesita el registro en un paso de Maikol.
    - Poner un límite de organizaciones por persona para evitar abusos (decidir el número).
    - Actualizar el contrato 10 en `REPARTO.md` y los READMEs que describen `VERIDIAN_ORG_CREATORS`.
