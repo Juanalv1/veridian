@@ -204,7 +204,8 @@ Los últimos accesos del cliente, **todos**, no solo los que generaron una decis
       "route": "/payouts/bank-account",
       "verdict": "block",
       "status": 200,
-      "decision_id": "d_311"
+      "decision_id": "d_311",
+      "status": 200
     },
     {
       "event_id": "e_01J9ZK2A",
@@ -217,7 +218,8 @@ Los últimos accesos del cliente, **todos**, no solo los que generaron una decis
       "route": "/invoices",
       "verdict": "normal",
       "status": 200,
-      "decision_id": null
+      "decision_id": null,
+      "status": 200
     }
   ]
 }
@@ -227,7 +229,16 @@ Los últimos accesos del cliente, **todos**, no solo los que generaron una decis
 - **`verdict`:** `normal` (sin decisión, o `allow`) | `review` (`alert` o `step_up`) | `block`. Si la decisión fue marcada como normal, vuelve a `normal`.
 - **`status`:** el código HTTP con que respondió la app (o el middleware, `403` si lo rechazó). Con él, el panel distingue "pasó antes del bloqueo (200)" de "detenido (403)": se bloquea la petición siguiente, no la sospechosa, y el panel no lo oculta.
 - **`decision_id`:** la decisión que generó ese acceso, o `null`. El panel enlaza la fila con el detalle.
-- **Accesos posteriores a un bloqueo:** si la sesión tiene un `block` abierto, todos sus accesos desde el que disparó el bloqueo (respondidos con `200` antes del siguiente sondeo, o rechazados con `403`) salen como `block`, con el `decision_id` de ese bloqueo. Así el panel no muestra como `normal` al atacante ya bloqueado.
+- **Accesos posteriores a un bloqueo:** si hay un `block` abierto, salen como `block`, con el `decision_id` de ese bloqueo, todos los accesos desde el que lo disparó:
+  - los de la misma sesión;
+  - los de la misma IP, aunque vengan con otra sesión, si el bloqueo incluye la IP. Un bloqueo solo de sesión (red conocida, la IP es del dueño) no la cubre.
+
+  Así el panel no muestra como `normal` al atacante ya bloqueado.
+- **`status`:** el código HTTP que respondió la app.
+  - `200` en un `block`: la petición pasó antes de que el middleware recibiera la lista (se bloquea la petición siguiente).
+  - `403`: el middleware la rechazó.
+
+  Así el panel muestra cuál pasó y cuál se detuvo.
 - **La IP también cuenta:** si el bloqueo abierto incluye la IP, los accesos desde esa IP desde ese momento salen como `block` con ese `decision_id`, aunque vengan de otra sesión (el middleware ya los rechaza por IP). Si el bloqueo es solo de sesión (el acceso vino de una red conocida), no aplica.
 - **Lo que no incluye:** `user_agent` ni `bytes`; nunca cuerpos ni datos de clientes, igual que el contrato 1.
 

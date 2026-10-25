@@ -4,16 +4,17 @@ SEVERITY_VERDICT = {0: "normal", 1: "review", 2: "block"}
 
 # One query: the latest events, every decision that could explain each one, and the most severe
 # open one per event. Severity: open block 2, open alert/step_up 1, allow or marked normal 0.
-# A session's open block also covers its later events (the middleware rejected them with 403),
-# counted from the block's triggering access (the latest event behind it, as in contract 3).
+# An open block also covers later events of its session, and of its IP when the block includes
+# one (the middleware rejects both), counted from the block's triggering access (the latest
+# event behind it, as in contract 3). Session-only blocks have an empty ip and never match.
 ACTIVITY_SQL = """
 WITH recent AS (
-    SELECT id, ts, user_id, session_id, ip, device_id, method, route
+    SELECT id, ts, user_id, session_id, ip, device_id, method, route, status
     FROM events WHERE client_id = :client_id
     ORDER BY ts DESC, id DESC LIMIT :limit
 ),
 open_blocks AS (
-    SELECT d.id, d.seq, d.session_id, MAX(e.ts) AS from_ts
+    SELECT d.id, d.seq, d.session_id, d.ip, MAX(e.ts) AS from_ts
     FROM decisions d
     JOIN decision_events de ON de.client_id = d.client_id AND de.decision_id = d.id
     JOIN events e ON e.client_id = de.client_id AND e.id = de.event_id
@@ -31,7 +32,8 @@ candidates AS (
     JOIN decisions d ON d.client_id = de.client_id AND d.id = de.decision_id
     UNION ALL
     SELECT r.id, b.id, b.seq, 2
-    FROM recent r JOIN open_blocks b ON b.session_id = r.session_id AND r.ts >= b.from_ts
+    FROM recent r JOIN open_blocks b
+        ON (b.session_id = r.session_id OR (b.ip <> '' AND b.ip = r.ip)) AND r.ts >= b.from_ts
 ),
 ranked AS (
     SELECT event_id, decision_id, severity,
@@ -60,6 +62,8 @@ def list_activity(conn: sqlite3.Connection, client_id: str, limit: int) -> list[
             "route": row["route"],
             "verdict": SEVERITY_VERDICT[row["severity"]],
             "decision_id": row["decision_id"],
+            # Served (2xx) before the middleware picked up the block, or rejected (403) after it.
+            "status": row["status"],
         }
         for row in rows
     ]

@@ -15,6 +15,7 @@ ITEM_KEYS = {
     "route",
     "verdict",
     "decision_id",
+    "status",
 }
 
 
@@ -61,6 +62,7 @@ def test_items_have_exact_fields_and_no_user_agent_or_bytes(client):
         "route": "/invoices",
         "verdict": "block",
         "decision_id": first["decision_id"],
+        "status": 200,
     }
 
 
@@ -144,3 +146,32 @@ def test_requires_token(client):
     bad = client.get("/v1/activity", headers={"Authorization": "Bearer nope"})
     assert bad.status_code == 401
     assert bad.json() == {"error": "unauthorized"}
+
+
+def test_status_tells_served_from_rejected(client):
+    blocked_scenario(client)
+    post_events(client, [make_event("a4", NOW + timedelta(seconds=9), route="/invoices", status=403, **ATTACKER)])
+    items = by_id(activity(client))
+    assert items["a2"]["status"] == 200
+    assert items["a4"]["status"] == 403
+    assert items["a4"]["verdict"] == "block"
+
+
+def test_blocked_ip_with_another_session_is_block(client):
+    decision_id = blocked_scenario(client)
+    other = {**ATTACKER, "session_id": "s_evil_2", "device_id": "d_evil_2"}
+    post_events(client, [make_event("a5", NOW + timedelta(seconds=9), route="/login", status=403, **other)])
+    item = by_id(activity(client))["a5"]
+    assert item["verdict"] == "block"
+    assert item["decision_id"] == decision_id
+
+
+def test_session_only_block_does_not_cover_the_owner_ip(make_client):  # noqa: F811
+    client, _ = make_client(FakeJudge(decision="block", rationale="Script en la red del dueño."))
+    seed_owner_history(client)
+    post_events(client, [make_event("b1", NOW, route="/invoices", session_id="s_bot", device_id="d_bot")])
+    assert by_id(activity(client))["b1"]["verdict"] == "block"
+    post_events(client, [make_event("o9", NOW + timedelta(seconds=5), route="/invoices", session_id="s_owner_2")])
+    item = by_id(activity(client))["o9"]
+    assert item["verdict"] == "normal"
+    assert item["decision_id"] is None
