@@ -42,6 +42,10 @@ Lo que Maikol ya cerró en el motor queda en `main`: el contrato 11 (`45f965a`) 
    - el hilo de purga;
    - los endpoints del contrato 14: borrado por usuario y por proyecto, solo owner y con auditoría;
    - **eliminar `POST /v1/admin/reset`** y `test_reset.py`, y cambiar los scripts de ensayo para que usen el borrado por proyecto.
+5. **Registro abierto** (decisión 2, resuelta por Juan el 2026-10-25): `POST /v1/orgs` lo puede usar cualquier persona autenticada, no solo los correos de `VERIDIAN_ORG_CREATORS`. Lo necesita el registro en un paso de Maikol.
+   - Poner un límite de organizaciones por persona para evitar abusos (decidir el número).
+   - Actualizar el contrato 10 en `REPARTO.md` y los READMEs que describen `VERIDIAN_ORG_CREATORS`.
+   - **Tests:** una persona sin invitación crea su organización y queda `owner`; pasado el límite recibe un error claro.
 
 ### Dev B: notificaciones y operación
 
@@ -90,8 +94,14 @@ Lo que Maikol ya cerró en el motor queda en `main`: el contrato 11 (`45f965a`) 
 **Design system:** [Veridian](https://claude.ai/artifact/2JFynja7aQQqX1oJN6qmK2) (colores, tipografía, logo, botones). Es la base para la landing y el panel, y es libre de añadirle lo que haga falta: componentes, estados, patrones.
 
 **Pendiente:**
+- **Registro en un paso y primera clave** (pedido de Juan, 2026-10-25; lo más importante del backoffice). Cualquier persona tiene que poder registrarse sola y dejar Veridian configurado en su app:
+  1. **Entrar con Google** (OAuth; ya existe desde T3). Sin formulario de registro aparte.
+  2. **Primera vez, sin organización:** el panel pide solo el nombre de la empresa y crea la organización (con la persona como `owner`) y su primer proyecto. Hoy eso está cerrado a los correos de `VERIDIAN_ORG_CREATORS`; ver la tarea 5 de Carlos en el motor (y el mismo cambio en el motor falso).
+  3. **Crear la clave de API** (la página de claves ya existe, contrato 12) y mostrar el snippet con esa clave ya puesta, listo para copiar.
+  4. **Confirmar la conexión:** un estado «esperando el primer evento» que cambia a «conectado» cuando llega el primer acceso desde su app.
+  - **Tests:** una persona nueva entra con Google, crea su organización y su clave sin que nadie la invite; una persona con organización no vuelve a ver el paso 2.
 - **T6:** el panel para el webhook (contrato 13, ya en el motor real: `cb1b125`) y para borrar datos de un usuario o de un proyecto (contrato 14, depende de U13 de Carlos).
-- **T4, seguimiento:** una revisión visual, y la decisión abierta 2 (quién crea organizaciones; hoy, solo los correos de `VERIDIAN_ORG_CREATORS`).
+- **T4, seguimiento:** una revisión visual. La decisión abierta 2 (quién crea organizaciones) queda resuelta: cualquiera con cuenta (ver el registro).
 - **El snippet en el panel y la landing** (puntos 2 y 3 de "Mejorar la integración del SDK", más abajo): el texto explicativo, las pestañas Python / Node, el resaltado, el botón de copiar y la clave recién creada ya puesta. La API del SDK la define Carlos; coordinar el snippet con él.
 - **La clasificación de rutas en el panel:** mostrarla cuando esté lista la tarea 6 de Christian.
 
