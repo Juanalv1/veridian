@@ -23,7 +23,7 @@ Implement the engine units of `docs/DISENO-PRODUCTO.md` ("Plan de trabajo"): U2â
 
 | ID | Unit | Route | Status |
 |---|---|---|---|
-| U2+U3 | Numbered migrations (`schema_migrations`, `0001` = current schema) + `0002` `client_id` â†’ `project_id` | delegated (worktree; mapping + 2+ non-trivial files) | [ ] |
+| U2+U3 | Numbered migrations (`schema_migrations`, `0001` = current schema) + `0002` `client_id` â†’ `project_id` | delegated (worktree; mapping + 2+ non-trivial files) | [x] |
 | U4+U5 | Control-plane tables and repositories + hashed API keys, constant-time compare, 429 on failures, import of `VERIDIAN_TOKENS` | delegated (worktree) | [ ] |
 | U6 | Panel principal (service credential + actor + project), role guard per endpoint, contracts 10/11 | delegated (worktree) | [ ] |
 | U7+U8 | Per-project routes + isolation test battery | delegated (worktree) | [ ] |
@@ -43,3 +43,4 @@ Implement the engine units of `docs/DISENO-PRODUCTO.md` ("Plan de trabajo"): U2â
 ## Progress
 
 - 2026-10-25: document created. Suite at the start: 169 passed.
+- 2026-10-25: U2+U3 done in a worktree (not yet on `main`). U2 RED: 7 of 9 new tests failed (no runner); GREEN 178 passed, commit `0cadc10`. U3 RED: 5 of 8 new tests failed (no `project_id`); GREEN 186 passed, commit `2cd532d`. A legacy-schema database with demo rows migrates in place (backup `<db>.pre-0002`) and serves `/v1/blocklist`, `/v1/decisions`, `/v1/activity`, `/v1/summary`, `/v1/users` and `/v1/profile` identically to a fresh database with the same rows. Live Render check pending until merge.
