@@ -12,17 +12,17 @@
 >
 > Con una contraseña filtrada, un código 2FA robado o una sesión robada, el sistema deja pasar a otra persona como si fueras tú.
 
-**[Slide 3: Instalación]**
-
-> Instalarlo es una llamada en tu app: tu clave y cómo identificas al usuario.
->
-> Desde ahí, una IA lee tu API y clasifica cada ruta: crítica si mueve dinero, sensible si expone datos, normal el resto.
-
-**[Slide 4: Cómo funciona]**
+**[Slide 3: Cómo funciona]**
 
 > En cada acceso, Veridian lo compara con el perfil del usuario. Una regla detecta lo raro y la IA decide si es un robo.
 >
-> En una ruta crítica, el bloqueo llega antes de que la acción se ejecute. Es lo que van a ver ahora.
+> En una ruta crítica, el bloqueo llega antes de que la acción se ejecute.
+
+**[Slide 4: Instalación]**
+
+> Instalarlo es una llamada en tu app: tu clave y cómo identificas al usuario.
+>
+> Desde ahí, una IA lee tu API y clasifica cada ruta: crítica si mueve dinero, sensible si expone datos, normal el resto. Es lo que van a ver ahora.
 
 **[Demo: app y panel lado a lado]**
 
