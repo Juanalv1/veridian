@@ -14,9 +14,9 @@
 
 **[Slide 3: Cómo funciona]**
 
-> Veridian sí lo comprueba, en cada petición. Un filtro la compara con las rutas de tu API y con el comportamiento del usuario.
+> Veridian sí lo comprueba, en cada petición: la compara con el comportamiento de ese usuario y mira el impacto de la ruta a la que va.
 >
-> Si es normal, pasa directo. Si es rara, la IA decide: si es el dueño, la permite; si es otra persona, la bloquea, antes de que la acción ocurra.
+> Si encaja, pasa directo. Si no, la IA decide si es el dueño o es otra persona: al dueño lo deja pasar; a otra persona la bloquea, antes de que la acción ocurra.
 
 **[Slide 4: Instalación]**
 
