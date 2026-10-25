@@ -37,7 +37,6 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_TRUSTED_PROXIES` | `0` | Proxies that append to `X-Forwarded-For`; the auth failure limit counts per real client IP (the entry that many from the right). `0` uses the connection address |
 | `VERIDIAN_SYNC_MODEL` | `claude-haiku-5-5` | Model for the judge inside `POST /v1/check`, where the request waits |
 | `VERIDIAN_SYNC_JUDGE_TIMEOUT_S` | `10` | Seconds `POST /v1/check` waits for the judge on a gray deviation before its fallback decides |
-| `VERIDIAN_RESET_TOKEN` | empty | Secret that enables `POST /v1/admin/reset`, sent as header `X-Veridian-Reset-Token` (demo rehearsals only; empty = endpoint hidden) |
 | `VERIDIAN_SECRET_KEY` | empty | Fernet key (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) that encrypts webhook signing secrets at rest. Empty: webhooks cannot be configured (clear error); the engine still runs. Losing or changing it makes stored secrets unreadable: their deliveries fail until the endpoint is set again. Never log it |
 | `VERIDIAN_WEBHOOKS` | `on` | `off` stops the background webhook sender (block notifications stay queued in `notifications`) |
 | `VERIDIAN_PANEL_URL` | empty | Panel base URL, used for `panel_url` in the webhook payload |
@@ -111,9 +110,9 @@ It prints the blocklist (attacker session and IP); its read of the decisions now
 
 ## Demo rehearsal
 
-With `VERIDIAN_RESET_TOKEN` set on the engine (otherwise, or with a wrong secret, the endpoint answers 404), each rehearsal starts from a clean client. The scripts read `VERIDIAN_BASE_URL` and `VERIDIAN_TOKEN` (and, for the reset, `VERIDIAN_RESET_TOKEN`) from the environment or a `.env`, and never print the tokens.
+Each rehearsal starts from a clean project with `py -3.12 engine/scripts/prepare_demo.py` (see its docstring): `--calibrar` once on the event wifi, then the normal mode before each run. It erases the project's data through `DELETE /v1/projects/{id}/data` with the panel credential (the rehearsal reset `POST /v1/admin/reset` was removed with U13), seeds the history and checks the profile and the empty blocklist. The scripts below are the manual steps it replaces.
 
-1. Reset: `py -3.12 engine/scripts/reset_client.py` deletes this token's client events and decisions (so its profiles) and empties its blocklist, keeping the version moving forward. It asks you to type the base URL, or pass `--yes`.
+1. Erase: `DELETE /v1/projects/{id}/data` (owner, panel credential), or the panel's data page.
 2. Seed the presenter's history with the event wifi IP measured that morning (see `docs/DEMO.md`), every day including weekends, at the demo hours in UTC:
 
    ```bash

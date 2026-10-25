@@ -33,10 +33,6 @@ services:
       # rotating it dodged the auth failure limit). The demo app measured 3 (edge/README.md).
       - key: VERIDIAN_TRUSTED_PROXIES
         value: "2"
-      # Demo rehearsals only: secret that enables POST /v1/admin/reset (header X-Veridian-Reset-Token).
-      # Leave unset for real customers. Replaced by DELETE /v1/projects/{id}/data (U13).
-      - key: VERIDIAN_RESET_TOKEN
-        sync: false
       # Service credential of the panel (same value as the panel's VERIDIAN_PANEL_TOKEN). Unset: no panel.
       - key: VERIDIAN_PANEL_TOKEN
         sync: false

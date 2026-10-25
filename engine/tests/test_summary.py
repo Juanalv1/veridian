@@ -181,19 +181,6 @@ def test_reviewed_by_ai_follows_the_judged_event_ts(judged_client):
     assert around.json()["reviewed_by_ai"] == 1
 
 
-def test_reset_wipes_ai_judgment_records(judged_client):
-    judge = FakeJudge(decision="block")
-    client = judged_client(judge, reset_token="rehearsal-secret")
-    seed_owner_history(client)
-    attack(client)
-    assert today(client)["reviewed_by_ai"] == 1
-
-    assert client.post("/v1/admin/reset", headers={**AUTH_A, "X-Veridian-Reset-Token": "rehearsal-secret"}).status_code == 200
-
-    assert today(client) == {**today(client), "accesses": 0, "reviewed_by_ai": 0, "decisions": EMPTY_DECISIONS}
-    assert today(client)["blocks_active"] == NO_BLOCKS
-
-
 def test_summary_is_isolated_per_client(client):
     seed_owner_history(client)
     attack(client)

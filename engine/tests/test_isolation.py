@@ -58,7 +58,6 @@ OPERATIONS = [
     ("GET", "/v1/activity", "own", None),
     ("POST", "/v1/decisions/{decision_id}/normal", "foreign", None),
     ("POST", "/v1/decisions/{decision_id}/normal", "own", None),
-    ("POST", "/v1/admin/reset", "sdk", None),
     ("POST", "/v1/people/login", "own", {"google_sub": "sub-intruder", "email": CREATOR, "name": "Intruder"}),
     ("GET", "/v1/me/orgs", "own", None),
     ("POST", "/v1/orgs", "own", {"name": "Second"}),

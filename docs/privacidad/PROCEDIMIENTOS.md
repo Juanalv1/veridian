@@ -42,6 +42,6 @@ Contenido mínimo del aviso: qué pasó, qué datos y proyectos, qué se hizo, a
 
 ## Mientras tanto (hoy)
 
-- El único borrado es `reset_client` (`engine/veridian_engine/decisions.py:140-149`) vía `POST /v1/admin/reset`, que borra todo un cliente y solo existe con `VERIDIAN_RESET_TOKEN` definido y el header `X-Veridian-Reset-Token`. Para un usuario concreto no hay mecanismo; requeriría editar la base a mano, y no se documenta aquí por ser propenso a errores.
+- **Actualizado con U13 (2026-10-25):** el reinicio de ensayos se eliminó. Borrar un usuario: `DELETE /v1/projects/{id}/users/{user_id}` (admin+); borrar los datos de un proyecto: `DELETE /v1/projects/{id}/data` (owner). Los dos quedan en la auditoría.
 - No hay registro de auditoría ni retención automática (`DATOS.md`).
-- Antes de aceptar un cliente real: dejar `VERIDIAN_RESET_TOKEN` sin definir (T1 de `odd/tasks/edge-product-accounts.md`, bloqueado hasta que exista U13).
+- `VERIDIAN_RESET_TOKEN` ya no existe: si sigue definido en Render, borrarlo (no tiene efecto).

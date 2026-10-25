@@ -141,15 +141,3 @@ def blocklist(conn: sqlite3.Connection, project_id: str) -> dict:
         # A session-only block (the owner's own network) stores no ip.
         "ips": sorted({row["ip"] for row in rows if row["ip"]}),
     }
-
-
-def reset_client(conn: sqlite3.Connection, project_id: str) -> int:
-    """Delete the client's events and decisions (the profile is learned from them).
-
-    The blocklist ends empty, and its version moves forward instead of back to 0, so a
-    middleware polling with an older version gets the empty list, not a stale 304.
-    """
-    for table in ("decision_events", "decisions", "events", "rate_spike_judgments", "ai_judgments"):
-        conn.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
-    bump_version(conn, project_id)
-    return current_version(conn, project_id)

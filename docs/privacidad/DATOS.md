@@ -4,7 +4,7 @@ Estado a 2026-10-25. "Hoy" es lo que hace el código; "planeado" es el diseño (
 
 ## Retención hoy
 
-**No hay retención ni borrado automático.** Ningún dato se borra con el tiempo. La única forma de borrar es `reset_client` (`engine/veridian_engine/decisions.py:140-149`), expuesta en `POST /v1/admin/reset` solo si `VERIDIAN_RESET_TOKEN` está definido y se envía en `X-Veridian-Reset-Token` (secreto de ensayos de la demo, `sync: false` en `render.yaml`). Borra todo un cliente, no un usuario.
+**Actualizado con U13 (2026-10-25):** el reinicio de ensayos (`POST /v1/admin/reset`, `VERIDIAN_RESET_TOKEN`) se eliminó. Borrar se hace con los endpoints del contrato 14 (`DELETE /v1/projects/{id}/users/{user_id}` y `DELETE /v1/projects/{id}/data`) y el hilo de retención (`engine/veridian_engine/retention.py`, `retention_worker.py`). El resto de esta sección describe el estado anterior y queda como historia hasta que se revise el documento.
 
 ## Tablas del motor (`engine/veridian_engine/db.py`)
 
@@ -45,7 +45,7 @@ La cookie la pone la app del cliente, no Veridian: el cliente debe declararla en
 | Valor por defecto | No aplica | 90 días, **provisional y sin medición**; mínimo sin fijar (decisión abierta 5) |
 | Purga automática | No existe | Hilo diario en lotes: borra `events` y `decisions` antiguos (salvo bloqueo abierto) y sus filas auxiliares; registra en `AuditLog` solo el conteo |
 | Borrado por usuario | No existe | `DELETE /v1/projects/{id}/users/{user_id}`: borra eventos, decisiones y filas auxiliares; sube la versión del blocklist; audita con el hash del `user_id` |
-| Borrado de proyecto | Solo `reset_client` (ensayos) | `DELETE /v1/projects/{id}/data` (owner); proyecto con `deleted_at` se purga tras un plazo de gracia configurable (plazo sin definir) |
+| Borrado de proyecto | `DELETE /v1/projects/{id}/data` (U13; el reset de ensayos se eliminó) | `DELETE /v1/projects/{id}/data` (owner); proyecto con `deleted_at` se purga tras un plazo de gracia configurable (plazo sin definir) |
 | Auditoría | No existe | Se conserva mientras exista el proyecto, con hash del `user_id` (decisión abierta 12) |
 | Copias de seguridad | **No verificado** si el disco de Render tiene copias ni cuánto duran | Por definir: un borrado no alcanza copias que existan |
 

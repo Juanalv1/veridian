@@ -1,4 +1,3 @@
-import hmac
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -14,7 +13,7 @@ from .check import CheckRequest, check_event
 from .control_api import build_router, install_error_handlers
 from .control_plane.legacy import seed_legacy
 from .control_plane.repository import record_audit
-from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
+from .decisions import blocklist, current_version, list_decisions, mark_normal
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
 from .notifications.email_sender import build_email_sender
@@ -201,21 +200,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if result is None:
             return JSONResponse(status_code=404, content={"error": "not_found"})
         return result
-
-    @app.post("/v1/admin/reset")
-    def post_reset(request: Request):
-        """Rehearsal-only wipe of the caller's data. Hidden (404 before auth) unless a reset secret
-        is configured and sent in X-Veridian-Reset-Token."""
-        sent = request.headers.get("x-veridian-reset-token", "")
-        if not settings.reset_token or not hmac.compare_digest(sent.encode(), settings.reset_token.encode()):
-            return JSONResponse(status_code=404, content={"error": "not_found"})
-        caller: Caller = caller_from_request(request)
-        if caller.kind != "sdk":
-            raise Forbidden()
-        project_id = caller.project_id
-        with write_lock, db.connect(settings.db_path) as conn:
-            version = reset_client(conn, project_id)
-        return {"reset": True, "version": version}
 
     @app.get("/v1/blocklist")
     def get_blocklist(since: int | None = None, project_id: str = Depends(shared_project)):

@@ -346,11 +346,9 @@ Respuesta `200`:
 - **Timeout del middleware:** 12 s. Si el motor no responde, falla o da timeout, la petición **pasa** (*fail-open*): si Veridian se cae, la app sigue funcionando; esas rutas quedan sin protección mientras tanto.
 - **Latencia:** el dueño legítimo casi nunca espera (sin desvío no hay IA). Solo espera lo sospechoso y crítico.
 
-### Solo para ensayos: reinicio
+### Ensayos: borrado del proyecto
 
-`POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_RESET_TOKEN` definido en el motor y el header `X-Veridian-Reset-Token` con ese valor (además del Bearer normal); si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
-
-El reinicio sigue usando la clave `sdk` del proyecto (no la credencial del panel).
+El reinicio de ensayos (`POST /v1/admin/reset` y `VERIDIAN_RESET_TOKEN`) se eliminó con U13. Cada ensayo empieza con `DELETE /v1/projects/{id}/data` (contrato 14, solo `owner`, credencial del panel), que usa `engine/scripts/prepare_demo.py`. Igual que el reinicio, la `version` de la lista de bloqueos sube en vez de volver a 0, así el middleware recibe la lista vacía y no un `304`.
 
 ### 10. Personas, organizaciones y proyectos: panel → motor
 

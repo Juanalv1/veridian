@@ -22,7 +22,7 @@
    - **Decisión (2026-10-25):** debe ser automático. Tarea 6 del Dev B en `HANDOFF.md`.
 6. **Historial sembrado** para la demo.
    - Herramientas listas:
-     - `engine/scripts/reset_client.py` reinicia los datos del cliente;
+     - `engine/scripts/prepare_demo.py` borra los datos del proyecto (`DELETE /v1/projects/{id}/data`), siembra y verifica; el reset se eliminó con U13;
      - `engine/scripts/seed_demo_history.py` carga el historial.
    - Falta medir la IP del wifi del evento y el `device_id` del presentador.
 
