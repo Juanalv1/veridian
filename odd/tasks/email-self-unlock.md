@@ -31,7 +31,7 @@ Mode: on. Runners: `uv run pytest -q` in `edge/`; engine suite in `engine/` (its
 - [x] T2 Engine: project brand fields + `self_unlock_enabled` with `PATCH`, logo URL validated like the webhook URL. Route: delegated (writer A).
 - [x] T3 Engine: `Mailer.send` with `html`; branded template; email queued on each `block` (same outbox as webhook/U17), 15 min limit; token issue/hash/expiry. Route: delegated (writer A).
 - [x] T4 Engine: token endpoints (read for the page, unlock `POST`), audit `decision.self_unlocked`. Route: delegated (writer A).
-- [ ] T5 Engine: `ResendMailer` behind env config; Render configured. Route: delegated (writer A) + inline Render config.
+- [x] T5 Engine: `ResendMailer` behind env config; Render configured. Route: delegated (writer A) + inline Render config.
 - [ ] T6 Panel + fake engine: brand settings screen, public confirmation page (`GET` shows, `POST` unlocks), audit label "Desbloqueado por el usuario". Route: delegated (writer B).
 - [ ] T7 SDKs (Python and Node): `user_email` option; block message when self-unlock applies. Route: delegated (writer B).
 
@@ -47,3 +47,4 @@ Created 2026-10-25.
 - T2 done (commit a9d221f, migration 0013): suite 720 -> 739 passed. Project JSON gains the 5 brand fields and self_unlock_enabled; PATCH clears a brand field with null or blank. Route: delegated (writer A).
 - T3 done (commit 6406f40, migration 0014): suite 739 -> 764 passed. Queued in create_decision (single place for rule and AI blocks, events and check paths); skipped in observe projects; address read from user_contact at send time (notifications.recipient stays NULL); token issued at send time. Blocklist gains optional `self_unlock_sessions`, check gains optional `self_unlock: true`. Route: delegated (writer A).
 - T4 done (commit 4e37bf0, no migration): suite 764 -> 781 passed. `GET|POST /v1/self-unlock` (panel credential, token in header X-Veridian-Unlock-Token); GET read-only; POST reuses mark_normal and audits decision.self_unlocked (actor_kind system). Route: delegated (writer A).
+- T5 engine side done (commit 0f29850, no migration): suite 781 -> 795 passed. ResendMailer + mailer_from_env, env vars documented in engine/README.md; HTTP mocked. Render env vars (RESEND_API_KEY, VERIDIAN_MAIL_FROM, optionally VERIDIAN_PANEL_URL) remain inline for the lead. Route: delegated (writer A).
