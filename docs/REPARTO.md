@@ -136,7 +136,15 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
       },
       "rationale": "Red y dispositivo nunca vistos, y fue directo a cambiar la cuenta bancaria, algo que este usuario nunca hace.",
       "event_ids": ["e_01J9ZK3T"],
-      "status": "open"
+      "status": "open",
+      "access": {
+        "ts": "2026-10-26T10:14:03Z",
+        "ip": "203.0.113.9",
+        "device_id": "d_77a",
+        "session_id": "s_8f1",
+        "method": "POST",
+        "route": "/payouts/bank-account"
+      }
     }
   ]
 }
@@ -144,6 +152,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 
 - **`decision`:** `allow` | `alert` | `step_up` | `block`. Para la demo bastan `allow`, `alert` y `block`.
 - **`status`:** en qué quedó la decisión, no qué se decidió. `open` (sigue en pie; en un `block`, el bloqueo está activo) | `marked_normal` (alguien la marcó como normal; en un `block`, el bloqueo se levantó). Así el panel distingue un bloqueo activo de uno levantado. Se pueden sumar valores más adelante (por ejemplo `expired`); el panel trata un valor desconocido como `open`.
+- **`access`:** el acceso que disparó la decisión (los campos del evento de `event_ids`, sin `user_agent` ni `bytes`). El panel lo compara lado a lado con el perfil: "lo normal para el usuario" frente a "este acceso". Es opcional: si falta, o falta un campo, el panel muestra "—".
 - **Orden:** de la más nueva a la más vieja.
 - **Feedback:** `POST /v1/decisions/{id}/normal` marca la decisión como uso normal y lo aprende el perfil. Si había un bloqueo, quita su sesión y su IP de la lista y sube la `version`.
 
