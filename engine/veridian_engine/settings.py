@@ -30,7 +30,8 @@ def parse_tokens(raw: str) -> dict[str, str]:
 @dataclass
 class Settings:
     db_path: str
-    tokens: dict[str, str]  # token -> project_id
+    # token -> project_id. Only imported at startup as legacy API keys; auth reads api_key.
+    tokens: dict[str, str]
     routes_file: str = str(DEFAULT_ROUTES_FILE)
     learn_delay_min: int = 10
     # A session spikes above max(rate_factor x the user's usual max per minute, rate_floor).
@@ -46,6 +47,11 @@ class Settings:
     sync_judge_timeout_s: float = 10.0
     # Demo rehearsals only: enables POST /v1/admin/reset. Keep off for real customers.
     allow_reset: bool = False
+    # Failed authentications per source (IP, key prefix) within the window before 429.
+    # Unmeasured starting points: tune them against real traffic.
+    auth_max_failures_per_ip: int = 30
+    auth_max_failures_per_prefix: int = 10
+    auth_failure_window_s: float = 60.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -66,6 +72,9 @@ class Settings:
             sync_judge=default_sync_judge(),
             sync_judge_timeout_s=float(os.environ.get("VERIDIAN_SYNC_JUDGE_TIMEOUT_S", "10")),
             allow_reset=os.environ.get("VERIDIAN_ALLOW_RESET", "").strip().lower() == "true",
+            auth_max_failures_per_ip=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_IP", "30")),
+            auth_max_failures_per_prefix=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_PREFIX", "10")),
+            auth_failure_window_s=float(os.environ.get("VERIDIAN_AUTH_FAILURE_WINDOW_S", "60")),
         )
 
 

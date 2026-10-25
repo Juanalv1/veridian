@@ -41,9 +41,10 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 ### Reglas generales
 
 - **Autenticación en todas las rutas:** `Authorization: Bearer <token del cliente>`. Cada cliente está aislado.
-- **Token de desarrollo:** el middleware lo lee de la variable `VERIDIAN_TOKEN`, y el motor acepta los tokens que tenga configurados. Nunca se sube al repo.
+- **Token de desarrollo:** el middleware lo lee de la variable `VERIDIAN_TOKEN`. El motor importa al arrancar cada token de `VERIDIAN_TOKENS` como clave de API (solo guarda su hash) y autentica contra la tabla `api_key`; el mismo token sigue funcionando. Nunca se sube al repo.
 - **Errores:**
-  - `401 {"error": "unauthorized"}` si falta el token o no es válido;
+  - `401 {"error": "unauthorized"}` si falta el token o no es válido; es idéntico para clave inexistente, revocada o de un proyecto eliminado;
+  - `429 {"error": "rate_limited"}` con cabecera `Retry-After` (segundos) tras demasiados fallos de autenticación desde la misma IP o con el mismo prefijo de clave; se aplica antes de validar la clave;
   - `422` si el cuerpo no cumple el contrato.
 - **Fechas:** `ts` siempre en UTC, ISO 8601 con `Z`.
 

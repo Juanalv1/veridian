@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .activity import list_activity
-from .auth import Unauthorized, project_id_from_request
+from .auth import ApiKeyAuth, RateLimited, Unauthorized, project_id_from_request
 from .check import CheckRequest, check_event
 from .control_plane.legacy import seed_legacy
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
@@ -33,11 +33,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Veridian engine")
     app.state.settings = settings
     app.state.route_classes = route_classes
+    app.state.auth = ApiKeyAuth(settings)
     write_lock = threading.Lock()  # single process: serialize writes that read-then-write
 
     @app.exception_handler(Unauthorized)
     async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONResponse:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
+
+    @app.exception_handler(RateLimited)
+    async def rate_limited_handler(request: Request, exc: RateLimited) -> JSONResponse:
+        return JSONResponse(
+            status_code=429, content={"error": "rate_limited"}, headers={"Retry-After": exc.retry_after_header}
+        )
 
     @app.get("/health")
     def health() -> dict:
