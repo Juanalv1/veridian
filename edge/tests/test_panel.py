@@ -31,6 +31,16 @@ def blocked_setup(seed=SEED):
     return engine, panel
 
 
+def expiring_clock():
+    """Every read finds the panel's engine cache expired: for tests that change the engine between page loads."""
+    now = [0.0]
+
+    def clock():
+        now[0] += 60
+        return now[0]
+    return clock
+
+
 def decision_id(engine):
     return TestClient(engine).get("/v1/decisions", headers=AUTH).json()["decisions"][0]["id"]
 
@@ -107,7 +117,7 @@ def test_open_block_renders_mark_normal_button_and_consequence():
     assert "Esto era normal" in r.text
     assert f'action="/decisions/{decision_id(engine)}/normal"' in r.text
     assert 'method="post"' in r.text
-    assert "La sesión y la IP 203.0.113.9 no pueden entrar. El dueño sigue trabajando." in r.text
+    assert "La sesión y la IP 203.0.113.9 no pueden entrar." in r.text
 
 
 def test_open_non_block_says_it_will_join_the_profile():
@@ -571,7 +581,8 @@ def test_mark_normal_is_hidden_for_allow_decisions():
 def test_end_to_end_owner_then_attacker_then_rejections_then_mark_normal():
     engine = create_engine(tokens={TOKEN}, seed=SEED, learn_delay=0)
     api = TestClient(engine)
-    panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine)), follow_redirects=False)
+    panel = TestClient(create_app("http://engine", TOKEN, http_client=engine_client(engine), clock=expiring_clock()),
+                       follow_redirects=False)
     api.post("/v1/events", json={"events": [event(id="e_own", ip="190.202.14.7", session_id="s_own",
                                                   method="GET", route="/invoices")]}, headers=AUTH)
     html = panel.get("/").text
@@ -680,12 +691,12 @@ def block_dec(ip="203.0.113.9", **over):
 
 def test_consequence_names_the_ip_only_when_it_is_on_the_blocklist():
     html = stub_panel([block_dec()], blocklist={"sessions": ["s_x"], "ips": ["203.0.113.9"]}).get("/").text
-    assert "La sesión y la IP 203.0.113.9 no pueden entrar. El dueño sigue trabajando." in html
+    assert "La sesión y la IP 203.0.113.9 no pueden entrar." in html
 
 
 def test_session_only_block_does_not_claim_the_ip_is_blocked():
     html = stub_panel([block_dec("190.202.14.7")], blocklist={"sessions": ["s_x"], "ips": ["203.0.113.9"]}).get("/").text
-    assert "La sesión no puede seguir. La IP es la del dueño: no se bloquea." in html
+    assert "La sesión no puede seguir. La IP es la del dueño y no se bloquea." in html
     assert "no pueden entrar" not in html
 
 

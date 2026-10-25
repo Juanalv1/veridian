@@ -82,9 +82,9 @@ def _block_effect(access_ip: str | None, listed_ips: set[str] | None) -> str:
     if listed_ips is None:
         return "La sesión está bloqueada."
     if access_ip and access_ip in listed_ips:
-        return f"La sesión y la IP {access_ip} no pueden entrar. El dueño sigue trabajando."
+        return f"La sesión y la IP {access_ip} no pueden entrar."
     if access_ip:
-        return "La sesión no puede seguir. La IP es la del dueño: no se bloquea."
+        return "La sesión no puede seguir. La IP es la del dueño y no se bloquea."
     return "La sesión no puede seguir."
 
 
