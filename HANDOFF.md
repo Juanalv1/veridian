@@ -29,6 +29,7 @@ Lo que Maikol cerró en el motor queda en `main`, con tests y documentado en `RE
 
 Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Suite: 665 passed.
 3. **SDK de npm (`sdk/node/`, plan `odd/tasks/sdk-node.md`):** T1 hecho (`264e741`): paquete `veridian-sdk` (JavaScript ESM sin dependencias), configuración, errores al arrancar, IP del cliente, cookie `vrd_did` y sesión detectada.
+4. **SDK de npm, T2 hecho (`a79ac65`):** núcleo con lotes cada ~2 s en segundo plano (timers `unref`), consulta de `/v1/blocklist` con `since`, `403` a lo bloqueado y pasar ante `401`/`429`; 54 tests.
 
 ### Carlos Navas: motor (acceso, rutas y datos)
 

@@ -27,7 +27,7 @@ Mode: on (project convention, `INIT.md`). Runner: `node --test` in `sdk/node` (N
 ## Tasks
 
 - [x] T1 Package scaffold, config/env defaults and startup errors, client IP and device cookie. Route: delegated (single writer). Evidence: 264e741, 29 tests pass (RED first: modules missing).
-- [ ] T2 Event batching, blocklist polling and enforcement, 401/429 pass-through. Route: delegated.
+- [x] T2 Event batching, blocklist polling and enforcement, 401/429 pass-through. Route: delegated (single writer). Evidence: a79ac65, 54 tests pass in `sdk/node` (RED first: `src/core.js` missing), against a local fake HTTP engine.
 - [ ] T3 Critical routes + `POST /v1/check` pre-check, route report at startup, Express and Next.js adapters. Route: delegated.
 - [ ] T4 README quickstart run as-is against the fake engine; docs. Route: delegated.
 
