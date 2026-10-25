@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: Demo invoicing startup
+  version: "1.0"
+paths:
+  /login:
+    post:
+      operationId: login
+      summary: Log in with email and password
+      tags: [auth]
+  /invoices:
+    parameters:
+      - name: page
+        in: query
+        schema: {type: integer}
+    get:
+      operationId: listInvoices
+      summary: List invoices
+      tags: [invoices]
+  /invoices/{id}:
+    get:
+      operationId: getInvoice
+      summary: Get one invoice
+      description: Returns invoice details including customer name and tax id.
+  /invoices/export:
+    get:
+      operationId: exportInvoices
+      summary: Export all invoices as CSV
+  /payouts/bank-account:
+    summary: Payout destination
+    put:
+      operationId: updateBankAccount
+      summary: Change the bank account that receives payouts
+    post:
+      operationId: createBankAccount
+      summary: Add a bank account for payouts
+  /users:
+    post:
+      operationId: createUser
+      summary: Invite a user and assign a role
+x-internal: true
