@@ -79,10 +79,13 @@ def test_burst_below_the_floor_is_not_a_spike(judged_client):
 
 
 def test_user_with_a_high_usual_rate_does_not_spike(judged_client):
-    # Seeded without a judge: an unjudged spike leaves no decision, so all 40 are learned.
+    # A burst delivered late is still a burst (its session never vouches for itself): the rule
+    # blocks it, and marking it normal teaches the profile the owner's real pace.
     seeder = judged_client(None)
     seed_owner_history(seeder)
     post_events(seeder, burst("fast", 40, days_ago(2, hour=9), session_id="s_fast_old"))
+    [old_burst] = decisions(seeder)
+    seeder.post(f"/v1/decisions/{old_burst['id']}/normal", headers=as_panel(seeder, AUTH_A))
     judge = FakeJudge()
     client = judged_client(judge)
     profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()
@@ -90,7 +93,7 @@ def test_user_with_a_high_usual_rate_does_not_spike(judged_client):
 
     post_events(client, burst("b", 50, NOW))
     assert judge.calls == []
-    assert decisions(client) == []
+    assert [d["id"] for d in decisions(client)] == [old_burst["id"]]
 
 
 def test_rate_settings_are_injectable(judged_client):

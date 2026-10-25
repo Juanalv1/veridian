@@ -347,6 +347,7 @@ class ClientState:
                 "signals": {
                     "new_network": True,
                     "new_device": event.device_id not in self.profile(event.user_id).devices,
+                    "method": event.method,
                     "route": event.route,
                     "route_class": route_class,
                     "route_never_used": True,

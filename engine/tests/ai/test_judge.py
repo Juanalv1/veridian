@@ -158,3 +158,12 @@ def test_untrusted_text_cannot_close_the_data_block():
     judge(signals, PROFILE, client=client)
     prompt = user_prompt(client)
     assert prompt.count(DATA_CLOSE) == 1
+
+
+def test_the_prompt_keeps_reads_of_sensitive_routes_apart_from_changes():
+    """Found by the behavior evaluation (L7): the owner abroad, with their own device, only looking
+    at the payout account was blocked 3 of 3 times; the judge read the sensitive route as critical."""
+    from veridian_engine.ai.judge import SYSTEM_PROMPT
+
+    assert "Do not upgrade the class you receive" in SYSTEM_PROMPT
+    assert "A GET reads" in SYSTEM_PROMPT

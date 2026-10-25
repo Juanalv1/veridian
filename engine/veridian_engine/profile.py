@@ -15,7 +15,8 @@ from .route_classes import route_key
 # taints: it is the owner on a rotating IP.
 LEARNED_EVENTS_SQL = """
 SELECT e.id, e.ts, e.session_id, e.ip, e.device_id, e.method, e.route FROM events e
-WHERE e.project_id = :project_id AND e.user_id = :user_id AND (
+WHERE e.project_id = :project_id AND e.user_id = :user_id
+  AND NOT (e.session_id = :own_session AND e.session_id <> '' AND e.ts > :own_from AND e.ts <= :own_until) AND (
     (e.ts <= :cutoff AND NOT EXISTS (
         SELECT 1 FROM decision_events de
         JOIN decisions d ON d.project_id = de.project_id AND d.id = de.decision_id
@@ -74,11 +75,18 @@ class Profile:
 
 
 def build_profile(
-    conn: sqlite3.Connection, project_id: str, user_id: str, now: datetime, learn_delay_min: int
+    conn: sqlite3.Connection, project_id: str, user_id: str, now: datetime, learn_delay_min: int,
+    own_session: str = "", own_ts: datetime | None = None,
 ) -> Profile:
+    """`own_session` and `own_ts` are the event being judged: its session's events within the learn
+    delay of `own_ts` (before or after) are left out, so a session delivered late (the SDK flushing
+    after an outage) never vouches for itself. In real time those events are not learned anyway."""
     cutoff = format_ts(now - timedelta(minutes=learn_delay_min))
+    delay, own = timedelta(minutes=learn_delay_min), own_ts or now
     profile = Profile(user_id)
-    rows = conn.execute(LEARNED_EVENTS_SQL, {"project_id": project_id, "user_id": user_id, "cutoff": cutoff})
+    rows = conn.execute(LEARNED_EVENTS_SQL, {"project_id": project_id, "user_id": user_id, "cutoff": cutoff,
+                                             "own_session": own_session, "own_from": format_ts(own - delay),
+                                             "own_until": format_ts(own + delay)})
     sessions: dict[str, list] = {}
     for row in rows:
         sessions.setdefault(row["session_id"], []).append(row)

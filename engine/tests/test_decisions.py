@@ -50,6 +50,7 @@ def test_acceptance_scenario(client):
     assert decision["signals"] == {
         "new_network": True,
         "new_device": True,
+        "method": "POST",
         "route": "/payouts/bank-account",
         "route_class": "critical",
         "route_never_used": True,
@@ -147,6 +148,19 @@ def test_the_attacker_returning_from_the_blocked_ip_in_a_new_session_is_not_lear
     profile = profile_of(client)
     assert "203.0.113.0/24" not in profile["networks"]
     assert "d_evil" not in profile["devices"]
+
+
+def test_an_attack_delivered_late_is_judged_against_the_profile_of_its_own_time(client, clock):
+    """Found by the behavior evaluation (A7): events that arrive after the learn delay (the SDK
+    flushing its queue after an engine outage, when it failed open) learned their own session
+    before being judged, so the attacker's network and device looked known."""
+    seed_owner_history(client)
+    clock.now = NOW + timedelta(minutes=15)
+    attack(client)  # the events still carry their own time, NOW
+
+    [decision] = decisions(client)
+    assert decision["decision"] == "block"
+    assert blocklist(client).json()["sessions"] == ["s_evil"]
 
 
 def test_the_owner_session_in_parallel_keeps_being_learned(client, clock):

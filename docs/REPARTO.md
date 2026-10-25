@@ -138,6 +138,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
       "signals": {
         "new_network": true,
         "new_device": true,
+        "method": "POST",
         "route": "/payouts/bank-account",
         "route_class": "critical",
         "route_never_used": true,

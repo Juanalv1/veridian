@@ -70,7 +70,10 @@ def evaluate_event(
         return None
 
     route_class = route_classes.classify(event.method, event.route)
-    profile = build_profile(conn, project_id, event.user_id, settings.clock(), settings.learn_delay_min)
+    # A session never vouches for itself: events delivered late (the SDK flushing after an outage)
+    # would otherwise be learned by the time they are judged.
+    profile = build_profile(conn, project_id, event.user_id, settings.clock(), settings.learn_delay_min,
+                            own_session=event.session_id, own_ts=event.ts)
     key = route_key(event.method, event.route)
     network = network_of(str(event.ip))
     new_network = network not in profile.networks
@@ -95,6 +98,7 @@ def evaluate_event(
     signals = {
         "new_network": new_network,
         "new_device": new_device,
+        "method": event.method,
         "route": event.route,
         "route_class": route_class,
         "route_never_used": route_never_used,

@@ -20,6 +20,7 @@ Envío único: `_data_block` serializa `{"signals": ..., "profile": ...}` como J
 | Campo | Contenido |
 |---|---|
 | `new_network`, `new_device`, `route_never_used`, `rate_spike`, `new_transition`, `unusual_hour` | Booleanos |
+| `method` | Método HTTP del evento (`GET`, `POST`…) |
 | `route` | Ruta del evento (plantilla si el emisor es el SDK) |
 | `route_class` | `critical`, `sensitive` o `normal` |
 | `path` | Rutas de todos los eventos de la sesión hasta el evento actual (`rules.py:94`; `session_events`, `rules.py:35-40`) |
