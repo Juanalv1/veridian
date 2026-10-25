@@ -129,3 +129,27 @@ async def test_stylesheet_is_served_and_never_reported_as_an_event():
         assert "set-cookie" not in r.headers
         assert 'href="/static/app.css?v=' in (await c.get("/login")).text
     assert list(app.queue) == []
+
+
+async def test_login_form_hints_for_password_managers_and_submit_feedback():
+    async with browser(make_demo()) as c:
+        html = (await c.get("/login")).text
+        assert 'name="email" type="email" autocomplete="username"' in html
+        assert 'name="password" type="password" autocomplete="current-password"' in html
+        assert 'data-busy="Entrando…"' in html
+
+
+async def test_bank_account_number_is_numeric_with_pattern_and_hint():
+    async with browser(make_demo()) as c:
+        await login(c)
+        html = (await c.get("/payouts/bank-account")).text
+        assert 'inputmode="numeric"' in html and 'pattern="[0-9]{10,20}"' in html
+        assert 'autocomplete="off"' in html and 'title="' in html
+        assert 'data-busy="Guardando…"' in html
+
+
+async def test_demo_serves_busy_script_and_css_has_focus_and_press_states():
+    async with browser(make_demo()) as c:
+        css = (await c.get("/static/app.css")).text
+        assert ":focus-visible" in css and "scale(0.97)" in css and "prefers-reduced-motion" in css
+        assert (await c.get("/static/busy.js")).status_code == 200

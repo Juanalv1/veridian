@@ -402,3 +402,22 @@ def test_panel_serves_its_stylesheet_and_script():
     page = panel.get("/").text
     assert '<link rel="stylesheet" href="/static/panel.css?v=' in page
     assert 'src="/static/panel.js?v=' in page
+
+
+def test_panel_loads_tokens_before_panel_css_and_design_fonts():
+    _, panel = blocked_setup()
+    page = panel.get("/").text
+    assert '/static/tokens.css?v=' in page
+    assert page.index("tokens.css") < page.index("panel.css")
+    assert "family=Archivo" in page and "Urbanist" not in page and "JetBrains" not in page
+    assert panel.get("/static/tokens.css").status_code == 200
+
+
+def test_mark_normal_is_the_primary_button_and_disables_itself_in_flight():
+    engine, panel = blocked_setup()
+    page = panel.get("/").text
+    assert 'class="btn btn-primary"' in page
+    assert 'hx-disabled-elt="this"' in page
+    css = panel.get("/static/panel.css").text
+    for old in ("#111010", "#49d08b", "#ff4d4d", "Urbanist", "JetBrains"):
+        assert old not in css
