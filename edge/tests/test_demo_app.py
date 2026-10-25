@@ -163,7 +163,7 @@ async def test_demo_serves_busy_script_and_css_has_focus_and_press_states():
         assert (await c.get("/static/busy.js")).status_code == 200
 
 
-BLOCKED_TEXT = "Detectamos un acceso inusual. Te enviamos un correo para confirmar que fuiste tú."
+BLOCKED_TEXT = "Detectamos un acceso inusual y bloqueamos esta acción."
 
 
 async def test_bank_form_is_sent_by_fetch_and_has_a_hidden_blocked_notice():
@@ -175,6 +175,38 @@ async def test_bank_form_is_sent_by_fetch_and_has_a_hidden_blocked_notice():
         js = (await c.get("/static/busy.js")).text
         # the page reads the SDK's unchanged 403 body and shows the notice instead of raw JSON
         assert 'r.status === 403' in js and 'body.error === "blocked"' in js
+        # the SDK's unlock message, when present, replaces the generic notice
+        assert "body.message" in js and "textContent" in js
+
+
+def recording_engine(sent: list):
+    def handler(request):
+        if request.url.path == "/v1/events":
+            import json
+            sent.extend(json.loads(request.content)["events"])
+            return httpx.Response(202, json={"accepted": 1})
+        if request.url.path == "/v1/blocklist":
+            return httpx.Response(200, json={"version": 1, "users": [], "sessions": [], "ips": []})
+        if request.url.path == "/v1/routes":
+            return httpx.Response(200, json={"routes": []})
+        return httpx.Response(200, json={})
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://engine")
+
+
+async def test_demo_users_report_the_unlock_inbox_only_when_configured(monkeypatch):
+    for inbox, expected in ((None, None), ("dueno@ejemplo.com", "dueno@ejemplo.com")):
+        if inbox:
+            monkeypatch.setenv("DEMO_UNLOCK_EMAIL", inbox)
+        else:
+            monkeypatch.delenv("DEMO_UNLOCK_EMAIL", raising=False)
+        sent: list = []
+        demo = make_demo(engine_client=recording_engine(sent))
+        async with browser(demo) as c:
+            await login(c)
+            await c.get("/invoices")
+        await demo.flush()
+        mine = [e for e in sent if e.get("user_id") == "u_42"]
+        assert mine and all(e.get("user_email") == expected for e in mine)
 
 
 async def test_blocked_bank_change_still_answers_the_sdk_json_the_page_reads():

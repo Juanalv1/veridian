@@ -53,6 +53,9 @@
       if (r.status === 403) {
         return r.clone().json().catch(function () { return null; }).then(function (body) {
           if (body && body.error === "blocked" && notice) {
+            // With self-unlock the SDK adds a message (check your inbox); otherwise the generic text stays.
+            if (!notice.dataset.generic) notice.dataset.generic = notice.textContent;
+            notice.textContent = body.message || notice.dataset.generic;
             notice.hidden = false;
             if (btn) reset(btn);
             return;

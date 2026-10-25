@@ -7,6 +7,8 @@ Env (see edge/README.md):
                                 (VERIDIAN_API_KEY also works for the key)
   TRUSTED_PROXIES               number of our own proxies in front (default 0)
   DEMO_PASSWORD                 owner password; the default is for local use only
+  DEMO_UNLOCK_EMAIL             real inbox reported as every demo user's email, so the engine
+                                can send the self-unlock email (the demo addresses are fake)
 """
 
 import csv
@@ -46,7 +48,7 @@ def date_label(iso: str) -> str:
 templates.env.filters["money"] = money
 templates.env.filters["date_label"] = date_label
 # Cache-busting query for /static assets: bump when app.css or busy.js change.
-ASSET_VERSION = "5"
+ASSET_VERSION = "6"
 
 USERS = {
     "ana@facturas.demo": {"id": "u_42", "name": "Ana Torres", "company": "Taller Torres C.A."},
@@ -203,6 +205,10 @@ def create_app(
             return uid
         return sessions.get(request.cookies.get(COOKIE, ""))
 
+    def user_email_of(request: Request):
+        # The demo addresses (@facturas.demo) receive no mail, so one real inbox stands in for all.
+        return os.environ.get("DEMO_UNLOCK_EMAIL") or None if user_id_of(request) else None
+
     def session_id_of(request: Request):
         sid = getattr(request.state, "session_id", None)
         if sid:
@@ -216,6 +222,7 @@ def create_app(
         api_key=token or os.environ.get("VERIDIAN_TOKEN") or None,
         base_url=engine_url or os.environ.get("VERIDIAN_URL", "http://localhost:8000"),
         user=user_id_of,
+        user_email=user_email_of,
         session=session_id_of,
         trusted_proxies=trusted_proxies if trusted_proxies is not None
         else int(os.environ.get("TRUSTED_PROXIES", "0")),
