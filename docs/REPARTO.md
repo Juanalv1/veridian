@@ -71,13 +71,15 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
       "method": "POST",
       "route": "/payouts/bank-account",
       "status": 200,
-      "bytes": 512
+      "bytes": 512,
+      "user_email": "ana@example.com"
     }
   ]
 }
 ```
 
 - **Respuesta:** `202 {"accepted": 1}`.
+- **`user_email` es opcional** (desbloqueo por correo, [DESBLOQUEO-POR-CORREO.md](DESBLOQUEO-POR-CORREO.md)). Es un dato personal del usuario final: el motor guarda solo el último por usuario y proyecto (tabla `user_contact`), no lo copia al evento, nunca lo envía a la IA y lo borra con el borrado por usuario (contrato 14) y con la retención. Un valor vacío o mal formado se ignora (el evento se acepta igual); el motor conserva el último válido.
 - **Idempotente por `id`:** reenviar un lote no cuenta dos veces.
 - **`route` es la plantilla de la ruta** (`/invoices/{id}`), no la URL con IDs. Así el perfil agrupa bien.
 - **Clasificación de rutas:** la hace el motor con `routes.yaml`, por método y plantilla (`"POST /payouts/bank-account"`); el middleware no la envía. Clasificar solo por plantilla haría `critical` también el simple hecho de ver la cuenta bancaria, que el dueño hace a menudo. Rutas de la app de ejemplo:
@@ -331,7 +333,7 @@ La clasificación de rutas que el motor está usando, para que el panel la muest
 `POST /v1/check`, **síncrono**, solo para rutas `critical` según `GET /v1/routes` (contrato 8). El middleware lo llama **antes** de pasar la petición a la app y espera la respuesta.
 
 ```json
-{"event": { ...mismo objeto que un evento del contrato 1... }}
+{"event": { ...mismo objeto que un evento del contrato 1, con `user_email` opcional... }}
 ```
 
 Respuesta `200`:
@@ -390,6 +392,7 @@ Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app
   - `DELETE /v1/projects/{id}/users/{user_id}` (admin+) borra los eventos, decisiones y filas auxiliares de ese usuario en ese proyecto. Si tenía un bloqueo abierto, sube la versión del blocklist. La auditoría (`user_data.delete`) guarda el **hash** del `user_id`, no el valor.
   - `DELETE /v1/projects/{id}/data` (solo owner) borra todos los datos del proyecto. Conserva el proyecto, sus claves y sus rutas, y deja el blocklist vacío con la versión adelantada. Queda en la auditoría como `project_data.delete`.
   - Ambos responden `{"deleted": {"events": n, "decisions": n}, "version": v}`.
+  - Borrar un usuario borra también su `user_email` (`user_contact`); borrar los datos del proyecto borra todos los de ese proyecto.
   - Un hilo de retención purga cada `VERIDIAN_RETENTION_INTERVAL_S` (1 h por defecto) lo que pasó los `retention_days` de cada proyecto. Nunca borra un bloqueo abierto ni sus eventos. También borra los datos de los proyectos eliminados.
 
 ### 12. Claves de API: panel → motor

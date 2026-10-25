@@ -1,10 +1,25 @@
+import re
 import sqlite3
 from datetime import timezone
 from ipaddress import IPv4Address, IPv6Address
+from typing import Annotated
 
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field
 
 MAX_BATCH = 1000
+EMAIL_PATTERN = re.compile(r"^[^@\s<>,;\"]+@[^@\s<>,;\"]+\.[^@\s<>,;\"]+$")
+MAX_EMAIL_LENGTH = 254
+
+
+def _clean_email(value):
+    """A usable address, or None. A malformed one is dropped instead of failing the whole batch:
+    the event matters more to the customer than the optional address."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or len(value) > MAX_EMAIL_LENGTH or not EMAIL_PATTERN.match(value):
+        return None
+    return value
 
 
 class Event(BaseModel):
@@ -19,6 +34,8 @@ class Event(BaseModel):
     route: str = Field(min_length=1, max_length=512, pattern=r"^/")
     status: int = Field(ge=100, le=599)
     bytes: int = Field(ge=0)
+    # Personal data of the end user, used only to email them (self-unlock). Never sent to the AI judge.
+    user_email: Annotated[str | None, BeforeValidator(_clean_email)] = None
 
 
 class EventBatch(BaseModel):
@@ -54,4 +71,17 @@ def insert_events(conn: sqlite3.Connection, project_id: str, events: list[Event]
         )
         if cursor.rowcount == 1:
             inserted.append(event)
+            if event.user_email:
+                remember_user_email(conn, project_id, event.user_id, event.user_email, format_ts(event.ts))
     return inserted
+
+
+def remember_user_email(conn: sqlite3.Connection, project_id: str, user_id: str, email: str, ts: str) -> None:
+    """Keep only the latest address per (project, user). `ts` is the event's time, so a late
+    batch never replaces a newer address."""
+    conn.execute(
+        "INSERT INTO user_contact (project_id, user_id, email, updated_at) VALUES (?, ?, ?, ?)"
+        " ON CONFLICT (project_id, user_id) DO UPDATE SET email = excluded.email, updated_at = excluded.updated_at"
+        " WHERE excluded.updated_at >= user_contact.updated_at",
+        (project_id, user_id, email, ts),
+    )

@@ -73,6 +73,9 @@ def purge_expired(conn: sqlite3.Connection, project_id: str, retention_days: int
             f" AND event_id NOT IN ({protected_events})",
             params,
         ).rowcount
+        counts["user_contacts"] = conn.execute(
+            "DELETE FROM user_contact WHERE project_id = :project_id AND updated_at < :event_cutoff", params
+        ).rowcount
         # These rows have no timestamp: they go once nothing of their session is left.
         counts["rate_spike_judgments"] = conn.execute(
             "DELETE FROM rate_spike_judgments WHERE project_id = :project_id"
@@ -133,6 +136,7 @@ def delete_user_data(
         decisions = conn.execute(
             "DELETE FROM decisions WHERE project_id = :project_id AND user_id = :user_id", params
         ).rowcount
+        conn.execute("DELETE FROM user_contact WHERE project_id = :project_id AND user_id = :user_id", params)
         if lifts_block:
             bump_version(conn, project_id)
         deleted = {"events": events, "decisions": decisions}
@@ -159,7 +163,7 @@ def delete_project_data(conn: sqlite3.Connection, project_id: str, now: datetime
     """
     with atomic(conn):
         deleted = {}
-        for table in ("decision_events", "ai_judgments", "rate_spike_judgments", "events", "decisions"):
+        for table in ("decision_events", "ai_judgments", "rate_spike_judgments", "user_contact", "events", "decisions"):
             rowcount = conn.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,)).rowcount
             if table in ("events", "decisions"):
                 deleted[table] = rowcount

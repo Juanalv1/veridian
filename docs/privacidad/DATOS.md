@@ -16,12 +16,14 @@ Estado a 2026-10-25. "Hoy" es lo que hace el código; "planeado" es el diseño (
 | `rate_spike_judgments` | `session_id` | Juzgar una vez el primer pico de ritmo |
 | `ai_judgments` | `event_id`, `ts` | Contar llamadas a la IA |
 | `blocklist_versions` | Ninguno | Versión de la lista de bloqueo |
+| `user_contact` | `user_id`, `email` del usuario final (opcional, solo el último por usuario y proyecto), `updated_at` | Enviarle el correo de desbloqueo ([DESBLOQUEO-POR-CORREO.md](../DESBLOQUEO-POR-CORREO.md)) |
 
 Notas:
 
 - Los perfiles no se guardan: se calculan al leer desde `events` (`engine/veridian_engine/profile.py`), así que borrar eventos borra lo aprendido.
 - `decisions.signals` contiene la ruta y las rutas de la sesión (`rules.py:88-101`); `rationale` puede nombrar la ruta y la red /24 (`rules.py:11-14`).
 - `session_id` cuando el cliente no lo define: el SDK envía `s_` + los primeros 16 caracteres hexadecimales del SHA-256 de la primera cookie de sesión conocida (`sessionid`, `connect.sid`, `sid`, `session_id`, `PHPSESSID`, `JSESSIONID`) o, si no hay ninguna, del token `Authorization: Bearer`. El valor de la cookie o del token nunca sale de la app (`sdk/python/src/veridian_sdk/middleware.py:38`, `47-60`). Es un hash sin sal: quien tenga el valor original puede reconocerlo, pero no recuperarlo a partir del hash.
+- `user_contact.email` es el correo que la app del cliente envía en el campo opcional `user_email` del evento o de la consulta previa. Solo se guarda el último; no se copia a `events`, no se envía a la IA (el juez recibe señales y perfil, nunca el evento completo) y no aparece en las respuestas del panel. Se borra con el borrado por usuario (`DELETE /v1/projects/{id}/users/{user_id}`), con el borrado de datos del proyecto y por retención: se elimina si no llegó un evento con correo en los últimos `retention_days` del proyecto.
 - Límites del evento: `user_agent` hasta 512 caracteres en el motor (`events.py:16`); el SDK envía los primeros 200 (`sdk/python/README.md:77`).
 
 ## Cookie del SDK
