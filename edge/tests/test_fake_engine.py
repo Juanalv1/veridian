@@ -381,7 +381,8 @@ def test_activity_owner_in_another_session_stays_normal_after_a_block(client):
 
 
 def test_activity_same_session_before_the_block_stays_normal(client):
-    post_events(client, [make_event(id="e_login", session_id="s_atk", ip="203.0.113.9", method="POST", route="/login")])
+    # (a different network: learn_delay=0 here would otherwise whitelist the attacker's /24)
+    post_events(client, [make_event(id="e_login", session_id="s_atk", ip="198.51.100.7", method="POST", route="/login")])
     post_events(client, [attack()])
     items = {i["event_id"]: i for i in activity(client).json()["activity"]}
     assert items["e_login"]["verdict"] == "normal" and items["e_login"]["decision_id"] is None
