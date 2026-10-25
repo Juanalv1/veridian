@@ -1,74 +1,132 @@
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS events (
-    client_id TEXT NOT NULL,
-    id TEXT NOT NULL,
-    ts TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    ip TEXT NOT NULL,
-    user_agent TEXT NOT NULL,
-    device_id TEXT NOT NULL,
-    method TEXT NOT NULL,
-    route TEXT NOT NULL,
-    status INTEGER NOT NULL,
-    bytes INTEGER NOT NULL,
-    PRIMARY KEY (client_id, id)
-);
-CREATE INDEX IF NOT EXISTS events_by_user ON events (client_id, user_id, ts);
-CREATE INDEX IF NOT EXISTS events_by_session ON events (client_id, session_id, ts);
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+MIGRATION_FILE = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 
-CREATE TABLE IF NOT EXISTS decisions (
-    seq INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id TEXT NOT NULL,
-    id TEXT NOT NULL UNIQUE,
-    ts TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    ip TEXT NOT NULL,
-    decision TEXT NOT NULL,
-    signals TEXT NOT NULL,
-    rationale TEXT NOT NULL,
-    normal INTEGER NOT NULL DEFAULT 0
-);
-CREATE UNIQUE INDEX IF NOT EXISTS one_block_per_session
-    ON decisions (client_id, session_id) WHERE decision = 'block';
-
-CREATE TABLE IF NOT EXISTS decision_events (
-    client_id TEXT NOT NULL,
-    decision_id TEXT NOT NULL,
-    event_id TEXT NOT NULL,
-    PRIMARY KEY (client_id, decision_id, event_id)
-);
-
--- Sessions whose first rate spike was already sent to the judge: it is judged once.
-CREATE TABLE IF NOT EXISTS rate_spike_judgments (
-    client_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    PRIMARY KEY (client_id, session_id)
-);
-
--- Every real call to the AI judge, by the judged event's ts (reviewed_by_ai, contract 6).
-CREATE TABLE IF NOT EXISTS ai_judgments (
-    client_id TEXT NOT NULL,
-    event_id TEXT NOT NULL,
-    ts TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ai_judgments_by_ts ON ai_judgments (client_id, ts);
-
-CREATE TABLE IF NOT EXISTS blocklist_versions (
-    client_id TEXT PRIMARY KEY,
-    version INTEGER NOT NULL
-);
+TRACKING_SCHEMA = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+)
 """
 
 
-def init_db(path: str) -> None:
-    with connect(path) as conn:
-        conn.executescript(SCHEMA)
+@dataclass(frozen=True)
+class Migration:
+    version: int
+    filename: str
+    sql: str
+
+
+def load_migrations(directory: Path) -> list[Migration]:
+    """Numbered NNNN_name.sql files, in version order."""
+    migrations: dict[int, Migration] = {}
+    for file in sorted(Path(directory).iterdir()):
+        match = MIGRATION_FILE.match(file.name)
+        if not match:
+            continue
+        version = int(match.group(1))
+        if version in migrations:
+            raise ValueError(f"duplicate migration version {version:04d}: {file.name}")
+        migrations[version] = Migration(version, file.name, file.read_text(encoding="utf-8"))
+    return [migrations[version] for version in sorted(migrations)]
+
+
+def init_db(path: str, migrations_dir: Path | None = None) -> None:
+    """Bring the database up to the latest migration before the engine takes traffic.
+
+    A database created before migrations existed (it has `events` but no `schema_migrations`)
+    already holds the 0001 schema: it is marked as 0001 without running it. Before applying
+    anything to a database with tables, it is copied to `<path>.pre-NNNN` (NNNN = the first
+    pending version): there are no down migrations, that copy is the way back. Each migration
+    runs in its own transaction, so a failing one leaves the database as it was.
+    """
+    migrations = load_migrations(migrations_dir or MIGRATIONS_DIR)
+    conn = sqlite3.connect(path, isolation_level=None)  # transactions are explicit below
+    try:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if "schema_migrations" in tables:
+            applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+        elif "events" in tables:
+            applied = {1}
+        else:
+            applied = set()
+        pending = [migration for migration in migrations if migration.version not in applied]
+        if "schema_migrations" in tables and not pending:
+            return
+        if tables and pending:
+            backup(conn, f"{path}.pre-{pending[0].version:04d}")
+
+        if "schema_migrations" not in tables:
+            run_in_transaction(conn, lambda: mark_applied(conn, applied))
+        for migration in pending:
+            run_in_transaction(conn, lambda m=migration: apply(conn, m))
+    finally:
+        conn.close()
+
+
+def backup(conn: sqlite3.Connection, backup_path: str) -> None:
+    target = sqlite3.connect(backup_path)
+    try:
+        conn.backup(target)
+    finally:
+        target.close()
+
+
+def run_in_transaction(conn: sqlite3.Connection, work) -> None:
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        work()
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def mark_applied(conn: sqlite3.Connection, versions: set[int]) -> None:
+    conn.execute(TRACKING_SCHEMA)
+    for version in sorted(versions):
+        record(conn, version)
+
+
+def apply(conn: sqlite3.Connection, migration: Migration) -> None:
+    # executescript would commit the open transaction first, so statements run one by one.
+    for statement in split_statements(migration.sql):
+        conn.execute(statement)
+    record(conn, migration.version)
+
+
+def record(conn: sqlite3.Connection, version: int) -> None:
+    applied_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn.execute(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?) ON CONFLICT (version) DO NOTHING",
+        (version, applied_at),
+    )
+
+
+def split_statements(sql: str) -> list[str]:
+    """Split a migration script into complete statements, as sqlite3 itself sees them."""
+    statements, current = [], ""
+    for line in sql.splitlines(keepends=True):
+        current += line
+        if sqlite3.complete_statement(current):
+            if strip_comments(current):
+                statements.append(current)
+            current = ""
+    if strip_comments(current):
+        raise ValueError("migration ends with an incomplete statement")
+    return statements
+
+
+def strip_comments(sql: str) -> str:
+    return "\n".join(line for line in sql.splitlines() if not line.strip().startswith("--")).strip()
 
 
 @contextmanager
