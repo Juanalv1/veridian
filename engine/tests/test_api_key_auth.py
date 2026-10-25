@@ -161,3 +161,25 @@ def test_keys_of_two_projects_stay_isolated(make_client, clock):
     users_b = client.get("/v1/users", headers=AUTH_B).json()
 
     assert "u_only_a" not in str(users_b)
+
+
+def test_behind_trusted_proxies_failures_count_per_real_client(make_client):
+    # Every request arrives from the same proxy; the client IP comes from X-Forwarded-For.
+    client = make_client(auth_max_failures_per_ip=3, auth_failure_window_s=60, trusted_proxies=1)
+    attacker = {**bearer("tok_wrong"), "X-Forwarded-For": "203.0.113.9"}
+    for _ in range(4):
+        client.get(SDK_GET, headers=attacker)
+
+    assert client.get(SDK_GET, headers=attacker).status_code == 429
+    sdk = {**AUTH_A, "X-Forwarded-For": "190.202.14.7"}
+    assert client.get(SDK_GET, headers=sdk).status_code == 200
+
+
+def test_a_spoofed_left_entry_does_not_escape_the_limit(make_client):
+    client = make_client(auth_max_failures_per_ip=3, auth_failure_window_s=60, trusted_proxies=1)
+    for n in range(4):
+        spoofed = {**bearer("tok_wrong"), "X-Forwarded-For": f"10.0.0.{n}, 203.0.113.9"}
+        client.get(SDK_GET, headers=spoofed)
+
+    again = {**bearer("tok_wrong"), "X-Forwarded-For": "10.0.0.99, 203.0.113.9"}
+    assert client.get(SDK_GET, headers=again).status_code == 429

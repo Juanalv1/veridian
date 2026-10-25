@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from veridian_engine import retention
-from veridian_engine.control_plane import apply_schema
 from veridian_engine.control_plane.repository import hash_user_id
 from veridian_engine.decisions import blocklist, bump_version, create_decision, current_version, mark_normal
 
@@ -25,8 +24,7 @@ OWNER = "per_owner"
 
 def build_schema(conn: sqlite3.Connection) -> None:
     for path in sorted(MIGRATIONS.glob("*.sql")):
-        conn.executescript(path.read_text(encoding="utf-8"))
-    apply_schema(conn)
+        conn.executescript(path.read_text(encoding="utf-8"))  # 0003 holds the control-plane tables
     conn.execute(
         "INSERT INTO person (id, google_sub, email, name, created_at, last_login_at)"
         " VALUES (?, 'g', 'o@example.com', 'Owner', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",

@@ -42,6 +42,18 @@ class RateLimited(Exception):
         return str(max(1, math.ceil(self.retry_after)))
 
 
+def client_ip(request: Request, trusted_proxies: int) -> str:
+    """The caller's address. Each trusted proxy appends one X-Forwarded-For entry, so the client is
+    the entry `trusted_proxies` from the right; anything further left is caller-controlled."""
+    connection = request.client.host if request.client else "unknown"
+    if trusted_proxies <= 0:
+        return connection
+    entries = [part.strip() for part in request.headers.get("X-Forwarded-For", "").split(",") if part.strip()]
+    if len(entries) < trusted_proxies:
+        return connection
+    return entries[-trusted_proxies]
+
+
 class ApiKeyAuth:
     def __init__(self, settings: Settings):
         self._settings = settings
@@ -55,9 +67,7 @@ class ApiKeyAuth:
     def project_id(self, request: Request) -> str:
         scheme, _, raw = request.headers.get("Authorization", "").partition(" ")
         token = raw.strip() if scheme.lower() == "bearer" else ""
-        # Behind a proxy this is the proxy's address unless the server is told to trust
-        # X-Forwarded-For; how many hops to trust on Render is not measured yet.
-        ip = f"ip:{request.client.host if request.client else 'unknown'}"
+        ip = f"ip:{client_ip(request, self._settings.trusted_proxies)}"
         prefix = key_prefix(token)
         limits = [(self._by_ip, ip)] + ([(self._by_prefix, f"prefix:{prefix}")] if prefix else [])
 

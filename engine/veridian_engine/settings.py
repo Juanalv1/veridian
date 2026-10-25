@@ -52,6 +52,8 @@ class Settings:
     auth_max_failures_per_ip: int = 30
     auth_max_failures_per_prefix: int = 10
     auth_failure_window_s: float = 60.0
+    # Proxies in front of the engine that append to X-Forwarded-For. 0: use the connection's address.
+    trusted_proxies: int = 0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -75,6 +77,7 @@ class Settings:
             auth_max_failures_per_ip=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_IP", "30")),
             auth_max_failures_per_prefix=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_PREFIX", "10")),
             auth_failure_window_s=float(os.environ.get("VERIDIAN_AUTH_FAILURE_WINDOW_S", "60")),
+            trusted_proxies=int(os.environ.get("VERIDIAN_TRUSTED_PROXIES", "0")),
         )
 
 
