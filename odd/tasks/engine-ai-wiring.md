@@ -33,7 +33,7 @@ Without the wiring, decisions only come from the rule, and their rationale is in
 
 | ID | Task | Route | Status |
 |---|---|---|---|
-| W1 | Deviation detection + background judge call + decision persistence + dedupe; Spanish deterministic rationale; settings injection; tests | delegated (worktree; writer trigger: 2+ non-trivial files; keeps main checkout clean for the sync hooks) | [ ] |
+| W1 | Deviation detection + background judge call + decision persistence + dedupe; Spanish deterministic rationale; settings injection; tests | delegated (worktree; writer trigger: 2+ non-trivial files; keeps main checkout clean for the sync hooks) | [x] |
 
 ## Acceptance criteria
 
@@ -50,3 +50,4 @@ Without the wiring, decisions only come from the rule, and their rationale is in
 ## Progress
 
 - 2026-10-25: document created.
+- 2026-10-25: W1 done. Test-first: 13 new tests RED (missing `judge` setting), then GREEN. Also added contract 3 `status` (`open` | `marked_normal`, from `normal`) after upstream 090b3e7: 2 tests RED, then GREEN. Suite: 79 passed. Notes: one judge call per session per batch (the latest deviation); signal `new_device` is now false for an empty `device_id` (was true in the critical rule); if the judge returns something other than `block` on a rule block, the deterministic rationale stays.

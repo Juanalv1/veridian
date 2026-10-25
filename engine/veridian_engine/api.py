@@ -1,12 +1,13 @@
 import threading
 
-from fastapi import Depends, FastAPI, Query, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from . import db
 from .auth import Unauthorized, client_id_from_request
 from .decisions import blocklist, current_version, list_decisions, mark_normal
 from .events import EventBatch, insert_events
+from .judging import judge_deviations, latest_per_session
 from .profile import build_profile, is_blocked
 from .route_classes import RouteClasses
 from .rules import evaluate_event
@@ -28,11 +29,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
 
     @app.post("/v1/events", status_code=202)
-    def ingest_events(batch: EventBatch, client_id: str = Depends(client_id_from_request)) -> dict:
+    def ingest_events(
+        batch: EventBatch, background_tasks: BackgroundTasks, client_id: str = Depends(client_id_from_request)
+    ) -> dict:
+        deviations = []
         with write_lock, db.connect(settings.db_path) as conn:
             inserted = insert_events(conn, client_id, batch.events)
             for event in sorted(inserted, key=lambda e: e.ts):
-                evaluate_event(conn, settings, route_classes, client_id, event)
+                deviation = evaluate_event(conn, settings, route_classes, client_id, event)
+                if deviation is not None:
+                    deviations.append(deviation)
+        if settings.judge is not None and deviations:
+            # Runs after the 202 is sent: ingestion never waits for the AI.
+            background_tasks.add_task(judge_deviations, settings, write_lock, latest_per_session(deviations))
         return {"accepted": len(inserted)}
 
     @app.get("/v1/users/{user_id}/profile")

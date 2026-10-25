@@ -165,3 +165,13 @@ def test_decision_and_blocklist_endpoints_require_token(client):
     assert client.get("/v1/decisions").status_code == 401
     assert client.get("/v1/blocklist").status_code == 401
     assert client.post("/v1/decisions/d_1/normal").status_code == 401
+
+
+def test_decision_status_follows_mark_normal(client):
+    seed_owner_history(client)
+    attack(client)
+    [decision] = decisions(client)
+    assert decision["status"] == "open"
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
+    [decision] = decisions(client)
+    assert decision["status"] == "marked_normal"

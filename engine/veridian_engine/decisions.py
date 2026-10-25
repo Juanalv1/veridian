@@ -73,6 +73,7 @@ def list_decisions(conn: sqlite3.Connection, client_id: str, limit: int) -> list
                 "signals": json.loads(row["signals"]),
                 "rationale": row["rationale"],
                 "event_ids": [event_row["event_id"] for event_row in event_rows],
+                "status": "marked_normal" if row["normal"] else "open",
             }
         )
     return result

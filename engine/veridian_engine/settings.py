@@ -3,6 +3,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 DEFAULT_ROUTES_FILE = Path(__file__).resolve().parent.parent / "routes.yaml"
 
@@ -32,6 +33,8 @@ class Settings:
     routes_file: str = str(DEFAULT_ROUTES_FILE)
     learn_delay_min: int = 10
     clock: Callable[[], datetime] = field(default=utc_now)
+    # judge(signals, profile) -> Judgment. None means rule-only: no AI decisions.
+    judge: Callable[[dict, dict], Any] | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -46,4 +49,14 @@ class Settings:
             tokens=tokens,
             routes_file=os.environ.get("VERIDIAN_ROUTES_FILE", str(DEFAULT_ROUTES_FILE)),
             learn_delay_min=int(os.environ.get("VERIDIAN_LEARN_DELAY_MIN", "10")),
+            judge=default_judge(),
         )
+
+
+def default_judge() -> Callable[[dict, dict], Any] | None:
+    """The AI judge when ANTHROPIC_API_KEY is set (VERIDIAN_MODEL picks the model), else None."""
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        return None
+    from .ai.judge import judge
+
+    return judge

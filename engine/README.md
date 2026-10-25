@@ -27,6 +27,12 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_DB` | `veridian.db` | SQLite file |
 | `VERIDIAN_ROUTES_FILE` | `engine/routes.yaml` | Route classification (`"METHOD /route": class`) |
 | `VERIDIAN_LEARN_DELAY_MIN` | `10` | Events younger than this (by `ts`) are not learned yet |
+| `ANTHROPIC_API_KEY` | | Enables the AI judge. Without it the engine is rule-only: the critical block, no AI decisions |
+| `VERIDIAN_MODEL` | `claude-opus-5-5` | Model used by the AI judge |
+
+## AI judge
+
+A deviation is an event with a new network, a new device (non-empty `device_id` not in the profile), or a never-used `critical`/`sensitive` route. The critical rule still blocks synchronously; after the `202`, the judge runs in the background (one call per session per batch) and either replaces the block's rationale or records an `allow`/`alert`/`step_up`/`block` decision (at most one of each kind per session; a blocked session gets no more). A judge failure never breaks ingestion.
 
 ## Tests
 
