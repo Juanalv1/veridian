@@ -27,7 +27,7 @@
     <p>El cambio aplica a los cobros que lleguen desde ahora.</p>
   </div>
   <form method="post" action="/payouts/bank-account" class="stack" data-fetch data-blocked-notice="blocked-notice">
-    <div class="alert" id="blocked-notice" role="alert" hidden>Detectamos un acceso inusual y bloqueamos esta acción.</div>
+    <div class="msg error" id="blocked-notice" role="alert" hidden>Detectamos un acceso inusual y bloqueamos esta acción.</div>
     <div class="field">
       <label for="bank">Banco</label>
       <input id="bank" name="bank" autocomplete="off" required>

@@ -104,7 +104,7 @@ input:user-invalid { border-color:var(--danger); }
 .hint { margin-top:6px; color:var(--muted); font-size:.8rem; }
 
 /* Messages */
-.alert { margin-top:20px; padding:10px 12px; border-radius:var(--radius); background:#fbeeee; color:var(--danger); font-size:.875rem; }
+.alert, .msg.error { margin-top:20px; padding:10px 12px; border-radius:var(--radius); background:#fbeeee; color:var(--danger); font-size:.875rem; }
 .notice { display:flex; align-items:center; gap:10px; margin-bottom:24px; padding:12px 14px; border:1px solid var(--line); border-radius:var(--radius); font-size:.9rem; }
 .notice::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--paid); flex:none; }
 
