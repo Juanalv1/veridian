@@ -67,7 +67,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
 3. **Operación en Render:**
    - **Hecho (2026-10-25):** medidos los proxies delante del motor: son 2 (`VERIDIAN_TRUSTED_PROXIES=2`, ver "Advertencias");
    - rotar el token `demo` y poner `VERIDIAN_SECRET_KEY` **pasaron a Carlos** (tarea 6 de Carlos, la demo completa).
-4. **REPARTO.md:** documentar en neutral los contratos 13, 14 y 15 a medida que aterricen.
+4. **Hecho (2026-10-25): REPARTO.md** tiene los contratos 11, 13, 14, 15 y 16.
 5. **Hecho (2026-10-25): `engine/scripts/prepare_demo.py`.** Una vez: en el panel, Miembros, invitar `ensayo@veridian.demo` como **owner** de la organización Demo (el script entra como esa persona con `VERIDIAN_PANEL_TOKEN`). En `engine/.env`: `VERIDIAN_BASE_URL`, `VERIDIAN_TOKEN` (clave `demo`), `VERIDIAN_PANEL_TOKEN` y, opcional, `DEMO_USER_ID`, `RENDER_API_KEY` + `DEMO_RENDER_SERVICE_ID` para reiniciar la app al final. Uso: el presentador navega la app unos minutos en el wifi del evento, `prepare_demo.py --calibrar`, y antes de cada ensayo `prepare_demo.py` (borra con `DELETE /v1/projects/{id}/data`, ya no usa el reset). Imprime `listo: N redes, N dispositivo, 14 días` o qué falló. Lo que se pedía: (pedido de Juan; hoy son 4 comandos con 3 secretos y las IPs copiadas a mano). Coordinar con Carlos, porque U13 reemplaza el reset por el borrado por proyecto.
    - **Script:** `engine/scripts/prepare_demo.py`, sin argumentos en el uso normal.
      - **Configuración:** lee la URL, el token `demo`, el secreto de reset (o lo que lo reemplace con U13) y el usuario del presentador de `engine/.env` (por ejemplo `DEMO_USER_ID=u_42`).
