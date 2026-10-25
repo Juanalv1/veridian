@@ -1,0 +1,21 @@
+  {% set d = current %}
+  {% set a = d.access %}
+  <div class="head">
+    <span class="meta">{{ d.user_id }} · <time class="ts" data-day datetime="{{ d.ts }}">{{ d.time }} UTC</time>{% if d.action %} · <span class="mono">{{ d.action }}</span>{% endif %}</span>
+    <h1 class="{{ d.verdict_kind }}">{{ d.verdict_long }}</h1>
+    {% if d.rationale %}<p class="rationale">{{ d.rationale }}</p>{% endif %}
+  </div>
+
+  {% include "partials/comparison_table.html" %}
+
+  <div class="actions">
+    {% if d.marked_normal %}
+      <span class="consequence">Marcado como normal. Veridian lo suma al perfil de {{ d.user_id }}.</span>
+    {% else %}
+      <form method="post" action="/decisions/{{ d.id | urlencode }}/normal">
+        <input type="hidden" name="user" value="{{ d.user_id }}">
+        <button class="btn" type="submit">Esto era normal</button>
+      </form>
+      <span class="consequence">{% if d.decision == 'block' %}La sesión{% if d.blocks_ip %} y la IP {{ d.blocks_ip }} no pueden{% else %} no puede{% endif %} entrar. El dueño sigue trabajando.{% else %}Veridian lo sumará al perfil de {{ d.user_id }}.{% endif %}</span>
+    {% endif %}
+  </div>

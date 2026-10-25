@@ -1,0 +1,41 @@
+{% set a = d.access %}
+<div class="box">
+  <table>
+    <thead>
+      <tr>
+        <th scope="col"><span class="vh">Dato</span></th>
+        <th scope="col">Lo normal para {{ d.user_id }}{% if profile and profile.days_text %}<span class="sub">{{ profile.days_text }}</span>{% endif %}</th>
+        <th scope="col">Este acceso</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row">Red</th>
+        <td class="normal">{% for n in (profile.networks if profile else []) %}<span class="mono">{{ n }}</span>{% else %}—{% endfor %}</td>
+        <td>{% if a.ip %}<span class="mono">{{ a.ip }}{% if d.new_network %}<span class="flag">nueva</span>{% endif %}</span>{% else %}—{% endif %}</td>
+      </tr>
+      <tr>
+        <th scope="row">Dispositivo</th>
+        <td class="normal">{% for n in (profile.devices if profile else []) %}<span class="mono">{{ n }}</span>{% else %}—{% endfor %}</td>
+        <td>{% if a.device_id %}<span class="mono">{{ a.device_id }}{% if d.new_device %}<span class="flag">nuevo</span>{% endif %}</span>{% else %}—{% endif %}</td>
+      </tr>
+      <tr>
+        <th scope="row">Qué hizo</th>
+        <td class="normal">{% for n in (profile.routes_shown if profile else []) %}<span class="mono">{{ n }}</span>{% else %}—{% endfor %}{% if profile and profile.routes_more %}<span class="mono">+{{ profile.routes_more }}</span>{% endif %}</td>
+        <td>{% if d.action %}<span class="mono">{{ d.action }}</span>{% else %}—{% endif %}{% if d.route_flag %}<span class="flag own">{{ d.route_flag }}</span>{% endif %}</td>
+      </tr>
+      {% if d.path %}
+      <tr>
+        <th scope="row">Recorrido</th>
+        <td class="normal"></td>
+        <td><span class="mono">{{ d.path }}</span></td>
+      </tr>
+      {% endif %}
+      <tr>
+        <th scope="row">Horario</th>
+        <td class="normal">{% if profile and profile.hours_text %}<span data-utc-hours="{{ profile.hours_utc }}">{{ profile.hours_text }}</span>{% else %}—{% endif %}</td>
+        <td>{% if a.ts %}<time class="ts" data-hm datetime="{{ a.ts }}">{{ a.ts[11:16] }} UTC</time>{% else %}—{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

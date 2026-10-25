@@ -336,3 +336,13 @@ def test_live_refresh_swaps_data_and_keeps_meta_refresh_only_without_js():
     assert '<noscript><meta http-equiv="refresh"' in r.text
     assert r.text.count('http-equiv="refresh"') == 1
     assert 'id="live-refresh"' in r.text
+
+
+def test_panel_serves_its_stylesheet_and_script():
+    _, panel = blocked_setup()
+    css = panel.get("/static/panel.css")
+    assert css.status_code == 200 and css.headers["content-type"].startswith("text/css")
+    assert panel.get("/static/panel.js").status_code == 200
+    page = panel.get("/").text
+    assert '<link rel="stylesheet" href="/static/panel.css?v=' in page
+    assert 'src="/static/panel.js?v=' in page and 'data-refresh-ms="2000"' in page

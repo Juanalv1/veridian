@@ -1,0 +1,10 @@
+  <nav aria-label="Decisiones recientes">
+    <span class="nav-title">Decisiones recientes</span>
+    {% for d in decisions %}
+      <a class="item" href="{{ d.href }}"{% if current and d.href == current.href %} aria-current="true"{% endif %}>
+        <span class="t"><time class="ts" datetime="{{ d.ts }}">{{ d.time }} UTC</time></span>
+        <span class="v {{ d.verdict_kind }}">{{ d.verdict_short }}</span>
+        <span class="what">{{ d.user_id }}{% if d.action %} · {{ d.action }}{% endif %}</span>
+      </a>
+    {% endfor %}
+  </nav>

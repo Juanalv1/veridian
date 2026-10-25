@@ -10,10 +10,14 @@ from urllib.parse import quote, urlencode
 import httpx
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+HERE = Path(__file__).parent
+templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
+# Cache-busting query for /static assets: bump when panel.css or panel.js change.
+ASSET_VERSION = "1"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -71,6 +75,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
     client = http_client or httpx.AsyncClient(timeout=3.0)
     headers = {"Authorization": f"Bearer {bearer}"}
     app = FastAPI(title="Veridian panel", docs_url=None, redoc_url=None, openapi_url=None)
+    app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
     async def load_decisions() -> tuple[list[dict], str | None]:
         try:
@@ -130,6 +135,7 @@ def create_app(engine_url: str | None = None, token: str | None = None,
                            "routes_more": max(0, len(routes) - MAX_PROFILE_ROUTES)}
         return templates.TemplateResponse(request, "index.html", {
             "decisions": decisions, "engine_error": engine_error, "refresh": REFRESH_SECONDS,
+            "refresh_ms": REFRESH_SECONDS * 1000, "asset_version": ASSET_VERSION,
             "current": current, "profile": profile,
             "notice": MARK_ERROR if error else None,
             "refresh_url": decision_url(current) if current else "/",
