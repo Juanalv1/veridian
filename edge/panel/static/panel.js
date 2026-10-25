@@ -31,6 +31,21 @@
       el.textContent = hours.length === 2 ? hours[0] + " – " + hours[1] : hours.join(", ");
     });
   }
+  // The one-time API key: the copy button is hidden until JS can make it work (the key is selectable text without it).
+  function wireCopy() {
+    document.querySelectorAll("[data-copy]").forEach(function (btn) {
+      if (!navigator.clipboard) return;
+      btn.hidden = false;
+      btn.addEventListener("click", function () {
+        navigator.clipboard.writeText(btn.getAttribute("data-copy")).then(function () {
+          var old = btn.textContent;
+          btn.textContent = "Copiada";
+          setTimeout(function () { btn.textContent = old; }, 2000);
+        }, function () { btn.textContent = "No se pudo copiar"; });
+      });
+    });
+  }
+  wireCopy();
   var pointerDown = false;
   document.addEventListener("pointerdown", function () { pointerDown = true; }, true);
   document.addEventListener("pointerup", function () { setTimeout(function () { pointerDown = false; }, 0); }, true);

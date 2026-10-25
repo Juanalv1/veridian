@@ -17,8 +17,8 @@ import httpx
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
-from .accounts import ROLE_LABELS, UNREACHABLE, Accounts, engine_error
-from .fmt import ago, expires_in
+from .accounts import NAME_MAX, ROLE_LABELS, UNREACHABLE, Accounts, clean_name, engine_error
+from .fmt import ago, expires_in, short_date
 
 ROLES = ("viewer", "admin", "owner")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -35,6 +35,9 @@ SELF_CHANGE = "No puedes cambiar tu propio rol ni quitarte a ti mismo."
 LAST_OWNER = "Siempre tiene que quedar al menos un owner."
 MEMBER_GONE = "Esa persona ya no está en la organización."
 INVITATION_GONE = "Esa invitación ya no existe."
+KEY_NAME_ERROR = f"Escribe un nombre para la clave (hasta {NAME_MAX} caracteres)."
+KEY_GONE = "Esa clave ya no existe."
+NO_KEYS_LEFT = "Ya no queda ninguna clave activa: el middleware no puede reportar y Veridian no protege la app hasta que crees otra."
 
 Shell = Callable[..., Awaitable]  # (request, template, section, ctx, status=200) -> response
 
@@ -143,6 +146,41 @@ class Team:
             "is_viewer": ctx["role"] == "viewer", "roles": [(r, label(r)) for r in assignable],
             "invite_error": error, "invite_email": email, "invite_role": role}, status)
 
+    # -- API keys ------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def no_store(response):
+        """A key is shown once: nothing between the engine and the person may keep a copy of that response."""
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
+    async def keys_page(self, request: Request, ctx: dict, *, created: dict | None = None, error: str | None = None,
+                        name: str = "", status: int = 200):
+        project = quote(ctx["project"]["id"], safe="")
+        response = await self.fetch(request, f"/v1/projects/{project}/api-keys")
+        if response is not None and response.status_code == 403:
+            return self.no_store(await self.shell(request, "claves.html", "claves", {
+                "denied": True, "org": ctx["org"], "project": ctx["project"]}, 403))
+        keys = self.items(response, "api_keys")
+        if keys is None:
+            return self.no_store(await self.unreachable(request, "claves"))
+        now = self.now()
+        rows = []
+        for k in keys:
+            active = k.get("status") == "active"
+            who = f", por {k['created_by_name']}" if k.get("created_by_name") else ""
+            if active:
+                last = ago(k.get("last_used_at"), now) or "sin uso todavía"
+            else:
+                by = f" por {k['revoked_by_name']}" if k.get("revoked_by_name") else ""
+                last = f"revocada el {short_date(k.get('revoked_at'))}{by}"
+            rows.append({"id": k.get("id"), "name": k.get("name"), "prefix": k.get("prefix"), "active": active,
+                         "created": f"{short_date(k.get('created_at'))}{who}", "last": last})
+        return self.no_store(await self.shell(request, "claves.html", "claves", {
+            "denied": False, "org": ctx["org"], "project": ctx["project"], "keys": rows,
+            "any_active": any(r["active"] for r in rows), "created": created, "error": error, "name": name}, status))
+
     # -- routes ------------------------------------------------------------------------------------------
 
     def router(self) -> APIRouter:
@@ -232,5 +270,45 @@ class Team:
             if status == 201:
                 return me.done(request, f"Invitación reenviada a {inv['email']}.", "/miembros")
             return me.refused(request, change_error(status, body), "/miembros")
+
+        @router.get("/claves", response_class=HTMLResponse)
+        async def keys(request: Request):
+            early, ctx = await me.where(request)
+            return early if early is not None else await me.keys_page(request, ctx)
+
+        @router.post("/claves/nueva", response_class=HTMLResponse)
+        async def create_key(request: Request, name: str = Form("")):
+            early, ctx = await me.where(request)
+            if early is not None:
+                return early
+            clean = clean_name(name)
+            if clean is None:
+                return await me.keys_page(request, ctx, error=KEY_NAME_ERROR, name=name, status=400)
+            project = quote(ctx["project"]["id"], safe="")
+            status, body = await me.write(request, "POST", f"/v1/projects/{project}/api-keys", {"name": clean})
+            if status == 201 and isinstance(body, dict) and isinstance(body.get("key"), str):
+                # The only place the plaintext exists: this response. It is not stored, cached or logged.
+                return await me.keys_page(request, ctx, created={"name": str(body.get("name") or clean), "key": body["key"]})
+            if status == 403:
+                return await me.keys_page(request, ctx)  # the engine says no: the page shows the no-access state
+            if status is None:
+                return me.no_store(await me.unreachable(request, "claves"))
+            return await me.keys_page(request, ctx, error=engine_error(status), name=name, status=502)
+
+        @router.post("/claves/{key_id}/revocar")
+        async def revoke_key(request: Request, key_id: str):
+            early, ctx = await me.where(request)
+            if early is not None:
+                return early
+            project = quote(ctx["project"]["id"], safe="")
+            status, body = await me.write(request, "POST", f"/v1/projects/{project}/api-keys/{quote(key_id, safe='')}/revoke")
+            if status != 200 or not isinstance(body, dict):
+                return me.refused(request, KEY_GONE if status == 404 else change_error(status, body), "/claves")
+            text = f"Clave «{body.get('name')}» revocada. Dejó de funcionar al instante."
+            left = me.items(await me.fetch(request, f"/v1/projects/{project}/api-keys"), "api_keys")
+            if left is not None and not any(k.get("status") == "active" for k in left):
+                me.a.flash(request, "warn", f"Clave «{body.get('name')}» revocada. {NO_KEYS_LEFT}")
+                return me.a.back("/claves")
+            return me.done(request, text, "/claves")
 
         return router

@@ -34,7 +34,7 @@ HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 REFRESH_SECONDS = 2
 # Cache-busting query for /static assets: bump when tokens.css, panel.css, panel.js or htmx.min.js change.
-ASSET_VERSION = "24"
+ASSET_VERSION = "25"
 
 # decision -> (nav word, detail word, color class)
 VERDICTS = {
@@ -170,10 +170,11 @@ def _days(n) -> str:
 NAV_GROUPS = (
     ("ACCESOS", (("resumen", "/", "Resumen", False), ("actividad", "/actividad", "Actividad", False),
                  ("usuarios", "/usuarios", "Usuarios", False), ("rutas", "/rutas", "Rutas críticas", False))),
+    ("PROYECTO", (("claves", "/claves", "Claves de API", True),)),
     ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True), ("miembros", "/miembros", "Miembros", True))),
 )
 # Links only an admin or owner is offered (the engine refuses the rest anyway). With the role unknown they stay hidden.
-MANAGER_ONLY = frozenset()
+MANAGER_ONLY = frozenset({"claves"})
 
 
 def nav_for(role: str | None):

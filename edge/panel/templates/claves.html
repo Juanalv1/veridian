@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<main id="live" class="wrap view-team">
+  <div class="tm-page">
+  {% if denied %}
+    <div class="tm-card tm-denied">
+      <h1 class="tm-denied-title">No tienes acceso a las claves</h1>
+      <p class="acct-lead">Las claves de API las ven y administran los admins y owners de {{ org.name }}.</p>
+    </div>
+  {% else %}
+    <div class="acct-head">
+      <h1 class="acct-title">Claves de API</h1>
+      <p class="acct-lead">El middleware de tu app usa una clave para reportar accesos y leer bloqueos. Para rotarla: crea una nueva, despliégala y revoca la anterior.</p>
+    </div>
+
+    {% if created %}
+    <section class="tm-reveal" aria-labelledby="new-key">
+      <h2 id="new-key" class="tm-h2">Copia la clave «{{ created.name }}» ahora</h2>
+      <p class="tm-reveal-text">Es la única vez que la mostramos. Guardamos solo su huella, así que si la pierdes tendrás que crear otra.</p>
+      <div class="tm-copy">
+        <code class="tm-code">{{ created.key }}</code>
+        <button class="btn btn-secondary" type="button" data-copy="{{ created.key }}" hidden>Copiar</button>
+      </div>
+      <pre class="tm-snippet">app.add_middleware(
+    VeridianMiddleware,
+    token=os.environ["VERIDIAN_TOKEN"],
+)</pre>
+      <a class="btn btn-ghost tm-saved" href="/claves">Ya la guardé</a>
+    </section>
+    {% else %}
+    <section class="tm-card" aria-labelledby="mk-title">
+      <h2 id="mk-title" class="tm-h2">Crear una clave</h2>
+      <form class="tm-invite" method="post" action="/claves/nueva">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="field tm-grow{% if error %} invalid{% endif %}">
+          <label for="key-name">Nombre de la clave</label>
+          <input id="key-name" type="text" name="name" value="{{ name }}" placeholder="Producción" maxlength="80" required autocomplete="off"{% if error %} aria-invalid="true" aria-describedby="key-error"{% endif %}>
+        </div>
+        <button class="btn btn-primary" type="submit">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          Crear clave
+        </button>
+      </form>
+      {% if error %}<span id="key-error" class="field-error" role="alert">{{ error }}</span>{% endif %}
+    </section>
+    {% endif %}
+
+    {% if not any_active %}
+    <div class="tm-empty">
+      <h2 class="tm-h2">Este proyecto no tiene claves activas</h2>
+      <p class="acct-small">Sin clave, el middleware no puede reportar accesos y Veridian no protege la app. Crea una para empezar.</p>
+    </div>
+    {% endif %}
+
+    {% if keys %}
+    <div class="box">
+      <table class="users-table">
+        <thead>
+          <tr>
+            <th scope="col">NOMBRE</th><th scope="col">CLAVE</th><th scope="col">CREADA</th><th scope="col">ÚLTIMO USO</th><th scope="col">ESTADO</th>
+            <th scope="col"><span class="vh">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for k in keys %}
+          <tr data-key="{{ k.name }}"{% if not k.active %} class="tm-revoked"{% endif %}>
+            <th scope="row">{{ k.name }}</th>
+            <td><span class="mono">{{ k.prefix }}…</span></td>
+            <td class="tm-muted">{{ k.created }}</td>
+            <td class="tm-muted">{{ k.last }}</td>
+            <td>{{ 'Activa' if k.active else 'Revocada' }}</td>
+            <td class="tm-actions">
+              {% if k.active %}
+              <form class="tm-inline" method="post" action="/claves/{{ k.id|urlencode }}/revocar">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn btn-ghost" type="submit">Revocar<span class="vh"> la clave {{ k.name }}</span></button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="acct-small">Revocar es inmediato: la app que use esa clave deja de reportar y Veridian deja de protegerla (el middleware sigue dejando pasar a todos).</p>
+    {% endif %}
+  {% endif %}
+  </div>
+</main>
+{% endblock %}
