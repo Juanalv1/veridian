@@ -77,14 +77,26 @@ Log in to your app and open a page. Within a few seconds the access shows up in 
 Supported: **route handlers of the App Router, on the Node.js runtime, on a server that stays running** (`next start`, Docker, a VM). Not supported: the Edge runtime (the SDK uses `node:crypto` and background timers), `middleware.ts` (it cannot see the response status or send the device cookie), and serverless platforms that freeze the process after each response (events and the blocklist are batched in memory every ~2 s, so they can be lost or stale there).
 
 ```js
-// lib/veridian.js: one instance for the whole process
-import { createVeridian } from 'veridian-sdk/next';
+import express from 'express';
+import { veridian } from 'veridian-sdk';
 
-export const protect = createVeridian({
-  user: async (request) => (await getSession(request))?.userId, // your own session lookup
-  trustedProxies: 1, // see below
-});
+const app = express();
+
+app.use(
+  veridian({
+    // Id de tu usuario, o null si nadie inició sesión
+    user: (req) => req.user.id,
+    // Proxies tuyos delante de la app (0 si no hay)
+    trustedProxies: 0,
+  }),
+);
+
+// ...aquí van tus rutas...
+
+app.listen(3000);
 ```
+
+The session is detected on its own and Veridian only receives a hash, never the value. If Veridian does not answer, your app keeps working: every request passes. To check the connection, log in to your app: within seconds the access appears in Actividad in the panel, and the connection line says Conectado.
 
 ```js
 // app/api/payouts/bank-account/route.js

@@ -28,9 +28,6 @@ Un middleware en tu app le reporta al servidor de Veridian cada acceso: el ident
 Así se instala en una app con FastAPI:
 
 ```python
-# 1. Instala el SDK:            pip install veridian-sdk
-# 2. Pon tu clave en el entorno (nunca en el código), la que creaste en el panel:
-#                               VERIDIAN_API_KEY=vrd_...
 from fastapi import FastAPI
 from veridian_sdk import VeridianMiddleware
 
@@ -38,56 +35,36 @@ app = FastAPI()
 
 app.add_middleware(
     VeridianMiddleware,
-    # Quién hace la petición: el id de tu usuario, o None si nadie inició sesión.
-    # Si nadie inició sesión y request.state.user no existe, cuenta como None, sin errores.
-    # Corre antes de tus rutas: si tu login pone el usuario en request.state desde
-    # otro middleware, agrega ese middleware después de este, así corre primero.
+    # Id de tu usuario, o None si nadie inició sesión
     user=lambda request: request.state.user.id,
-    # Cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1).
-    # Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.
+    # Proxies tuyos delante de la app (0 si no hay)
     trusted_proxies=0,
 )
-
-# La sesión se detecta sola: cookie sessionid, connect.sid, sid, session_id, PHPSESSID
-# o JSESSIONID, o el token Bearer. Veridian solo recibe un hash, nunca el valor.
-# Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.
-# Para comprobar la conexión: entra a tu app con un usuario y, en unos segundos,
-# ese acceso aparece en Actividad, en el panel de Veridian.
 ```
 
 Y en una app con Express o Next.js (paquete `veridian-sdk` de npm, `sdk/node/`; mismos contratos y comportamiento que el de Python):
 
 ```js
-// 1. Instala el SDK:            npm install veridian-sdk
-// 2. Pon tu clave en el entorno (nunca en el código), la que creaste en el panel:
-//                               VERIDIAN_API_KEY=vrd_...
 import express from 'express';
 import { veridian } from 'veridian-sdk';
 
 const app = express();
 
-// Si tu login (Passport, express-session...) pone al usuario en req.user, regístralo
-// antes que Veridian: así ya sabe quién es cuando llega la petición.
 app.use(
   veridian({
-    // Quién hace la petición: el id de tu usuario, o null si nadie inició sesión.
-    // Si nadie inició sesión y req.user no existe, cuenta como null, sin errores.
+    // Id de tu usuario, o null si nadie inició sesión
     user: (req) => req.user.id,
-    // Cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1).
-    // Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.
+    // Proxies tuyos delante de la app (0 si no hay)
     trustedProxies: 0,
   }),
 );
 
 // ...aquí van tus rutas...
 
-// La sesión se detecta sola: cookie sessionid, connect.sid, sid, session_id, PHPSESSID
-// o JSESSIONID, o el token Bearer. Veridian solo recibe un hash, nunca el valor.
-// Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.
-// Para comprobar la conexión: entra a tu app con un usuario y, en unos segundos,
-// ese acceso aparece en Actividad, en el panel de Veridian.
 app.listen(3000);
 ```
+
+La sesión se detecta sola y Veridian solo recibe un hash, nunca el valor. Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones. `trusted_proxies` (`trustedProxies` en Node) es cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1); con 0 se ignora X-Forwarded-For, que cualquiera puede escribir. Para comprobar la conexión, entra a tu app con un usuario: en unos segundos aparece en Actividad.
 
 ## Impacto
 
