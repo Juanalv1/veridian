@@ -1,4 +1,4 @@
-"""Fake engine: panel principal, roles and contract 10 (people, projects). See docs/DISENO-PRODUCTO.md."""
+"""Fake engine: panel principal, org-level roles and contract 10 (people, orgs, projects). See docs/DISENO-PRODUCTO.md."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +9,7 @@ SDK = "tok-a"
 SDK_B = "tok-b"
 PANEL = "panel-secret"
 OWNER = "owner@example.com"
-CREATOR = "creator@example.com"
+CREATOR = "creator@example.com"  # allowed to create organizations
 FUTURE = "2999-01-01T00:00:00Z"
 PAST = "2000-01-01T00:00:00Z"
 
@@ -21,7 +21,7 @@ def bearer(token):
 @pytest.fixture
 def engine():
     return create_app(tokens={SDK, SDK_B}, seed=[], learn_delay=0, panel_tokens={PANEL},
-                      bootstrap_owners={OWNER}, project_creators={CREATOR})
+                      bootstrap_owners={OWNER}, org_creators={CREATOR})
 
 
 @pytest.fixture
@@ -46,11 +46,15 @@ def project_of(engine, token):
     return engine.state.project_id_for(token)
 
 
+def org_of(engine, token):
+    return engine.state.org_id_for(token)
+
+
 def member_as(client, engine, role, sub="sub-m", email="m@example.com", token=SDK):
-    """A person who is a member of the project of `token` with `role` (through an invitation)."""
-    pid = project_of(engine, token)
-    engine.state.projects[pid].invite(email, role, FUTURE)
-    return login(client, sub=sub, email=email), pid
+    """A person who is a member, with `role`, of the organization that owns the project of `token`
+    (through an invitation). Returns the person and that project's id."""
+    engine.state.orgs[org_of(engine, token)].invite(email, role, FUTURE)
+    return login(client, sub=sub, email=email), project_of(engine, token)
 
 
 # --- who may call what ------------------------------------------------------------------------
@@ -153,11 +157,11 @@ def test_two_panel_credentials_are_accepted_to_rotate_without_a_cut(monkeypatch)
 # --- POST /v1/people/login ------------------------------------------------------------------
 
 
-def test_login_creates_a_person_with_no_projects(client):
+def test_login_creates_a_person_with_no_orgs(client):
     body = login(client, sub="s1", email="Ana@Example.com", name="Ana")
     assert body["person"]["email"] == "ana@example.com" and body["person"]["name"] == "Ana"
-    assert body["person"]["id"].startswith("per_") and body["projects"] == []
-    assert "google_sub" not in body["person"]
+    assert body["person"]["id"].startswith("per_") and body["orgs"] == []
+    assert "google_sub" not in body["person"] and "projects" not in body
 
 
 def test_login_is_an_upsert_by_google_sub_and_updates_the_email(client):
@@ -181,105 +185,231 @@ def test_login_validates_the_body(client):
                        headers=bearer(PANEL)).status_code == 422
 
 
-def test_bootstrap_owner_takes_the_orphan_projects_on_login(client, engine):
+def test_bootstrap_owner_takes_the_orphan_orgs_on_login(client, engine):
     body = login(client, email=OWNER)
-    assert {p["id"] for p in body["projects"]} == {project_of(engine, SDK), project_of(engine, SDK_B)}
-    assert {p["role"] for p in body["projects"]} == {"owner"}
+    assert {o["id"] for o in body["orgs"]} == {org_of(engine, SDK), org_of(engine, SDK_B)}
+    assert {o["role"] for o in body["orgs"]} == {"owner"}
 
 
-def test_bootstrap_only_acts_on_projects_without_an_owner(client, engine):
+def test_login_lists_the_projects_of_each_org(client, engine):
+    body = login(client, email=OWNER)
+    by_org = {o["id"]: o["projects"] for o in body["orgs"]}
+    for token in (SDK, SDK_B):
+        pid = project_of(engine, token)
+        assert by_org[org_of(engine, token)] == [{"id": pid, "name": engine.state.projects[pid].name}]
+
+
+def test_the_seeded_demo_is_an_org_with_its_project(engine, client):
+    body = login(client, email=OWNER)
+    names = sorted((o["name"], p["name"]) for o in body["orgs"] for p in o["projects"])
+    assert names == [("Demo 1", "Demo 1"), ("Demo 2", "Demo 2")]
+    single = TestClient(create_app(tokens={SDK}, panel_tokens={PANEL}, bootstrap_owners={OWNER}))
+    only = login(single, email=OWNER)["orgs"]
+    assert [(o["name"], [p["name"] for p in o["projects"]]) for o in only] == [("Demo", ["Demo"])]
+
+
+def test_bootstrap_only_acts_on_orgs_without_an_owner(client, engine):
     login(client, sub="s-first", email=OWNER)
     engine2 = create_app(tokens={SDK}, learn_delay=0, panel_tokens={PANEL}, bootstrap_owners={OWNER, "b@example.com"})
     c2 = TestClient(engine2)
     login(c2, sub="s1", email=OWNER)
     second = login(c2, sub="s2", email="b@example.com")
-    assert second["projects"] == []  # the project already has an owner
+    assert second["orgs"] == []  # the org already has an owner
 
 
 def test_a_person_who_is_not_a_bootstrap_owner_gets_nothing(client):
-    assert login(client, email="ana@example.com")["projects"] == []
+    assert login(client, email="ana@example.com")["orgs"] == []
 
 
-def test_login_accepts_pending_invitations_by_email(client, engine):
-    pid = project_of(engine, SDK)
-    engine.state.projects[pid].invite("Ana@Example.com", "viewer", FUTURE)
+def test_login_accepts_pending_invitations_to_an_org_by_email(client, engine):
+    oid, pid = org_of(engine, SDK), project_of(engine, SDK)
+    engine.state.orgs[oid].invite("Ana@Example.com", "viewer", FUTURE)
     body = login(client, email="ana@example.com")
-    assert body["projects"] == [{"id": pid, "name": engine.state.projects[pid].name, "role": "viewer"}]
-    assert engine.state.projects[pid].invitations[0]["accepted_at"] is not None
+    assert body["orgs"] == [{"id": oid, "name": engine.state.orgs[oid].name, "role": "viewer",
+                             "projects": [{"id": pid, "name": engine.state.projects[pid].name}]}]
+    assert engine.state.orgs[oid].invitations[0]["accepted_at"] is not None
 
 
 def test_login_ignores_expired_and_already_accepted_invitations(client, engine):
-    pid = project_of(engine, SDK)
-    engine.state.projects[pid].invite("ana@example.com", "admin", PAST)
-    assert login(client, email="ana@example.com")["projects"] == []
-    engine.state.projects[pid].invite("bea@example.com", "admin", FUTURE)
+    org = engine.state.orgs[org_of(engine, SDK)]
+    org.invite("ana@example.com", "admin", PAST)
+    assert login(client, email="ana@example.com")["orgs"] == []
+    org.invite("bea@example.com", "admin", FUTURE)
     bea = login(client, sub="s-bea", email="bea@example.com")
-    engine.state.projects[pid].members.pop(bea["person"]["id"])
-    assert login(client, sub="s-bea", email="bea@example.com")["projects"] == []  # accepted once, not again
+    org.members.pop(bea["person"]["id"])
+    assert login(client, sub="s-bea", email="bea@example.com")["orgs"] == []  # accepted once, not again
 
 
 def test_an_invitation_never_downgrades_an_existing_role(client, engine):
     owner = login(client, email=OWNER)
-    pid = project_of(engine, SDK)
-    engine.state.projects[pid].invite(OWNER, "viewer", FUTURE)
+    oid = org_of(engine, SDK)
+    engine.state.orgs[oid].invite(OWNER, "viewer", FUTURE)
     again = login(client, email=OWNER)
-    assert {p["id"]: p["role"] for p in again["projects"]}[pid] == "owner"
+    assert {o["id"]: o["role"] for o in again["orgs"]}[oid] == "owner"
     assert again["person"]["id"] == owner["person"]["id"]
 
 
-# --- GET /v1/me/projects ----------------------------------------------------------------------
+def test_one_person_can_belong_to_several_orgs_with_a_role_in_each(client, engine):
+    engine.state.orgs[org_of(engine, SDK)].invite("ana@example.com", "admin", FUTURE)
+    engine.state.orgs[org_of(engine, SDK_B)].invite("ana@example.com", "viewer", FUTURE)
+    body = login(client, email="ana@example.com")
+    assert {o["id"]: o["role"] for o in body["orgs"]} == {org_of(engine, SDK): "admin", org_of(engine, SDK_B): "viewer"}
 
 
-def test_me_projects_lists_my_projects_with_my_role(client, engine):
+# --- GET /v1/me/orgs ------------------------------------------------------------------------------
+
+
+def test_me_orgs_lists_my_orgs_with_my_role_and_their_projects(client, engine):
     person, pid = member_as(client, engine, "admin")
-    r = client.get("/v1/me/projects", headers=acting(person))
+    oid = org_of(engine, SDK)
+    r = client.get("/v1/me/orgs", headers=acting(person))
     assert r.status_code == 200
-    assert r.json() == {"projects": [{"id": pid, "name": engine.state.projects[pid].name, "role": "admin"}]}
+    assert r.json() == {"orgs": [{"id": oid, "name": engine.state.orgs[oid].name, "role": "admin",
+                                  "projects": [{"id": pid, "name": engine.state.projects[pid].name}]}]}
 
 
-def test_me_projects_needs_a_known_actor(client):
-    assert client.get("/v1/me/projects", headers=bearer(PANEL)).status_code == 403
-    assert client.get("/v1/me/projects", headers=bearer(SDK)).status_code == 403
-    assert client.get("/v1/me/projects").status_code == 401
+def test_me_orgs_needs_a_known_actor(client):
+    assert client.get("/v1/me/orgs", headers=bearer(PANEL)).status_code == 403
+    assert client.get("/v1/me/orgs", headers=bearer(SDK)).status_code == 403
+    assert client.get("/v1/me/orgs").status_code == 401
 
 
-# --- POST /v1/projects ------------------------------------------------------------------------
+def test_the_project_level_endpoints_of_the_previous_design_are_gone(client):
+    person = login(client, sub="s-c", email=CREATOR)
+    assert client.get("/v1/me/projects", headers=acting(person)).status_code == 404
+    assert client.post("/v1/projects", json={"name": "Shop"}, headers=acting(person)).status_code in (404, 405)
 
 
-def test_nobody_creates_projects_unless_allowlisted(engine, client):
+# --- POST /v1/orgs ----------------------------------------------------------------------------------
+
+
+def test_nobody_creates_orgs_unless_allowlisted(engine, client):
     person = login(client, email="ana@example.com")
-    r = client.post("/v1/projects", json={"name": "Mine"}, headers=acting(person))
+    r = client.post("/v1/orgs", json={"name": "Mine"}, headers=acting(person))
     assert r.status_code == 403 and r.json() == {"error": "forbidden"}
     empty = TestClient(create_app(tokens={SDK}, panel_tokens={PANEL}))
     p = login(empty, email=CREATOR)
-    assert empty.post("/v1/projects", json={"name": "Mine"}, headers=acting(p)).status_code == 403
+    assert empty.post("/v1/orgs", json={"name": "Mine"}, headers=acting(p)).status_code == 403
 
 
-def test_an_allowlisted_person_creates_a_project_and_owns_it(client):
+def test_an_allowlisted_person_creates_an_org_and_owns_it(client):
     person = login(client, sub="s-c", email=CREATOR)
-    r = client.post("/v1/projects", json={"name": "Shop"}, headers=acting(person))
+    r = client.post("/v1/orgs", json={"name": "Acme"}, headers=acting(person))
     assert r.status_code == 201
     body = r.json()
-    assert body["name"] == "Shop" and body["role"] == "owner" and body["id"].startswith("p_")
-    assert body["enforcement"] == "observe" and body["ai_enabled"] is True and body["retention_days"] == 90
-    mine = client.get("/v1/me/projects", headers=acting(person)).json()["projects"]
-    assert {"id": body["id"], "name": "Shop", "role": "owner"} in mine
-    # the new project is its own empty tenant
-    r = client.get("/v1/activity", headers=acting(person, body["id"]))
-    assert r.status_code == 200 and r.json() == {"activity": []}
+    assert body["name"] == "Acme" and body["role"] == "owner" and body["id"].startswith("org_")
+    assert body["projects"] == []
+    mine = client.get("/v1/me/orgs", headers=acting(person)).json()["orgs"]
+    assert {"id": body["id"], "name": "Acme", "role": "owner", "projects": []} in mine
 
 
-def test_project_creators_come_from_the_environment(monkeypatch):
-    monkeypatch.setenv("VERIDIAN_PROJECT_CREATORS", "Creator@Example.com, other@example.com")
+def test_org_creators_come_from_the_environment(monkeypatch):
+    monkeypatch.setenv("VERIDIAN_ORG_CREATORS", "Creator@Example.com, other@example.com")
     c = TestClient(create_app(tokens={SDK}, panel_tokens={PANEL}))
     p = login(c, email=CREATOR)
-    assert c.post("/v1/projects", json={"name": "Shop"}, headers=acting(p)).status_code == 201
+    assert c.post("/v1/orgs", json={"name": "Acme"}, headers=acting(p)).status_code == 201
 
 
 @pytest.mark.parametrize("body", [{}, {"name": ""}, {"name": "x" * 81}])
-def test_project_creation_validates_the_name(client, body):
+def test_org_creation_validates_the_name(client, body):
     person = login(client, sub="s-c", email=CREATOR)
-    assert client.post("/v1/projects", json=body, headers=acting(person)).status_code == 422
+    assert client.post("/v1/orgs", json=body, headers=acting(person)).status_code == 422
+
+
+# --- GET / PATCH /v1/orgs/{id} ----------------------------------------------------------------------
+
+
+def test_a_member_reads_the_org_with_their_role(client, engine):
+    person, pid = member_as(client, engine, "viewer")
+    oid = org_of(engine, SDK)
+    r = client.get(f"/v1/orgs/{oid}", headers=acting(person))
+    assert r.status_code == 200
+    assert r.json() == {"id": oid, "name": engine.state.orgs[oid].name, "role": "viewer",
+                        "created_at": engine.state.orgs[oid].created_at,
+                        "projects": [{"id": pid, "name": engine.state.projects[pid].name}]}
+
+
+def test_a_non_member_cannot_read_or_rename_an_org(client, engine):
+    login(client, email=OWNER)
+    stranger = login(client, sub="s-x", email="x@example.com")
+    oid = org_of(engine, SDK)
+    assert client.get(f"/v1/orgs/{oid}", headers=acting(stranger)).status_code == 403
+    assert client.patch(f"/v1/orgs/{oid}", json={"name": "Hax"}, headers=acting(stranger)).status_code == 403
+    assert client.get("/v1/orgs/org_nope", headers=acting(stranger)).status_code == 403
+
+
+def test_only_an_admin_renames_the_org(client, engine):
+    viewer, _ = member_as(client, engine, "viewer", sub="s-v", email="v@example.com")
+    admin, _ = member_as(client, engine, "admin", sub="s-a", email="a@example.com")
+    oid = org_of(engine, SDK)
+    assert client.patch(f"/v1/orgs/{oid}", json={"name": "Hax"}, headers=acting(viewer)).status_code == 403
+    r = client.patch(f"/v1/orgs/{oid}", json={"name": " Renamed "}, headers=acting(admin))
+    assert r.status_code == 200 and r.json()["name"] == "Renamed" and r.json()["role"] == "admin"
+    assert client.patch(f"/v1/orgs/{oid}", json={"name": ""}, headers=acting(admin)).status_code == 422
+
+
+# --- GET / POST /v1/orgs/{id}/projects --------------------------------------------------------------
+
+
+def test_a_member_lists_the_projects_of_the_org(client, engine):
+    person, pid = member_as(client, engine, "viewer")
+    r = client.get(f"/v1/orgs/{org_of(engine, SDK)}/projects", headers=acting(person))
+    assert r.status_code == 200
+    assert [p["id"] for p in r.json()["projects"]] == [pid]
+    assert r.json()["projects"][0]["org_id"] == org_of(engine, SDK)
+
+
+def test_a_non_member_cannot_list_or_create_projects_in_an_org(client, engine):
+    login(client, email=OWNER)
+    stranger = login(client, sub="s-x", email="x@example.com")
+    oid = org_of(engine, SDK)
+    assert client.get(f"/v1/orgs/{oid}/projects", headers=acting(stranger)).status_code == 403
+    assert client.post(f"/v1/orgs/{oid}/projects", json={"name": "Hax"}, headers=acting(stranger)).status_code == 403
+
+
+def test_a_viewer_cannot_create_a_project_but_an_admin_can(client, engine):
+    viewer, _ = member_as(client, engine, "viewer", sub="s-v", email="v@example.com")
+    admin, _ = member_as(client, engine, "admin", sub="s-a", email="a@example.com")
+    oid = org_of(engine, SDK)
+    assert client.post(f"/v1/orgs/{oid}/projects", json={"name": "Shop"}, headers=acting(viewer)).status_code == 403
+    r = client.post(f"/v1/orgs/{oid}/projects", json={"name": "Shop"}, headers=acting(admin))
+    assert r.status_code == 201
+    body = r.json()
+    assert body["name"] == "Shop" and body["org_id"] == oid and body["id"].startswith("p_")
+    assert body["role"] == "admin"
+    assert body["enforcement"] == "observe" and body["ai_enabled"] is True and body["retention_days"] == 90
+    assert body["id"] in [p["id"] for p in client.get(f"/v1/orgs/{oid}/projects", headers=acting(viewer)).json()["projects"]]
+
+
+def test_an_allowlisted_creator_adds_a_project_to_their_new_org(client):
+    person = login(client, sub="s-c", email=CREATOR)
+    org = client.post("/v1/orgs", json={"name": "Acme"}, headers=acting(person)).json()
+    project = client.post(f"/v1/orgs/{org['id']}/projects", json={"name": "Shop"}, headers=acting(person)).json()
+    assert project["role"] == "owner"
+    # the new project is its own empty tenant
+    r = client.get("/v1/activity", headers=acting(person, project["id"]))
+    assert r.status_code == 200 and r.json() == {"activity": []}
+    assert client.get("/v1/me/orgs", headers=acting(person)).json()["orgs"][-1]["projects"] == [
+        {"id": project["id"], "name": "Shop"}]
+
+
+@pytest.mark.parametrize("body", [{}, {"name": ""}, {"name": "x" * 81}])
+def test_project_creation_validates_the_name(client, engine, body):
+    admin, _ = member_as(client, engine, "admin")
+    assert client.post(f"/v1/orgs/{org_of(engine, SDK)}/projects", json=body, headers=acting(admin)).status_code == 422
+
+
+def test_an_org_role_applies_to_every_project_of_that_org_and_to_no_other(client, engine):
+    viewer, first = member_as(client, engine, "viewer", sub="s-v", email="v@example.com")
+    admin, _ = member_as(client, engine, "admin", sub="s-a", email="a@example.com")
+    oid = org_of(engine, SDK)
+    second = client.post(f"/v1/orgs/{oid}/projects", json={"name": "Second"}, headers=acting(admin)).json()["id"]
+    for pid in (first, second):
+        assert client.get("/v1/decisions", headers=acting(viewer, pid)).status_code == 200
+        assert client.get("/v1/blocklist", headers=acting(viewer, pid)).status_code == 200
+        assert client.post("/v1/decisions/d_nope/normal", headers=acting(viewer, pid)).status_code == 403
+        assert client.post("/v1/decisions/d_nope/normal", headers=acting(admin, pid)).status_code == 404
+    assert client.get("/v1/decisions", headers=acting(admin, project_of(engine, SDK_B))).status_code == 403
 
 
 # --- GET / PATCH /v1/projects/{id} -------------------------------------------------------------
@@ -289,8 +419,8 @@ def test_a_member_reads_the_project(client, engine):
     person, pid = member_as(client, engine, "viewer")
     r = client.get(f"/v1/projects/{pid}", headers=acting(person))
     assert r.status_code == 200
-    assert r.json() == {"id": pid, "name": engine.state.projects[pid].name, "retention_days": 90,
-                        "enforcement": "enforce", "ai_enabled": True,
+    assert r.json() == {"id": pid, "org_id": org_of(engine, SDK), "name": engine.state.projects[pid].name,
+                        "retention_days": 90, "enforcement": "enforce", "ai_enabled": True,
                         "created_at": engine.state.projects[pid].created_at, "role": "viewer"}
 
 
@@ -301,6 +431,13 @@ def test_a_non_member_cannot_read_or_patch_a_project(client, engine):
     assert client.get(f"/v1/projects/{pid}", headers=acting(stranger)).status_code == 403
     assert client.patch(f"/v1/projects/{pid}", json={"name": "Hax"}, headers=acting(stranger)).status_code == 403
     assert client.get("/v1/projects/p_nope", headers=acting(stranger)).status_code == 403
+
+
+def test_a_member_of_another_org_cannot_read_or_patch_a_project(client, engine):
+    admin, _ = member_as(client, engine, "admin", token=SDK)
+    other = project_of(engine, SDK_B)
+    assert client.get(f"/v1/projects/{other}", headers=acting(admin)).status_code == 403
+    assert client.patch(f"/v1/projects/{other}", json={"name": "Hax"}, headers=acting(admin)).status_code == 403
 
 
 def test_a_viewer_cannot_patch_but_an_admin_can(client, engine):

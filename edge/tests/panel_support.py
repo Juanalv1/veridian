@@ -21,6 +21,7 @@ PANEL_TOKEN = "tok-panel"
 SESSION_SECRET = "s" * 32
 PERSON_ID = "per_stub"
 PROJECT_ID = "p_stub"
+ORG_ID = "org_stub"
 EMAIL = "ana@example.com"
 
 
@@ -49,18 +50,23 @@ def google_transport(sub="g-1", email=EMAIL, name="Ana", verified=True, token_st
     return httpx.MockTransport(handler)
 
 
-def login_answer(projects=((PROJECT_ID, "Demo", "owner"),), person=PERSON_ID, email=EMAIL):
+def login_answer(projects=((PROJECT_ID, "Demo", "owner"),), person=PERSON_ID, email=EMAIL, orgs=None):
+    """The login answer. `projects` are (id, name, role) triples placed in one org; `orgs` overrides it
+    with a list of (org_id, role, [(project_id, name), ...])."""
+    if orgs is None:
+        orgs = [(ORG_ID, projects[0][2], [(i, n) for i, n, _ in projects])] if projects else []
     return {"person": {"id": person, "email": email, "name": "Ana"},
-            "projects": [{"id": i, "name": n, "role": r} for i, n, r in projects]}
+            "orgs": [{"id": o, "name": o, "role": r, "projects": [{"id": i, "name": n} for i, n in ps]}
+                     for o, r, ps in orgs]}
 
 
-def stub_client(handler, projects=((PROJECT_ID, "Demo", "owner"),), logins=None):
+def stub_client(handler, projects=((PROJECT_ID, "Demo", "owner"),), logins=None, orgs=None):
     """AsyncClient over a canned engine. Login is answered here, not by `handler`."""
     async def wrapper(request):
         if request.url.path == "/v1/people/login":
             if logins is not None:
                 logins.append(request)
-            return httpx.Response(200, json=login_answer(projects))
+            return httpx.Response(200, json=login_answer(projects, orgs=orgs))
         h = request.headers
         if (h.get("authorization") != f"Bearer {PANEL_TOKEN}" or h.get("x-veridian-actor") != PERSON_ID
                 or h.get("x-veridian-project") != PROJECT_ID):
@@ -119,4 +125,4 @@ def engine_panel_headers(engine_app, email=EMAIL, sub="g-1"):
     c = TestClient(engine_app)
     r = c.post("/v1/people/login", json=body, headers={"Authorization": f"Bearer {PANEL_TOKEN}"}).json()
     return {"Authorization": f"Bearer {PANEL_TOKEN}", "X-Veridian-Actor": r["person"]["id"],
-            "X-Veridian-Project": r["projects"][0]["id"]}
+            "X-Veridian-Project": r["orgs"][0]["projects"][0]["id"]}

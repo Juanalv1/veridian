@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from panel.config import Settings, load_dotenv
 from panel.main import ASSET_VERSION, create_app
 from tests.panel_support import (EMAIL, PANEL_TOKEN, PERSON_ID, PROJECT_ID, PanelClient, google_transport,
-                                 make_panel, session_of, sign_in, stub_client, test_settings)
+                                 login_answer, make_panel, session_of, sign_in, stub_client, test_settings)
 
 def api_routes(routes):
     """Every APIRoute, looking inside the routers the app includes."""
@@ -267,13 +267,14 @@ def test_the_no_projects_page_needs_a_session():
 
 
 def multi_engine(handler, people):
-    """Canned engine whose login answers per google_sub: people = {sub: (person_id, [(project_id, role), ...])}."""
+    """Canned engine whose login answers per google_sub: people = {sub: (person_id, [(project_id, role), ...])},
+    all the projects in one org."""
     def wrapper(request):
         if request.url.path == "/v1/people/login":
             sub = json.loads(request.content)["google_sub"]
             person, projects = people[sub]
-            return httpx.Response(200, json={"person": {"id": person, "email": EMAIL, "name": "Ana"},
-                                             "projects": [{"id": i, "name": i, "role": r} for i, r in projects]})
+            orgs = [("org_1", projects[0][1], [(i, i) for i, _ in projects])] if projects else []
+            return httpx.Response(200, json=login_answer(person=person, orgs=orgs))
         return handler(request)
     return httpx.AsyncClient(transport=httpx.MockTransport(wrapper))
 
@@ -293,6 +294,43 @@ def test_data_reads_carry_the_service_credential_actor_and_the_first_project(mon
         assert request.headers["authorization"] == f"Bearer {PANEL_TOKEN}"
         assert request.headers["x-veridian-actor"] == "per_1"
         assert request.headers["x-veridian-project"] == "p_first"
+
+
+def org_engine(handler, orgs):
+    """Canned engine whose login answers with `orgs` (see `login_answer`)."""
+    def wrapper(request):
+        if request.url.path == "/v1/people/login":
+            return httpx.Response(200, json=login_answer(person="per_1", orgs=orgs))
+        return handler(request)
+    return httpx.AsyncClient(transport=httpx.MockTransport(wrapper))
+
+
+def test_the_panel_uses_the_first_project_of_the_first_org():
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers["x-veridian-project"])
+        return httpx.Response(200, json={"decisions": [], "activity": []})
+
+    client = org_engine(handler, [("org_a", "admin", [("p_a1", "A1"), ("p_a2", "A2")]),
+                                  ("org_b", "owner", [("p_b1", "B1")])])
+    assert make_panel(client).get("/actividad").status_code == 200
+    assert seen and set(seen) == {"p_a1"}
+
+
+def test_an_org_without_projects_is_skipped_and_no_projects_at_all_means_no_projects_page():
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers["x-veridian-project"])
+        return httpx.Response(200, json={"decisions": [], "activity": []})
+
+    client = org_engine(handler, [("org_a", "viewer", []), ("org_b", "owner", [("p_b1", "B1")])])
+    assert make_panel(client).get("/actividad").status_code == 200
+    assert set(seen) == {"p_b1"}
+    empty = org_engine(handler, [("org_a", "owner", [])])
+    r = make_panel(empty).get("/actividad", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/sin-proyectos"
 
 
 def test_the_engine_denying_membership_is_shown_not_hidden():
