@@ -63,7 +63,7 @@ def list_decisions(conn: sqlite3.Connection, client_id: str, limit: int) -> list
         event_rows = conn.execute(
             "SELECT event_id FROM decision_events WHERE client_id = ? AND decision_id = ? ORDER BY event_id",
             (client_id, row["id"]),
-        )
+        ).fetchall()
         result.append(
             {
                 "id": row["id"],
@@ -74,9 +74,25 @@ def list_decisions(conn: sqlite3.Connection, client_id: str, limit: int) -> list
                 "rationale": row["rationale"],
                 "event_ids": [event_row["event_id"] for event_row in event_rows],
                 "status": "marked_normal" if row["normal"] else "open",
+                "access": triggering_access(conn, client_id, row["id"]),
             }
         )
     return result
+
+
+def triggering_access(conn: sqlite3.Connection, client_id: str, decision_id: str) -> dict | None:
+    """The latest event behind a decision, as the panel compares it with the profile (contract 3)."""
+    event = conn.execute(
+        "SELECT e.ts, e.ip, e.device_id, e.session_id, e.method, e.route FROM decision_events d"
+        " JOIN events e ON e.client_id = d.client_id AND e.id = d.event_id"
+        " WHERE d.client_id = ? AND d.decision_id = ? ORDER BY e.ts DESC LIMIT 1",
+        (client_id, decision_id),
+    ).fetchone()
+    if event is None:
+        return None
+    access = dict(event)
+    access["ts"] = format_decision_ts(datetime.fromisoformat(access["ts"]))
+    return access
 
 
 def mark_normal(conn: sqlite3.Connection, client_id: str, decision_id: str) -> dict | None:

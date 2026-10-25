@@ -175,3 +175,17 @@ def test_decision_status_follows_mark_normal(client):
     client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
     [decision] = decisions(client)
     assert decision["status"] == "marked_normal"
+
+
+def test_decision_carries_the_triggering_access(client):
+    seed_owner_history(client)
+    attack(client)
+    [decision] = decisions(client)
+    assert decision["access"] == {
+        "ts": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "ip": "203.0.113.9",
+        "device_id": "d_evil",
+        "session_id": "s_evil",
+        "method": "POST",
+        "route": "/payouts/bank-account",
+    }
