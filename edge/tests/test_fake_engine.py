@@ -484,3 +484,52 @@ def test_activity_marked_normal_turns_session_and_ip_accesses_back_to_normal(cli
                          rejected(id="e_other", session_id="s_other")])
     client.post(f"/v1/decisions/{d['id']}/normal", headers=AUTH)
     assert all(i["verdict"] == "normal" for i in activity(client).json()["activity"])
+
+
+# --- session-only blocks (known network) -----------------------------------
+
+
+def session_only_state():
+    """The rule in this fake always comes from a new network (IP blocked too);
+    a session-only block (e.g. a rate spike from the owner's network) is
+    produced here by calling the block directly, as the real engine does."""
+    from fake_engine.app import ClientState, DEFAULT_ROUTES, EventIn
+
+    st = ClientState(routes=dict(DEFAULT_ROUTES))
+    ev = lambda **o: EventIn(**{**make_event(), **o})  # noqa: E731
+    return st, ev
+
+
+def test_session_only_block_lists_the_session_but_not_the_ip():
+    st, ev = session_only_state()
+    st.ingest(ev(id="e_t", session_id="s_own", ip="190.202.14.7"))
+    st._block(ev(id="e_t", session_id="s_own", ip="190.202.14.7"), "normal", block_ip=False)
+    assert st.sessions == ["s_own"] and st.ips == []
+
+
+def test_session_only_block_activity_matches_the_session_but_not_the_ip():
+    st, ev = session_only_state()
+    trigger = ev(id="e_t", session_id="s_own", ip="190.202.14.7")
+    st.log.append(trigger)
+    st._block(trigger, "normal", block_ip=False)
+    st.log.append(ev(id="e_same_session", session_id="s_own", ip="190.202.14.7"))
+    st.log.append(ev(id="e_same_ip", session_id="s_other", ip="190.202.14.7"))
+    items = {i["event_id"]: i for i in st.activity(10)}
+    assert items["e_t"]["verdict"] == "block"
+    assert items["e_same_session"]["verdict"] == "block"
+    assert items["e_same_ip"]["verdict"] == "normal" and items["e_same_ip"]["decision_id"] is None
+
+
+def test_marking_a_session_only_block_normal_keeps_an_ip_listed_by_another_block():
+    st, ev = session_only_state()
+    st.ips.append("190.202.14.7")  # listed by some other open block
+    trigger = ev(id="e_t", session_id="s_own", ip="190.202.14.7")
+    st.log.append(trigger)
+    st._block(trigger, "normal", block_ip=False)
+    st.mark_normal(st.decisions[0]["id"])
+    assert st.sessions == [] and st.ips == ["190.202.14.7"]
+
+
+def test_block_from_a_new_network_still_lists_session_and_ip(client):
+    post_events(client, [attack()])
+    assert client.get("/v1/blocklist", headers=AUTH).json()["ips"] == ["203.0.113.9"]

@@ -125,6 +125,7 @@ class ClientState:
     log: list[EventIn] = field(default_factory=list)  # every accepted event, oldest first
     normal: set[str] = field(default_factory=set)
     blocked_users: set[str] = field(default_factory=set)
+    ip_blocked: set[str] = field(default_factory=set)  # decision ids whose block lists the IP too
     # Events are learned only after `learn_delay` seconds, like the real engine
     # ("events older than N minutes that were not flagged"). Otherwise an
     # attacker's own login would whitelist their network before they act.
@@ -167,18 +168,23 @@ class ClientState:
         # A user with no history cannot be judged: learn instead of blocking.
         has_history = bool(profile.networks)
         if route_class == "critical" and never_used and new_network and has_history:
-            self._block(event, route_class)
+            # The IP is blocked only because the network is new (always, for this rule).
+            self._block(event, route_class, block_ip=new_network)
         else:
             self._learn_later(event)
 
-    def _block(self, event: EventIn, route_class: str) -> None:
+    def _block(self, event: EventIn, route_class: str, block_ip: bool = True) -> None:
+        """Block the session; the IP too only when `block_ip` (new network). A block from a
+        known network is session-only: the IP is the owner's."""
         if event.session_id and event.session_id not in self.sessions:
             self.sessions.append(event.session_id)
-        if event.ip not in self.ips:
+        if block_ip and event.ip not in self.ips:
             self.ips.append(event.ip)
         self.version += 1
         self.blocked_users.add(event.user_id)
         decision_id = f"d_{len(self.decisions) + 1}"
+        if block_ip:
+            self.ip_blocked.add(decision_id)
         self.pending_events[decision_id] = event
         self.decisions.append(
             {
@@ -217,8 +223,8 @@ class ClientState:
         An access belongs to a block decision when, from the access that
         triggered it (inclusive), it is in the blocked session (any status: the
         request in flight before the middleware's next poll was served with 200)
-        or comes from the blocked IP, even in another session. This fake engine
-        always blocks the IP, and the session when the trigger has one. Marking
+        or comes from the blocked IP (only when the block lists it), even in another
+        session. Marking
         the decision normal turns all of them back to `normal` (verdict_of).
         """
         index = {e.id: i for i, e in enumerate(self.log)}
@@ -227,7 +233,8 @@ class ClientState:
         for d in self.decisions:
             access = d.get("access") or {}
             if d["decision"] == "block" and d["event_ids"][0] in index:
-                blocks.append((index[d["event_ids"][0]], access.get("session_id"), access.get("ip"), d))
+                ip = access.get("ip") if d["id"] in self.ip_blocked else None
+                blocks.append((index[d["event_ids"][0]], access.get("session_id"), ip, d))
         items = []
         for i in range(len(self.log) - 1, max(len(self.log) - 1 - limit, -1), -1):
             e = self.log[i]
@@ -267,7 +274,7 @@ class ClientState:
         if event.session_id in self.sessions:
             self.sessions.remove(event.session_id)
             changed = True
-        if event.ip in self.ips:
+        if decision_id in self.ip_blocked and event.ip in self.ips:
             self.ips.remove(event.ip)
             changed = True
         if changed:
