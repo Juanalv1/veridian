@@ -6,27 +6,29 @@ Se lee en voz alta a ritmo normal (unas 2,5 palabras por segundo). Cada bloque i
 
 | Bloque | Tiempo | Pantalla |
 |---|---|---|
-| 1. Portada | ~5 s | Logo y «Veridian» |
-| 2. Problema | ~20 s | Slide del problema |
+| 1. Portada | ~7 s | Logo y «Veridian» |
+| 2. Problema | ~15 s | Slide del problema |
 | 3. Solución | ~25 s | Slide verde de la solución |
 | 4. Demo | ~130 s | App y panel, lado a lado |
 | 5. Cierre | ~5 s | «Gracias.» |
 
-## 1. Portada (~5 s)
+## 1. Portada (~7 s)
 
-> Hola, somos Veridian.
+Dato del [Verizon DBIR 2025](https://www.verizon.com/business/resources/articles/credential-stuffing-attacks-2025-dbir-research/) (22 %).
 
-## 2. Problema (~22 s)
+> Una de cada cinco filtraciones de datos comienza con una credencial robada.
+>
+> Por eso creamos Veridian.
+
+**Cambio de slide a Problema.**
+
+## 2. Problema (~15 s)
 
 **Pantalla:** «Un sistema no sabe si quien entra es realmente el dueño de la cuenta», con las tarjetas «Contraseña filtrada», «Código 2FA robado» y «Sesión robada».
 
-**Apertura** (dato del [Verizon DBIR 2025](https://www.verizon.com/business/resources/articles/credential-stuffing-attacks-2025-dbir-research/): 22 %):
-
-> Una de cada cinco filtraciones de datos comienza con una credencial robada.
-
 **Título:**
 
-> Por eso creamos Veridian. Porque un sistema no sabe si quien entra es realmente el dueño de la cuenta. Una vez dentro, no vuelve a comprobar quién eres.
+> Porque un sistema no sabe si quien entra es realmente el dueño de la cuenta. Una vez dentro, no vuelve a comprobar quién eres.
 
 **Tarjetas:**
 
