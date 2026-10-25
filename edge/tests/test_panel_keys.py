@@ -118,8 +118,10 @@ def test_creating_shows_the_key_once_with_copy_snippet_and_confirmation():
     page = text(r.text)
     assert "Copia la clave «Producción» ahora" in page
     assert "Es la única vez que la mostramos. Guardamos solo su huella, así que si la pierdes tendrás que crear otra." in page
-    assert f"<code" in r.text and r.text.count(key) == 2  # the visible key, and the copy button's payload
-    assert "VeridianMiddleware" in r.text and 'os.environ["VERIDIAN_TOKEN"]' in r.text.replace("&#34;", '"')
+    # the visible key, the copy button's payload, and the key already in the environment line of the snippet
+    assert f"<code" in r.text and r.text.count(key) == 3
+    assert f"VERIDIAN_API_KEY={key}</code>" in r.text
+    assert "VeridianMiddleware" in r.text and 'data-copy-from="snippet-python"' in r.text
     assert re.search(r'<a[^>]*href="/claves"[^>]*>\s*Ya la guardé', r.text)
     assert "data-copy" in r.text
     assert 'action="/claves/nueva"' not in r.text  # the form is hidden while the key is shown
