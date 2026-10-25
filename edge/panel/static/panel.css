@@ -338,6 +338,7 @@
 .proj-id { font-family:var(--font-mono); font-size:13px; color:var(--muted); overflow-wrap:anywhere; }
 .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border:1px solid currentColor; border-radius:var(--radius-pill); font-size:13px; color:var(--viridian); }
 .pill.mode-observe { color:var(--state-review); }
+.pill.st-failed { color:var(--state-block); }
 .pill-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
 .btn-danger { background:transparent; color:var(--state-block); border-color:var(--state-block); }
 .btn-danger:hover { background:color-mix(in srgb, var(--state-block) 14%, transparent); }

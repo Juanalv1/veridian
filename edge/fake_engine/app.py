@@ -19,6 +19,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Header, Path, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -121,6 +122,44 @@ class ApiKeyIn(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 
 
+class WebhookIn(BaseModel):
+    url: str
+
+
+class WebhookPatch(BaseModel):
+    enabled: bool
+
+
+WEBHOOK_URL_MAX = 2048
+
+
+def unsafe_url_reason(url: str) -> str | None:
+    """Why `url` may not receive webhooks, or None. Like the engine but without DNS: https only, no userinfo,
+    at most 2048 characters, and the host is not localhost, `.local` or a private/loopback/link-local literal."""
+    if len(url) > WEBHOOK_URL_MAX:
+        return f"url longer than {WEBHOOK_URL_MAX} characters"
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return "url is not valid"
+    if parts.scheme != "https":
+        return "url must be https"
+    if parts.username is not None or parts.password is not None:
+        return "url must not carry credentials"
+    if not host:
+        return "url has no host"
+    if host == "localhost" or host.endswith((".localhost", ".local")):
+        return "host is local"
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    if not addr.is_global:
+        return "host is a private address"
+    return None
+
+
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
@@ -202,6 +241,8 @@ class ClientState:
     decisions: list[dict] = field(default_factory=list)  # oldest first
     pending_events: dict[str, EventIn] = field(default_factory=dict)
     log: list[EventIn] = field(default_factory=list)  # every accepted event, oldest first
+    webhook: dict | None = None  # contract 13: {url, enabled, created_at}; the secret is never kept readable here
+    deliveries: list[dict] = field(default_factory=list)  # webhook notifications, oldest first
     normal: set[str] = field(default_factory=set)
     blocked_users: set[str] = field(default_factory=set)
     ip_blocked: set[str] = field(default_factory=set)  # decision ids whose block lists the IP too
@@ -285,6 +326,12 @@ class ClientState:
         if block_ip:
             self.ip_blocked.add(decision_id)
         self.pending_events[decision_id] = event
+        if self.webhook and self.webhook["enabled"]:
+            # No network here: the delivery is recorded as delivered on the first attempt (deterministic).
+            at = now_iso()
+            self.deliveries.append({"id": "ntf_" + secrets.token_hex(6), "kind": "block", "decision_id": decision_id,
+                                    "status": "delivered", "attempts": 1, "next_attempt_at": None,
+                                    "last_error": None, "created_at": at, "updated_at": at})
         self.decisions.append(
             {
                 "id": decision_id,
@@ -617,6 +664,8 @@ def create_app(
     app.state.orgs = orgs
     app.state.people = people
     app.state.api_keys = api_keys
+    # What POST .../webhook/test answers; tests replace it. The fake engine never calls the URL.
+    app.state.webhook_test_result = {"delivered": True, "status_code": 200, "error": None}
     app.state.project_id_for = by_token.__getitem__
     app.state.org_id_for = lambda token: projects[by_token[token]].org_id
 
@@ -1059,6 +1108,65 @@ def create_app(
             record(orgs[project.org_id], person, "api_key.revoked", "api_key", key.id, project.id,
                    {"name": key.name, "prefix": key.prefix})
         return key_view(key)
+
+    # --- contract 13: project webhook ------------------------------------------------------------------
+
+    def webhook_project(project_id: str, person: Person) -> Project:
+        return authorize(person, project_id, "admin")
+
+    def audit_webhook(project: Project, person: Person, action: str, meta: dict | None = None) -> None:
+        record(orgs[project.org_id], person, action, "webhook", project.id, project.id, meta)
+
+    @app.get("/v1/projects/{project_id}/webhook")
+    def get_webhook(project_id: Annotated[str, Path()], person: Actor, _: None = Depends(panel_only)):
+        return {"webhook": webhook_project(project_id, person).state.webhook}
+
+    @app.put("/v1/projects/{project_id}/webhook")
+    def put_webhook(project_id: Annotated[str, Path()], body: WebhookIn, person: Actor, _: None = Depends(panel_only)):
+        project = webhook_project(project_id, person)
+        url = body.url.strip()
+        reason = unsafe_url_reason(url)
+        if reason:
+            return JSONResponse({"error": "unsafe_url", "detail": reason}, status_code=422)
+        secret = "whsec_" + secrets.token_urlsafe(32)
+        project.state.webhook = {"url": url, "enabled": True, "created_at": now_iso()}
+        audit_webhook(project, person, "webhook.set", {"url": url})
+        # The only time the signing secret leaves the engine.
+        return JSONResponse({**project.state.webhook, "secret": secret}, headers={"Cache-Control": "no-store"})
+
+    @app.patch("/v1/projects/{project_id}/webhook")
+    def patch_webhook(project_id: Annotated[str, Path()], body: WebhookPatch, person: Actor,
+                      _: None = Depends(panel_only)):
+        project = webhook_project(project_id, person)
+        if project.state.webhook is None:
+            raise NotFound()
+        project.state.webhook["enabled"] = body.enabled
+        audit_webhook(project, person, "webhook.enable", {"enabled": body.enabled})
+        return {"webhook": project.state.webhook}
+
+    @app.delete("/v1/projects/{project_id}/webhook", status_code=204)
+    def delete_webhook(project_id: Annotated[str, Path()], person: Actor, _: None = Depends(panel_only)):
+        project = webhook_project(project_id, person)
+        if project.state.webhook is None:
+            raise NotFound()
+        project.state.webhook = None
+        audit_webhook(project, person, "webhook.delete")
+        return Response(status_code=204)
+
+    @app.get("/v1/projects/{project_id}/webhook/deliveries")
+    def get_webhook_deliveries(project_id: Annotated[str, Path()], person: Actor, _: None = Depends(panel_only),
+                               limit: Annotated[int, Query(ge=1, le=200)] = 50):
+        return {"deliveries": list(reversed(webhook_project(project_id, person).state.deliveries))[:limit]}
+
+    @app.post("/v1/projects/{project_id}/webhook/test")
+    def post_webhook_test(project_id: Annotated[str, Path()], person: Actor, _: None = Depends(panel_only)):
+        project = webhook_project(project_id, person)
+        if project.state.webhook is None:
+            raise NotFound()
+        result = dict(app.state.webhook_test_result)
+        audit_webhook(project, person, "webhook.test",
+                      {"delivered": result["delivered"], "status_code": result["status_code"]})
+        return result
 
     # --- contract 15: audit log (read only) ------------------------------------------------------------
 

@@ -172,12 +172,12 @@ def _days(n) -> str:
 NAV_GROUPS = (
     ("ACCESOS", (("resumen", "/", "Resumen", False), ("actividad", "/actividad", "Actividad", False),
                  ("usuarios", "/usuarios", "Usuarios", False), ("rutas", "/rutas", "Rutas críticas", False))),
-    ("PROYECTO", (("claves", "/claves", "Claves de API", True),)),
+    ("PROYECTO", (("claves", "/claves", "Claves de API", True), ("webhook", "/webhook", "Webhook", True))),
     ("ORGANIZACIÓN", (("proyectos", "/proyectos", "Proyectos", True), ("miembros", "/miembros", "Miembros", True),
                       ("auditoria", "/auditoria", "Auditoría", True))),
 )
 # Links only an admin or owner is offered (the engine refuses the rest anyway). With the role unknown they stay hidden.
-MANAGER_ONLY = frozenset({"claves", "auditoria"})
+MANAGER_ONLY = frozenset({"claves", "webhook", "auditoria"})
 
 
 def nav_for(role: str | None):

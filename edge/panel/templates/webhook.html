@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<main id="live" class="wrap view-team">
+  <div class="tm-page">
+  {% if denied %}
+    <div class="tm-card tm-denied">
+      <h1 class="tm-denied-title">No tienes acceso al webhook</h1>
+      <p class="acct-lead">El webhook lo ven y administran los admins y owners de {{ org.name }}.</p>
+    </div>
+  {% else %}
+    <div class="acct-head">
+      <h1 class="acct-title">Webhook</h1>
+      <p class="acct-lead">Cuando Veridian bloquea un acceso, avisa a tu sistema con una petición firmada a esta URL.</p>
+    </div>
+
+    {% macro url_form(label, button, primary) -%}
+      <form class="tm-invite" method="post" action="/webhook">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="field tm-grow{% if error %} invalid{% endif %}">
+          <label for="hook-url">{{ label }}</label>
+          <input id="hook-url" type="url" name="url" value="{{ url }}" placeholder="https://tuapp.com/veridian/webhook" maxlength="{{ url_max }}" required autocomplete="off"{% if error %} aria-invalid="true" aria-describedby="hook-error"{% endif %}>
+        </div>
+        <button class="btn {{ 'btn-primary' if primary else 'btn-secondary' }}" type="submit">{{ button }}</button>
+      </form>
+      {% if error %}<span id="hook-error" class="field-error" role="alert">{{ error }}{% if detail %} ({{ detail }}){% endif %}</span>{% endif %}
+    {%- endmacro %}
+
+    {% if created %}
+    <section class="tm-reveal" aria-labelledby="new-secret">
+      <h2 id="new-secret" class="tm-h2">Copia el secreto de firma ahora</h2>
+      <p class="tm-reveal-text">Es la única vez que lo mostramos.</p>
+      <div class="tm-copy">
+        <code class="tm-code">{{ created.secret }}</code>
+        <button class="btn btn-secondary" type="button" data-copy="{{ created.secret }}" hidden>Copiar</button>
+      </div>
+      <p class="tm-reveal-text">Verifica la cabecera de firma <span class="mono">X-Veridian-Signature</span> con este secreto antes de confiar en la petición.</p>
+      <a class="btn btn-ghost tm-saved" href="/webhook">Ya lo guardé</a>
+    </section>
+    {% elif webhook %}
+    <section class="tm-card" aria-labelledby="hook-title">
+      <h2 id="hook-title" class="tm-h2">URL de destino</h2>
+      <p><span class="mono">{{ webhook.url }}</span>
+        {% if webhook.enabled %}<span class="pill"><span class="pill-dot"></span>Activo</span>{% else %}<span class="pill mode-observe"><span class="pill-dot"></span>Pausado</span>{% endif %}</p>
+      <div class="tm-actions">
+        <form class="tm-inline" method="post" action="/webhook/prueba">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn btn-secondary" type="submit">Enviar prueba</button>
+        </form>
+        <form class="tm-inline" method="post" action="/webhook/estado">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="enabled" value="{{ 'false' if webhook.enabled else 'true' }}">
+          <button class="btn btn-secondary" type="submit">{{ 'Pausar' if webhook.enabled else 'Activar' }}</button>
+        </form>
+        <form class="tm-inline" method="post" action="/webhook/eliminar">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn btn-ghost" type="submit">Eliminar</button>
+        </form>
+      </div>
+      <p class="acct-small">Cambiar la URL genera un secreto nuevo: el anterior deja de valer.</p>
+      {{ url_form("Nueva URL", "Cambiar URL", False) }}
+    </section>
+    {% else %}
+    <section class="tm-card" aria-labelledby="hook-title">
+      <h2 id="hook-title" class="tm-h2">Configurar el webhook</h2>
+      {{ url_form("URL de tu sistema", "Guardar", True) }}
+    </section>
+    {% endif %}
+
+    <h2 class="tm-h2">Envíos recientes</h2>
+    {% if deliveries %}
+    <div class="box">
+      <table class="users-table">
+        <thead>
+          <tr><th scope="col">ESTADO</th><th scope="col">INTENTOS</th><th scope="col">DECISIÓN</th><th scope="col">ÚLTIMO ERROR</th><th scope="col">CREADA</th></tr>
+        </thead>
+        <tbody>
+          {% for d in deliveries %}
+          <tr>
+            <td><span class="pill{% if d.status == 'Pendiente' %} mode-observe{% elif d.status == 'Fallida' %} st-failed{% endif %}">{{ d.status }}</span></td>
+            <td>{{ d.attempts }}</td>
+            <td><span class="mono">{{ d.decision }}</span></td>
+            <td class="tm-muted">{{ d.error }}</td>
+            <td class="tm-muted">{{ d.created }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="acct-small">Todavía no hubo envíos.</p>
+    {% endif %}
+  {% endif %}
+  </div>
+</main>
+{% endblock %}

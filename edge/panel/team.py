@@ -39,12 +39,18 @@ KEY_NAME_ERROR = f"Escribe un nombre para la clave (hasta {NAME_MAX} caracteres)
 KEY_GONE = "Esa clave ya no existe."
 NO_KEYS_LEFT = "Ya no queda ninguna clave activa: el middleware no puede reportar y Veridian no protege la app hasta que crees otra."
 
+WEBHOOK_UNSAFE = "La URL tiene que ser https y pública."
+WEBHOOK_GONE = "Este proyecto ya no tiene webhook."
+WEBHOOK_URL_MAX = 2048
+DELIVERY_LABELS = {"delivered": "Entregada", "pending": "Pendiente", "failed": "Fallida"}
+
 AUDIT_PAGE = 50
 AUDIT_NO_ACCESS = "El registro de cambios lo ven los admins y owners de {org}."
 # The "Qué" filter: action prefixes. Ajustes and data deletions join when the engine audits them.
-WHAT = {"bloqueos": ("decision.",), "claves": ("api_key.",), "miembros": ("member.", "invitation.")}
+WHAT = {"bloqueos": ("decision.",), "claves": ("api_key.",), "miembros": ("member.", "invitation."),
+        "webhook": ("webhook.",)}
 WHAT_OPTIONS = (("", "Todo"), ("bloqueos", "Bloqueos levantados"), ("claves", "Claves"),
-                ("miembros", "Miembros e invitaciones"))
+                ("miembros", "Miembros e invitaciones"), ("webhook", "Webhook"))
 
 Shell = Callable[..., Awaitable]  # (request, template, section, ctx, status=200) -> response
 
@@ -63,6 +69,10 @@ def describe(entry: dict, org: str) -> dict:
                                    f"{where} · El perfil aprende ese acceso."),
         "api_key.created": ("creó la clave", meta.get("prefix"), f"{where} · {meta.get('name')}"),
         "api_key.revoked": ("revocó la clave", meta.get("prefix"), f"{where} · {meta.get('name')}"),
+        "webhook.set": ("configuró el webhook", meta.get("url"), where),
+        "webhook.enable": ("activó el webhook" if meta.get("enabled") else "pausó el webhook", "", where),
+        "webhook.delete": ("eliminó el webhook", "", where),
+        "webhook.test": ("envió una prueba del webhook", "", where),
         "member.role_changed": ("cambió el rol de", meta.get("email"),
                                 f"{where} · de {label(str(meta.get('from')))} a {label(str(meta.get('to')))}"),
         "member.removed": ("quitó a", meta.get("email"), f"{where} · era {role}"),
@@ -215,6 +225,30 @@ class Team:
         return self.no_store(await self.shell(request, "claves.html", "claves", {
             "denied": False, "org": ctx["org"], "project": ctx["project"], "keys": rows,
             "any_active": any(r["active"] for r in rows), "connection": connection, "created": created, "error": error, "name": name}, status))
+
+    # -- webhook -------------------------------------------------------------------------------------------
+
+    async def webhook_page(self, request: Request, ctx: dict, *, created: dict | None = None, error: str | None = None,
+                           detail: str = "", url: str = "", status: int = 200):
+        base = f"/v1/projects/{quote(ctx['project']['id'], safe='')}/webhook"
+        current, deliveries = await asyncio.gather(self.fetch(request, base),
+                                                   self.fetch(request, f"{base}/deliveries", {"limit": 50}))
+        if current is not None and current.status_code == 403:
+            return self.no_store(await self.shell(request, "webhook.html", "webhook", {
+                "denied": True, "org": ctx["org"], "project": ctx["project"]}, 403))
+        rows = self.items(deliveries, "deliveries")
+        try:
+            hook = current.json()["webhook"] if current is not None and current.status_code == 200 else False
+        except (ValueError, KeyError, TypeError):
+            hook = False
+        if rows is None or not (hook is None or isinstance(hook, dict)):
+            return self.no_store(await self.unreachable(request, "webhook"))
+        shown = [{"status": DELIVERY_LABELS.get(d.get("status"), str(d.get("status") or "")),
+                  "attempts": d.get("attempts"), "decision": d.get("decision_id") or "",
+                  "error": d.get("last_error") or "", "created": stamp(d.get("created_at"))} for d in rows]
+        return self.no_store(await self.shell(request, "webhook.html", "webhook", {
+            "denied": False, "org": ctx["org"], "project": ctx["project"], "webhook": hook, "deliveries": shown,
+            "created": created, "error": error, "detail": detail, "url": url, "url_max": WEBHOOK_URL_MAX}, status))
 
     # -- audit ---------------------------------------------------------------------------------------------
 
@@ -394,5 +428,66 @@ class Team:
                 me.a.flash(request, "warn", f"Clave «{body.get('name')}» revocada. {NO_KEYS_LEFT}")
                 return me.a.back("/claves")
             return me.done(request, text, "/claves")
+
+        @router.get("/webhook", response_class=HTMLResponse)
+        async def webhook(request: Request):
+            early, ctx = await me.where(request)
+            return early if early is not None else await me.webhook_page(request, ctx)
+
+        @router.post("/webhook", response_class=HTMLResponse)
+        async def save_webhook(request: Request, url: str = Form("")):
+            early, ctx = await me.where(request)
+            if early is not None:
+                return early
+            clean = url.strip()
+            project = quote(ctx["project"]["id"], safe="")
+            status, body = await me.write(request, "PUT", f"/v1/projects/{project}/webhook", {"url": clean})
+            if status == 200 and isinstance(body, dict) and isinstance(body.get("secret"), str):
+                # The only place the signing secret exists: this response. It is not stored, cached or logged.
+                return await me.webhook_page(request, ctx, created={"secret": body["secret"]})
+            if status == 422 and isinstance(body, dict) and body.get("error") == "unsafe_url":
+                return await me.webhook_page(request, ctx, error=WEBHOOK_UNSAFE, detail=str(body.get("detail") or ""),
+                                             url=clean, status=422)
+            if status == 403:
+                return await me.webhook_page(request, ctx)  # the engine says no: the page shows the no-access state
+            if status is None:
+                return me.no_store(await me.unreachable(request, "webhook"))
+            return await me.webhook_page(request, ctx, error=engine_error(status), url=clean, status=502)
+
+        @router.post("/webhook/estado")
+        async def toggle_webhook(request: Request, enabled: str = Form("")):
+            early, ctx = await me.where(request)
+            if early is not None:
+                return early
+            on = enabled == "true"
+            project = quote(ctx["project"]["id"], safe="")
+            status, body = await me.write(request, "PATCH", f"/v1/projects/{project}/webhook", {"enabled": on})
+            if status == 200:
+                return me.done(request, "Webhook activado." if on else "Webhook pausado: Veridian no envía avisos.", "/webhook")
+            return me.refused(request, WEBHOOK_GONE if status == 404 else change_error(status, body), "/webhook")
+
+        @router.post("/webhook/eliminar")
+        async def delete_webhook(request: Request):
+            early, ctx = await me.where(request)
+            if early is not None:
+                return early
+            project = quote(ctx["project"]["id"], safe="")
+            status, body = await me.write(request, "DELETE", f"/v1/projects/{project}/webhook")
+            if status == 204:
+                return me.done(request, "Webhook eliminado. Veridian ya no avisa a esa URL.", "/webhook")
+            return me.refused(request, WEBHOOK_GONE if status == 404 else change_error(status, body), "/webhook")
+
+        @router.post("/webhook/prueba")
+        async def test_webhook(request: Request):
+            early, ctx = await me.where(request)
+            if early is not None:
+                return early
+            project = quote(ctx["project"]["id"], safe="")
+            status, body = await me.write(request, "POST", f"/v1/projects/{project}/webhook/test")
+            if status != 200 or not isinstance(body, dict):
+                return me.refused(request, WEBHOOK_GONE if status == 404 else change_error(status, body), "/webhook")
+            if body.get("delivered") is True:
+                return me.done(request, f"La prueba llegó (HTTP {body.get('status_code')}).", "/webhook")
+            return me.refused(request, f"La prueba no llegó: {body.get('error') or 'sin respuesta'}", "/webhook")
 
         return router
