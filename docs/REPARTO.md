@@ -164,6 +164,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 ```
 
 - **`routes` incluye el método** (`"GET /invoices"`), igual que la clasificación de rutas: `GET` y `POST` sobre la misma ruta son usos distintos.
+- **`hours` va en UTC,** igual que `ts`: horas enteras de 0 a 23 (`[9, 13]` = de 09:00 a 13:00 UTC). El panel las convierte a la hora local de quien mira.
 
 ## Primer hito de cada dev
 
