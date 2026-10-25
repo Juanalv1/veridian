@@ -53,4 +53,4 @@ If the engine is slow or down, your app is not delayed or broken: the middleware
 
 ## License
 
-No license has been declared yet.
+MIT. See [LICENSE](LICENSE).

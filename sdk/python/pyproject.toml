@@ -7,6 +7,8 @@ name = "veridian-sdk"
 version = "0.1.0"
 description = "ASGI middleware that reports access events to Veridian and blocks sessions, IPs and users on its blocklist"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "httpx",
