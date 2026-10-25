@@ -16,7 +16,7 @@
 
 > Veridian sí lo comprueba, en cada petición: la compara con los datos que ya conoce de ese usuario y con el impacto de la ruta a la que va.
 >
-> Si no hay nada fuera de lo común, pasa directo. Si hay algo fuera de lo común, la IA la analiza con el comportamiento del usuario y decide si es el dueño o es otra persona: al dueño lo deja pasar; a otra persona la bloquea, antes de que la acción ocurra.
+> La IA interviene cuando hay algo fuera de lo común: lo contrasta con la forma en que ese usuario suele comportarse, y decide si es la misma persona o es otra. Si es la misma, la petición sigue; si es otra, la bloquea antes de que la acción ocurra.
 
 **[Slide 4: Instalación]**
 
