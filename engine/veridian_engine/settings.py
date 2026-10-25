@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .resend_mailer import mailer_from_env
+
 DEFAULT_ROUTES_FILE = Path(__file__).resolve().parent.parent / "routes.yaml"
 
 
@@ -99,8 +101,6 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        from .resend_mailer import mailer_from_env  # imported here: it needs httpx only when configured
-
         tokens = parse_tokens(os.environ.get("VERIDIAN_TOKENS", ""))
         single = os.environ.get("VERIDIAN_TOKEN", "").strip()
         if not tokens and single:
