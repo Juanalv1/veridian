@@ -309,10 +309,18 @@ La clasificación de rutas que el motor está usando, para que el panel la muest
 }
 ```
 
-- **Mismo contenido para todos los clientes:** hoy la clasificación es una sola (`routes.yaml`) y es global al motor. La credencial se exige igual (clave `sdk` o panel con `X-Veridian-Project` y rol `viewer`), pero no cambia la respuesta.
+- **Por proyecto (U7):**
+  - cada proyecto tiene su clasificación en `route_rules`; la regla de bloqueo y `/v1/check` leen la del proyecto;
+  - la respuesta es la del proyecto del llamante: la clave `sdk`, o el panel con `X-Veridian-Project` y rol `viewer`;
+  - `routes.yaml` es la plantilla: los proyectos existentes la reciben al arrancar el motor y los nuevos al crearse. Un proyecto al que se le vació la lista sigue vacío.
 - **Orden:** primero `critical`, después `sensitive`; dentro de cada clase, por ruta y luego por método.
 - **Solo lo clasificado:** las rutas `normal` no se listan. Cualquier ruta que no aparezca recibe la clase `default`.
-- **`route`:** la plantilla, igual que en el contrato 1. El panel no puede editar la clasificación.
+- **`route`:** la plantilla, igual que en el contrato 1.
+- **Editar:** `PUT /v1/projects/{id}/routes`, solo panel con rol admin+.
+  - Cuerpo: `{"routes": [{"method", "route", "class"}]}`. Reemplaza la lista completa y responde lo mismo que `GET /v1/routes`.
+  - Valida que `method` vaya en mayúsculas, que `route` empiece con `/` y no tenga espacios, que la clase sea `critical`, `sensitive` o `normal`, y que no haya rutas repetidas. Si algo falla responde `422` y no cambia nada.
+  - Queda en la auditoría como `routes.replaced`, con la cantidad de reglas.
+  - El middleware toma la lista nueva la próxima vez que lea `GET /v1/routes`. No verifiqué cada cuánto la vuelve a leer.
 
 ### 9. Consulta previa: middleware → motor (rutas críticas)
 

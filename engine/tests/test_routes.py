@@ -1,7 +1,7 @@
 from conftest import AUTH_A, AUTH_B
 
 
-def test_routes_lists_the_loaded_classification_critical_first(client):
+def test_routes_lists_the_project_classification_critical_first(client):
     response = client.get("/v1/routes", headers=AUTH_A)
     assert response.status_code == 200
     assert response.json() == {
@@ -19,7 +19,7 @@ def test_routes_never_lists_normal_routes(client):
     assert classes <= {"critical", "sensitive"}
 
 
-def test_routes_is_the_same_for_every_client(client):
+def test_every_project_starts_with_the_same_template(client):
     assert client.get("/v1/routes", headers=AUTH_A).json() == client.get("/v1/routes", headers=AUTH_B).json()
 
 

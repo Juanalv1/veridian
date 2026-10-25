@@ -35,6 +35,7 @@ from .notifications.webhook import (
 )
 from .principal import Forbidden, PanelProject, ProjectRequired, panel_actor, path_project
 from .project_settings import set_project_flags
+from .route_classes import RouteClasses, replace_rules, route_key
 from .settings import Settings
 
 
@@ -58,6 +59,16 @@ class WebhookIn(BaseModel):
 
 class WebhookPatch(BaseModel):
     enabled: bool
+
+
+class RouteRuleIn(BaseModel):
+    method: str = Field(pattern=r"^[A-Z]+$", max_length=10)
+    route: str = Field(pattern=r"^/\S*$", max_length=300)
+    route_class: Literal["critical", "sensitive", "normal"] = Field(alias="class")
+
+
+class RoutesIn(BaseModel):
+    routes: list[RouteRuleIn] = Field(max_length=1000)
 
 
 class ProjectPatch(BaseModel):
@@ -85,6 +96,7 @@ SECRET_KEY_MISSING = {"error": "secret_key_missing"}
 
 def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
     router = APIRouter()
+    route_template = RouteClasses.load(settings.routes_file)
 
     def org_view(conn, org_id: str, person_id: str, with_created: bool = False) -> dict:
         org = repository.get_organization(conn, org_id)
@@ -161,7 +173,24 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
             # Decision 6: a new project observes until someone turns enforcement on.
             project_id = repository.create_project(conn, actor_id=person_id, org_id=org_id, name=body.name.strip(),
                                                    enforcement="observe", now=settings.clock())
+            replace_rules(conn, project_id, route_template.mapping)
             return project_view(conn, project_id, person_id)
+
+    # --- U7: route classification of a project ---
+
+    @router.put("/v1/projects/{project_id}/routes")
+    def put_routes(body: RoutesIn, project: PanelProject = Depends(path_project("manage_routes"))) -> dict:
+        mapping = {route_key(r.method, r.route): r.route_class for r in body.routes}
+        if len(mapping) != len(body.routes):
+            return JSONResponse(status_code=422, content={"error": "duplicate_route"})
+        with write_lock, db.connect(settings.db_path) as conn:
+            replace_rules(conn, project.project_id, mapping)
+            repository.record_audit(
+                conn, org_id=project.org_id, project_id=project.project_id, actor_person_id=project.person_id,
+                actor_kind="person", action="routes.replaced", target_type="project", target_id=project.project_id,
+                now=settings.clock(), meta={"count": len(mapping)},
+            )
+            return {"routes": RouteClasses.for_project(conn, project.project_id).listing(), "default": "normal"}
 
     @router.get("/v1/projects/{project_id}")
     def get_project(project: PanelProject = Depends(path_project("view"))) -> dict:

@@ -20,7 +20,7 @@ from .notifications.sender import build_webhook_sender, webhook_lifespan
 from .principal import Forbidden, PanelProject, panel_project, sdk_project, shared_project
 from .project_settings import get_project_flags
 from .profile import build_profile, is_blocked
-from .route_classes import RouteClasses
+from .route_classes import RouteClasses, seed_unseeded
 from .rules import evaluate_event
 from .settings import Settings
 from .summary import as_utc, build_summary, list_users
@@ -32,13 +32,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         load_dotenv(find_dotenv(usecwd=True))
         settings = Settings.from_env()
     db.init_db(settings.db_path)
+    # routes.yaml is the template every project starts with (U7); each project then owns its rules.
+    route_template = RouteClasses.load(settings.routes_file)
     with db.connect(settings.db_path) as conn:
         seed_legacy(conn, settings.tokens, settings.clock())
-    route_classes = RouteClasses.load(settings.routes_file)
+        seed_unseeded(conn, route_template)
 
     app = FastAPI(title="Veridian engine", lifespan=webhook_lifespan)
     app.state.settings = settings
-    app.state.route_classes = route_classes
+    app.state.route_template = route_template
     app.state.auth = ApiKeyAuth(settings)
     write_lock = threading.Lock()  # single process: serialize writes that read-then-write
     # Signed block webhooks (U12): started and stopped with the app; None when off.
@@ -69,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         deviations = []
         with write_lock, db.connect(settings.db_path) as conn:
             ai_enabled = get_project_flags(conn, project_id).ai_enabled
+            route_classes = RouteClasses.for_project(conn, project_id)
             inserted = insert_events(conn, project_id, batch.events)
             for event in sorted(inserted, key=lambda e: e.ts):
                 deviation = evaluate_event(conn, settings, route_classes, project_id, event)
@@ -84,6 +87,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body: CheckRequest, background_tasks: BackgroundTasks, project_id: str = Depends(sdk_project)
     ) -> dict:
         """Contract 9: decide a critical request before the app executes it."""
+        with db.connect(settings.db_path) as conn:
+            route_classes = RouteClasses.for_project(conn, project_id)
         result = check_event(settings, route_classes, write_lock, project_id, body.event)
         if result.explain_later is not None:
             # A rule block answers at once; the AI rewrites its rationale after the response.
@@ -112,8 +117,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/routes")
     def get_routes(project_id: str = Depends(shared_project)) -> dict:
-        """The loaded classification. Global to the engine: every client sees the same list."""
-        return {"routes": route_classes.listing(), "default": "normal"}
+        """The caller's project classification (U7): the SDK key's project, or the panel's header."""
+        with db.connect(settings.db_path) as conn:
+            return {"routes": RouteClasses.for_project(conn, project_id).listing(), "default": "normal"}
 
     @app.get("/v1/users/{user_id}/profile")
     def get_profile(user_id: str, project: PanelProject = Depends(view)) -> dict:
