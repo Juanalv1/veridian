@@ -253,3 +253,29 @@ def test_clients_are_isolated(check_client):
     assert check(client, benign, headers=AUTH_B).json() == {"verdict": "allow", "decision_id": None}
     assert decisions(client, headers=AUTH_B) == []
     assert blocklist(client, headers=AUTH_B).json()["sessions"] == []
+
+
+def test_gray_case_uses_the_sync_judge_when_configured(check_client):
+    background = FakeJudge(decision="alert", rationale="Juez lento.")
+    fast = FakeJudge(decision="block", rationale="Juez rápido.")
+    client = check_client(background, sync_judge=fast)
+    seed_owner_history(client, method="POST", route="/payouts/bank-account")
+
+    response = check(client, make_event("c1", NOW, **GRAY))
+
+    assert response.json()["verdict"] == "block"
+    assert len(fast.calls) == 1
+    assert background.calls == []
+
+
+def test_sync_judge_from_env_uses_the_sync_model(monkeypatch):
+    from veridian_engine.settings import Settings
+
+    monkeypatch.setenv("VERIDIAN_TOKEN", "dev")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("VERIDIAN_SYNC_MODEL", raising=False)
+    assert Settings.from_env().sync_judge.keywords["model"] == "claude-haiku-5-5"
+    monkeypatch.setenv("VERIDIAN_SYNC_MODEL", "claude-sonnet-5-5")
+    assert Settings.from_env().sync_judge.keywords["model"] == "claude-sonnet-5-5"
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    assert Settings.from_env().sync_judge is None

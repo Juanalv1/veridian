@@ -31,3 +31,4 @@ In a live rehearsal the attacker's `POST /payouts/bank-account` was served (200)
 ## Progress
 
 Done. Route: delegated direct (single writer, isolated worktree).
+- 2026-10-25: the sync check uses its own judge on `VERIDIAN_SYNC_MODEL` (default `claude-haiku-5-5`): 90 live runs showed the same decisions as Opus, ~2 s instead of up to 11.7 s (Opus crossed the 10 s budget). 2 tests RED, then 167 passed.

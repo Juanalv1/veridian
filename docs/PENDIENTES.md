@@ -53,7 +53,13 @@ Referencia reutilizable en el repo de Centinela:
   - dueño `allow` en 0,4 s;
   - caso obvio `block` en 0,6 s;
   - casos grises `block` por la IA en 3,0 y 7,8 s.
-  - Una sola corrida por caso: falta medir la estabilidad.
+  - **Estabilidad medida después,** con el juez solo: 3 casos grises de ruta crítica × 10 corridas por modelo.
+    - **Decisión:** Opus, Sonnet y Haiku respondieron `block` en los 3 casos, 10 de 10.
+    - **Tiempos (mediana):**
+      - Opus, el caso "dueño con laptop nueva": 11,7 s. Pasa el tope de 10 s, así que la regla de respaldo dejaría pasar la petición.
+      - Haiku: unos 2 s en todos los casos.
+    - **Por eso la consulta síncrona usa Haiku** (`VERIDIAN_SYNC_MODEL`), y el juicio en segundo plano sigue con Opus.
+    - **En rutas críticas, la IA bloquea todo desvío,** incluido el dueño en otra red con su propio dispositivo.
 - **Tiempo de instalación** del middleware en una app nueva.
 
 ## Riesgos

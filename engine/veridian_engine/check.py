@@ -84,7 +84,8 @@ def judge_within_budget(settings: Settings, deviation: Deviation):
 
     def run() -> None:
         try:
-            outcome["judgment"] = settings.judge(deviation.signals, deviation.profile)
+            judge = settings.sync_judge or settings.judge
+            outcome["judgment"] = judge(deviation.signals, deviation.profile)
         except Exception:  # noqa: BLE001 - reported below as a fallback
             logger.exception("AI judge failed in synchronous check")
 
