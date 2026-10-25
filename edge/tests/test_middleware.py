@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI, Request
 
 from fake_engine import create_app as create_engine
-from middleware import VeridianMiddleware
+from veridian_sdk import VeridianMiddleware
 
 TOKEN = "tok-test"
 ENGINE_URL = "http://engine"

@@ -1,7 +1,7 @@
 [project]
 name = "veridian-edge"
 version = "0.1.0"
-description = "Veridian edge: middleware, demo app, panel and a fake engine"
+description = "Veridian edge: demo app, panel and a fake engine"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
@@ -9,7 +9,11 @@ dependencies = [
     "jinja2",
     "httpx",
     "python-multipart",
+    "veridian-sdk",
 ]
+
+[tool.uv.sources]
+veridian-sdk = { path = "../sdk/python", editable = true }
 
 [dependency-groups]
 dev = ["pytest", "pytest-asyncio"]

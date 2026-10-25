@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from middleware import VeridianMiddleware
+from veridian_sdk import VeridianMiddleware
 
 LOCAL_DEFAULT_PASSWORD = "demo1234"  # local demo only, never a real secret
 COOKIE = "sid"

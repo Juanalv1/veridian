@@ -4,7 +4,7 @@ Todo lo que toca la app del cliente y lo que se ve en el escenario:
 
 | Carpeta | Qué es |
 |---|---|
-| `middleware/` | Middleware ASGI: envía eventos al motor en segundo plano y responde `403 {"error": "blocked"}` a lo que esté en la lista de bloqueos |
+| `../sdk/python/` | Middleware ASGI (paquete `veridian-sdk`, import `veridian_sdk`): envía eventos al motor en segundo plano y responde `403 {"error": "blocked"}` a lo que esté en la lista de bloqueos |
 | `demo_app/` | App de facturas de ejemplo (login, facturas, cuenta bancaria de cobros) protegida por el middleware |
 | `panel/` | Página que lista `GET /v1/decisions` y se actualiza sola |
 | `fake_engine/` | Motor falso en memoria que respeta los contratos de `docs/REPARTO.md`, para trabajar sin el motor real |
@@ -100,9 +100,10 @@ No usan red real ni esperas: el motor falso y las apps se conectan por `httpx.AS
 | Servicio | URL | Notas |
 |---|---|---|
 | Motor (Dev 1) | <https://veridian-engine.onrender.com> | Plan starter con disco |
-| App de ejemplo | <https://veridian-demo.onrender.com> | `rootDir: edge`, plan free, `TRUSTED_PROXIES=3` |
-| Panel | <https://veridian-panel.onrender.com> | `rootDir: edge`, plan free |
+| App de ejemplo | <https://veridian-demo.onrender.com> | raíz del repo, plan free, `TRUSTED_PROXIES=3` |
+| Panel | <https://veridian-panel.onrender.com> | raíz del repo, plan free |
 
-- La app y el panel se redespliegan solo cuando cambia `edge/`.
+- La app y el panel usan la raíz del repo como directorio raíz (`rootDir` vacío), porque `edge` instala el SDK desde `../sdk/python`. Build: `cd edge && pip install uv && uv sync --frozen --no-dev`. Start: `cd edge && .venv/bin/uvicorn ...`.
+- La app se redespliega cuando cambia `edge/**` o `sdk/python/**`; el panel solo cuando cambia `edge/**`.
 - `VERIDIAN_TOKEN` es el token del cliente `demo` del motor; `DEMO_PASSWORD` está en el entorno de Render, no en el repo.
 - **Antes de la demo:** el plan free se duerme a los 15 min sin uso y tarda ~1 min en despertar; pasar a starter o abrir ambas URLs unos minutos antes.

@@ -512,6 +512,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "python-multipart" },
     { name = "uvicorn" },
+    { name = "veridian-sdk" },
 ]
 
 [package.dev-dependencies]
@@ -527,10 +528,26 @@ requires-dist = [
     { name = "jinja2" },
     { name = "python-multipart" },
     { name = "uvicorn" },
+    { name = "veridian-sdk", editable = "../sdk/python" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+]
+
+[[package]]
+name = "veridian-sdk"
+version = "0.1.0"
+source = { editable = "../sdk/python" }
+dependencies = [
+    { name = "httpx" },
+    { name = "starlette" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx" },
+    { name = "starlette" },
 ]

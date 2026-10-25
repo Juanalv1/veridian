@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "veridian-sdk"
+version = "0.1.0"
+description = "ASGI middleware that reports access events to Veridian and blocks sessions, IPs and users on its blocklist"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx",
+    "starlette",
+]
+
+[project.urls]
+Homepage = "https://github.com/Juanalv1/veridian"
+Repository = "https://github.com/Juanalv1/veridian"
+Issues = "https://github.com/Juanalv1/veridian/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/veridian_sdk"]
