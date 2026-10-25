@@ -137,6 +137,7 @@ Estos cambios se hicieron antes de que llegara el nuevo reparto (`1baaf95`). Sui
   - T2 hecho (`54e8daa`): núcleo con lotes cada ~2 s en segundo plano (timers `unref`), consulta de `/v1/blocklist` con `since`, `403` a lo bloqueado y pasar ante `401`/`429`.
   - T3 hecho (`4eb2d29`, subido por la sincronización automática): rutas críticas y `POST /v1/check` (12 s, fail-open), reporte de rutas al arrancar (se lee del router de Express; en Express 5 los routers montados en una ruta hay que pasarlos con `routes`), adaptadores de Express 4/5 y de Next.js (route handlers, runtime Node); 128 tests.
   - T4 hecho (`310b453`): README, `examples/quickstart.js` ejecutado tal cual contra `edge/fake_engine` (autentica, envía eventos y reporta rutas), instalación de Node en el `README.md` raíz; 134 tests en `sdk/node`, 747 en `edge`. Falta publicar en npm (el nombre `veridian-sdk` estaba libre) y la pestaña Node del panel y la landing (Maikol).
+  - **Desbloqueo por correo, lado panel y SDK (José, 2026-10-25, T6 y T7 de `odd/tasks/email-self-unlock.md`):** pantalla `/marca` (marca y interruptor), página pública `/desbloquear/<token>` (el `GET` solo muestra; el botón hace `POST`), etiqueta «Desbloqueado por el usuario» en la auditoría, motor falso con la misma API, y `user_email`/`userEmail` más el mensaje de bloqueo en los dos SDK (npm 0.2.0, Python 0.4.0, sin publicar).
 
 ### Carlos Navas: SDK, middleware y app de demo (lo que era del Dev 2)
 
