@@ -7,7 +7,7 @@ import threading
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from . import db
@@ -142,6 +142,13 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
                     set_project_flags(conn, project.project_id, enforcement=changes.get("enforcement"),
                                       ai_enabled=changes.get("ai_enabled"))
             return project_view(conn, project.project_id, project.person_id)
+
+    @router.delete("/v1/projects/{project_id}", status_code=204)
+    def delete_project(project: PanelProject = Depends(path_project("delete_project"))) -> Response:
+        with write_lock, db.connect(settings.db_path) as conn:
+            repository.delete_project(conn, actor_id=project.person_id, project_id=project.project_id,
+                                      now=settings.clock())
+        return Response(status_code=204)
 
     # --- contract 12: API keys ---
 

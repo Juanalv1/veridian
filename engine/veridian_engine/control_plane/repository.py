@@ -344,6 +344,16 @@ def update_project(
                       project_id=project_id, meta=changes)
 
 
+def delete_project(conn: sqlite3.Connection, *, actor_id: str, project_id: str, now: datetime) -> None:
+    """Soft delete (deleted_at): the project leaves every read and its keys stop authenticating.
+    The data stays until the retention purge removes it (U13)."""
+    with atomic(conn):
+        org_id = _require_project(conn, project_id, actor_id, "delete_project")
+        conn.execute("UPDATE project SET deleted_at = ? WHERE id = ?", (format_ts(now), project_id))
+        _audit_person(conn, actor_id, "project.delete", "project", project_id, now, org_id=org_id,
+                      project_id=project_id)
+
+
 # --- members ---
 
 

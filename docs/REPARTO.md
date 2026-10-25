@@ -365,7 +365,8 @@ Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app
 - **Organización `Demo`:** los proyectos que ya existían (y los que se crean al arrancar desde `VERIDIAN_TOKENS` o desde datos existentes) están en la organización `Demo` (`org_demo`), sin miembros hasta que entra un bootstrap owner.
 - **Validación:** `name` de 1 a 80 caracteres; `retention_days >= 1`; `enforcement` `observe` | `enforce`; si no, `422`.
 - **Auditoría:** crear organización o proyecto, renombrar, cambiar un proyecto y el bootstrap quedan en `audit_log` con el actor.
-- **Pendiente:** `DELETE /v1/projects/{id}` (owner) y el contrato 11 (miembros e invitaciones de la organización) aún no tienen endpoint; las invitaciones existen en la base y se aceptan al entrar.
+- `DELETE /v1/projects/{id}` (solo owner): borrado lógico (`deleted_at`), responde `204` sin cuerpo y se anota en la auditoría (`project.delete`). El proyecto desaparece de las lecturas y sus claves del SDK reciben `401`. Los datos quedan hasta la purga de U13.
+- **Pendiente:** el contrato 11 (miembros e invitaciones de la organización) aún no tienen endpoint; las invitaciones existen en la base y se aceptan al entrar.
 
 ### 12. Claves de API: panel → motor
 

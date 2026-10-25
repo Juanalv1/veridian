@@ -557,8 +557,8 @@ def test_a_deleted_project_rejects_its_sdk_keys(client):
     assert client.get("/v1/blocklist", headers=AUTH_B).status_code == 200
 
 
-def test_an_org_with_only_deleted_projects_can_be_deleted(client):
+def test_a_deleted_project_leaves_the_org_listings(client):
     creator, project_id = other_org_project(client)
     assert client.delete(f"/v1/projects/{project_id}", headers=acting(creator)).status_code == 204
-    org_id = client.get("/v1/me/orgs", headers=acting(creator)).json()["orgs"][0]["projects"]
-    assert org_id == []
+    [org] = client.get("/v1/me/orgs", headers=acting(creator)).json()["orgs"]
+    assert org["projects"] == []
