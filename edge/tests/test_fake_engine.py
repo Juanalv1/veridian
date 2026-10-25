@@ -533,3 +533,144 @@ def test_marking_a_session_only_block_normal_keeps_an_ip_listed_by_another_block
 def test_block_from_a_new_network_still_lists_session_and_ip(client):
     post_events(client, [attack()])
     assert client.get("/v1/blocklist", headers=AUTH).json()["ips"] == ["203.0.113.9"]
+
+
+# --- contract 6: summary, contract 7: users ----------------------------------
+
+from datetime import datetime, timedelta, timezone
+
+
+def iso(dt):
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def hour_start(dt):
+    return dt.replace(minute=0, second=0, microsecond=0)
+
+
+def now_utc():
+    return datetime.now(timezone.utc)
+
+
+def window(hours_back=1, hours_ahead=1):
+    h = hour_start(now_utc())
+    return {"since": iso(h - timedelta(hours=hours_back)), "until": iso(h + timedelta(hours=hours_ahead))}
+
+
+@pytest.mark.parametrize("path", ["/v1/summary", "/v1/users"])
+def test_summary_and_users_need_a_token(client, path):
+    assert client.get(path).status_code == 401
+    assert client.get(path, headers={"Authorization": "Bearer nope"}).status_code == 401
+
+
+def test_summary_counts_accesses_users_and_rejected_requests(client):
+    ts = iso(now_utc())
+    post_events(client, [
+        make_event(id="e_a", ts=ts, ip="190.202.14.7"),
+        make_event(id="e_b", ts=ts, user_id="u_9", ip="190.202.14.7"),
+        make_event(id="e_c", ts=ts, status=403),
+    ])
+    body = client.get("/v1/summary", params=window(), headers=AUTH).json()
+    assert body["accesses"] == 3 and body["users"] == 2
+    assert body["since"] and body["until"]
+    assert body["decisions"] == {"allow": 0, "alert": 0, "step_up": 0, "block": 0}
+    assert body["blocks_active"] == {"decisions": 0, "sessions": 0, "ips": 0}
+    assert body["reviewed_by_ai"] == 0
+
+
+def test_summary_only_counts_the_requested_range(client):
+    old = iso(now_utc() - timedelta(days=3))
+    post_events(client, [make_event(id="e_old", ts=old), make_event(id="e_new", ts=iso(now_utc()))])
+    assert client.get("/v1/summary", params=window(), headers=AUTH).json()["accesses"] == 1
+    wide = {"since": iso(now_utc() - timedelta(days=4)), "until": iso(now_utc() + timedelta(hours=1))}
+    assert client.get("/v1/summary", params=wide, headers=AUTH).json()["accesses"] == 2
+
+
+def test_summary_without_params_covers_the_last_24_hours(client):
+    post_events(client, [make_event(id="e_old", ts=iso(now_utc() - timedelta(days=2))),
+                         make_event(id="e_new", ts=iso(now_utc() - timedelta(hours=2)))])
+    body = client.get("/v1/summary", headers=AUTH).json()
+    assert body["accesses"] == 1
+    assert datetime.fromisoformat(body["until"].replace("Z", "+00:00")) - datetime.fromisoformat(
+        body["since"].replace("Z", "+00:00")) == timedelta(hours=24)
+
+
+@pytest.mark.parametrize("params", [
+    {"since": "2026-10-26T10:00:00Z", "until": "2026-10-26T10:00:00Z"},
+    {"since": "2026-10-26T11:00:00Z", "until": "2026-10-26T10:00:00Z"},
+    {"since": "not-a-date", "until": "2026-10-26T10:00:00Z"},
+])
+def test_summary_rejects_an_empty_or_inverted_range_with_422(client, params):
+    assert client.get("/v1/summary", params=params, headers=AUTH).status_code == 422
+
+
+def test_summary_block_counts_active_blocks_and_ai_calls_once_per_judged_session(client):
+    ts = iso(now_utc())
+    post_events(client, [attack(ts=ts)])
+    body = client.get("/v1/summary", params=window(), headers=AUTH).json()
+    assert body["decisions"]["block"] == 1
+    assert body["blocks_active"] == {"decisions": 1, "sessions": 1, "ips": 1}
+    assert body["reviewed_by_ai"] == 1
+    # A second block in the same session is not a second model call; another session is.
+    post_events(client, [attack(id="e_atk2", ts=ts, route="/payouts/bank-account")])
+    assert client.get("/v1/summary", params=window(), headers=AUTH).json()["reviewed_by_ai"] == 1
+    post_events(client, [attack(id="e_atk3", ts=ts, session_id="s_other", ip="198.51.100.4")])
+    assert client.get("/v1/summary", params=window(), headers=AUTH).json()["reviewed_by_ai"] == 2
+
+
+def test_summary_active_blocks_are_the_current_state_not_the_range(client):
+    post_events(client, [attack(ts=iso(now_utc()))])
+    did = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]["id"]
+    past = {"since": iso(now_utc() - timedelta(days=5)), "until": iso(now_utc() - timedelta(days=4))}
+    body = client.get("/v1/summary", params=past, headers=AUTH).json()
+    assert body["decisions"]["block"] == 0 and body["blocks_active"]["decisions"] == 1
+    client.post(f"/v1/decisions/{did}/normal", headers=AUTH)
+    assert client.get("/v1/summary", params=window(), headers=AUTH).json()["blocks_active"] == {
+        "decisions": 0, "sessions": 0, "ips": 0}
+
+
+def test_summary_by_hour_has_one_row_per_hour_with_accesses_in_order(client):
+    h = hour_start(now_utc())
+    post_events(client, [
+        make_event(id="e_1", ts=iso(h - timedelta(hours=2) + timedelta(minutes=5))),
+        make_event(id="e_2", ts=iso(h - timedelta(hours=2) + timedelta(minutes=9))),
+        make_event(id="e_3", ts=iso(h + timedelta(minutes=1)), ip="190.202.14.7"),
+    ])
+    body = client.get("/v1/summary", params=window(hours_back=3), headers=AUTH).json()
+    assert body["by_hour"] == [
+        {"hour": iso(h - timedelta(hours=2)), "accesses": 2, "blocks": 0},
+        {"hour": iso(h), "accesses": 1, "blocks": 0},
+    ]
+
+
+def test_summary_by_hour_counts_blocks_in_the_hour_the_decision_was_created(client):
+    post_events(client, [attack(ts=iso(now_utc()))])
+    row = client.get("/v1/summary", params=window(), headers=AUTH).json()["by_hour"][-1]
+    assert row["hour"] == iso(hour_start(now_utc())) and row["accesses"] == 1 and row["blocks"] == 1
+
+
+def test_users_lists_known_users_blocked_first_then_newest_first(client):
+    post_events(client, [
+        make_event(id="e_1", user_id="u_17", ts="2026-10-26T13:40:10Z", ip="190.202.14.7", device_id="d_a"),
+        make_event(id="e_2", user_id="u_9", ts="2026-10-26T15:00:00Z", ip="190.202.14.7"),
+        attack(ts="2026-10-26T10:00:00Z"),
+    ])
+    users = client.get("/v1/users", headers=AUTH).json()["users"]
+    assert [u["user_id"] for u in users] == ["u_42", "u_9", "u_17"]
+    first = users[0]
+    assert first["state"] == "blocked" and first["open_blocks"] == 1
+    assert set(first) == {"user_id", "state", "history_days", "networks", "devices", "last_seen", "open_blocks"}
+    assert first["last_seen"] == "2026-10-26T10:00:00Z"
+    assert isinstance(first["networks"], int) and isinstance(first["devices"], int)
+    assert users[2]["state"] == "normal" and users[2]["open_blocks"] == 0 and users[2]["last_seen"] == "2026-10-26T13:40:10Z"
+
+
+def test_users_includes_seeded_users_without_events_and_drops_open_block_on_mark_normal(client):
+    users = client.get("/v1/users", headers=AUTH).json()["users"]
+    assert users == [{"user_id": "u_42", "state": "normal", "history_days": 14, "networks": 1,
+                      "devices": 0, "last_seen": None, "open_blocks": 0}]
+    post_events(client, [attack(ts=iso(now_utc()))])
+    did = client.get("/v1/decisions", headers=AUTH).json()["decisions"][0]["id"]
+    client.post(f"/v1/decisions/{did}/normal", headers=AUTH)
+    u = client.get("/v1/users", headers=AUTH).json()["users"][0]
+    assert u["state"] == "normal" and u["open_blocks"] == 0

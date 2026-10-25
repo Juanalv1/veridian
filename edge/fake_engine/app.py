@@ -12,7 +12,7 @@ import os
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Query, Request
@@ -86,6 +86,16 @@ def verdict_of(decision: dict) -> str:
     if decision.get("status") == "marked_normal":
         return "normal"
     return {"block": "block", "alert": "review", "step_up": "review"}.get(decision.get("decision"), "normal")
+
+
+def parse_iso(value: str) -> datetime:
+    """ISO 8601 UTC ("...Z" or with an offset); a naive value is taken as UTC."""
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def iso_of(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def now_iso() -> str:
@@ -260,6 +270,58 @@ class ClientState:
             )
         return items
 
+    def open_blocks(self, user_id: str | None = None) -> list[dict]:
+        return [d for d in self.decisions
+                if d["decision"] == "block" and d["status"] == "open" and (user_id is None or d["user_id"] == user_id)]
+
+    def summary(self, since: datetime, until: datetime) -> dict:
+        """Contract 6. `reviewed_by_ai` pretends to be the engine's judge: one model call per
+        session that got a decision in the range (the real engine judges once per session)."""
+        events = [e for e in self.log if since <= parse_iso(e.ts) < until]
+        decisions = [d for d in self.decisions if since <= parse_iso(d["ts"]) < until]
+        counts = {"allow": 0, "alert": 0, "step_up": 0, "block": 0}
+        judged = set()
+        for d in decisions:
+            counts[d["decision"]] = counts.get(d["decision"], 0) + 1
+            event = self.pending_events.get(d["id"])
+            judged.add((d["user_id"], event.session_id if event and event.session_id else d["id"]))
+        hours: dict[datetime, dict] = {}
+        for e in events:
+            h = parse_iso(e.ts).astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+            hours.setdefault(h, {"hour": iso_of(h), "accesses": 0, "blocks": 0})["accesses"] += 1
+        for d in decisions:
+            if d["decision"] != "block":
+                continue
+            h = parse_iso(d["ts"]).replace(minute=0, second=0, microsecond=0)
+            if h in hours:
+                hours[h]["blocks"] += 1
+        return {
+            "since": iso_of(since),
+            "until": iso_of(until),
+            "accesses": len(events),
+            "users": len({e.user_id for e in events}),
+            "reviewed_by_ai": len(judged),
+            "decisions": counts,
+            "blocks_active": {"decisions": len(self.open_blocks()), "sessions": len(self.sessions), "ips": len(self.ips)},
+            "by_hour": [hours[h] for h in sorted(hours)],
+        }
+
+    def users(self) -> list[dict]:
+        """Contract 7: blocked users first, then newest `last_seen` first."""
+        self.apply_pending()
+        ids = set(self.profiles) | {e.user_id for e in self.log} | {d["user_id"] for d in self.decisions}
+        rows = []
+        for uid in ids:
+            p = self.profile(uid)
+            seen = [e.ts for e in self.log if e.user_id == uid]
+            last = max(seen, key=parse_iso) if seen else None
+            opened = len(self.open_blocks(uid))
+            rows.append({"user_id": uid, "state": "blocked" if uid in self.blocked_users else "normal",
+                         "history_days": 14, "networks": len(p.networks), "devices": len(p.devices),
+                         "last_seen": last, "open_blocks": opened})
+        rows.sort(key=lambda r: (r["open_blocks"] == 0, -(parse_iso(r["last_seen"]).timestamp() if r["last_seen"] else 0), r["user_id"]))
+        return rows
+
     def mark_normal(self, decision_id: str) -> dict | None:
         decision = next((d for d in self.decisions if d["id"] == decision_id), None)
         if decision is None:
@@ -366,6 +428,21 @@ def create_app(
     @app.get("/v1/activity")
     def get_activity(st: State, limit: Annotated[int, Query(ge=1, le=200)] = 50):
         return {"activity": st.activity(limit)}
+
+    @app.get("/v1/summary")
+    def get_summary(st: State, since: str | None = None, until: str | None = None):
+        try:
+            end = parse_iso(until) if until else datetime.now(timezone.utc)
+            start = parse_iso(since) if since else end - timedelta(hours=24)
+        except ValueError:
+            return JSONResponse({"error": "invalid_range"}, status_code=422)
+        if start >= end:
+            return JSONResponse({"error": "invalid_range"}, status_code=422)
+        return st.summary(start, end)
+
+    @app.get("/v1/users")
+    def get_users(st: State):
+        return {"users": st.users()}
 
     @app.post("/v1/decisions/{decision_id}/normal")
     def post_normal(decision_id: str, st: State):
