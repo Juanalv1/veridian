@@ -42,3 +42,17 @@ def test_admin_manages_viewers_and_admins_but_not_owners():
     assert not can_manage_role("admin", "owner")
     assert can_manage_role("owner", "owner")
     assert not can_manage_role("viewer", "viewer")
+
+
+def test_decision_3_lives_in_one_switch_and_defaults_to_viewer_cannot_mark_normal():
+    from veridian_engine.control_plane import roles
+
+    assert roles.VIEWER_CAN_MARK_NORMAL is False
+    assert not can("viewer", "mark_normal")
+
+
+@pytest.mark.parametrize("action", ["create_project", "edit_org"])
+def test_org_admin_actions(action):
+    assert can("admin", action)
+    assert can("owner", action)
+    assert not can("viewer", action)

@@ -1,10 +1,16 @@
-"""Role matrix (docs/DISENO-PRODUCTO.md, "Roles: owner, admin, viewer")."""
+"""Role matrix (docs/DISENO-PRODUCTO.md, "Roles: owner, admin, viewer").
+
+Roles live only in the organization: a person's role in an org applies to every project of it.
+"""
 
 ROLES = ("owner", "admin", "viewer")
 
-VIEWER_ACTIONS = frozenset({"view"})
+# Open decision 3 of docs/DISENO-PRODUCTO.md: may a viewer mark a decision normal? Marking normal
+# lifts a block, so the design recommends no. This is the only place that decides it.
+VIEWER_CAN_MARK_NORMAL = False
+
+VIEWER_ACTIONS = frozenset({"view"} | ({"mark_normal"} if VIEWER_CAN_MARK_NORMAL else set()))
 ADMIN_ACTIONS = VIEWER_ACTIONS | {
-    # A viewer cannot mark a decision normal: it lifts a block (decision 3).
     "mark_normal",
     "manage_keys",
     "manage_routes",
@@ -12,6 +18,8 @@ ADMIN_ACTIONS = VIEWER_ACTIONS | {
     "manage_members",
     "edit_settings",
     "erase_user_data",
+    "create_project",
+    "edit_org",
 }
 OWNER_ACTIONS = ADMIN_ACTIONS | {"manage_owners", "erase_project_data", "delete_project"}
 
@@ -24,6 +32,8 @@ ACTIONS = (
     "manage_members",
     "edit_settings",
     "erase_user_data",
+    "create_project",
+    "edit_org",
     "manage_owners",
     "erase_project_data",
     "delete_project",

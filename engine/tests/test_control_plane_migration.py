@@ -108,3 +108,109 @@ def test_startup_does_not_restore_a_revoked_legacy_key(tmp_path, clock):
     assert query(path, "SELECT revoked_at FROM api_key WHERE key_hash = ?", (hash_key(TOKEN_A),)) == [
         ("2026-10-26T12:00:00Z",)
     ]
+
+
+# --- 0004: organizations above projects; roles, invitations and audit move to the org ---
+
+
+def migrations_up_to(tmp_path, version: int):
+    """A directory holding only the real migrations up to `version`."""
+    directory = tmp_path / f"migrations_upto_{version}"
+    directory.mkdir()
+    for migration in db.load_migrations(db.MIGRATIONS_DIR):
+        if migration.version <= version:
+            (directory / migration.filename).write_text(migration.sql, encoding="utf-8")
+    return directory
+
+
+def control_plane_0003_db(tmp_path):
+    """A database at 0003 with the demo data, two projects, per-project roles, an invitation,
+    a key and an audit row, as the engine left it before organizations existed."""
+    path = populated_legacy_db(tmp_path / "veridian.db")
+    db.init_db(str(path), migrations_up_to(tmp_path, 3))
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        INSERT INTO project (id, name, enforcement, created_at) VALUES ('demo', 'demo', 'enforce', '2026-10-20T00:00:00Z');
+        INSERT INTO project (id, name, enforcement, created_at) VALUES ('other', 'other', 'enforce', '2026-10-21T00:00:00Z');
+        INSERT INTO person (id, google_sub, email, name, created_at, last_login_at)
+            VALUES ('per_a', 'sub-a', 'a@example.com', 'A', '2026-10-20T00:00:00Z', '2026-10-20T00:00:00Z');
+        INSERT INTO person (id, google_sub, email, name, created_at, last_login_at)
+            VALUES ('per_b', 'sub-b', 'b@example.com', 'B', '2026-10-20T00:00:00Z', '2026-10-20T00:00:00Z');
+        INSERT INTO membership (project_id, person_id, role, created_at) VALUES ('demo', 'per_a', 'viewer', '2026-10-20T00:00:00Z');
+        INSERT INTO membership (project_id, person_id, role, created_at) VALUES ('other', 'per_a', 'owner', '2026-10-21T00:00:00Z');
+        INSERT INTO membership (project_id, person_id, role, created_at) VALUES ('demo', 'per_b', 'admin', '2026-10-20T00:00:00Z');
+        INSERT INTO invitation (id, project_id, email, role, invited_by, created_at, expires_at)
+            VALUES ('inv_1', 'demo', 'c@example.com', 'viewer', 'per_a', '2026-10-20T00:00:00Z', '2999-01-01T00:00:00Z');
+        INSERT INTO audit_log (seq, project_id, actor_person_id, actor_kind, action, target_type, target_id, meta, ts)
+            VALUES (1, 'demo', 'per_a', 'person', 'project.create', 'project', 'demo', '{}', '2026-10-20T00:00:00Z');
+        """
+    )
+    conn.execute(
+        "INSERT INTO api_key (id, project_id, name, prefix, key_hash, scope, created_by, created_at)"
+        " VALUES ('key_demo', 'demo', 'legacy', 'legacy', ?, 'sdk', 'migration', '2026-10-20T00:00:00Z')",
+        (hash_key("tok_demo"),),
+    )
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_0004_creates_organizations_on_a_new_database(tmp_path):
+    path = tmp_path / "veridian.db"
+
+    db.init_db(str(path))
+
+    assert 4 in applied_versions(path)
+    assert "organization" in table_names(path)
+    assert query(path, "SELECT COUNT(*) FROM organization") == [(0,)]
+
+
+def test_0004_puts_existing_projects_in_org_demo(tmp_path):
+    path = control_plane_0003_db(tmp_path)
+
+    db.init_db(str(path))
+
+    assert query(path, "SELECT id, name, deleted_at FROM organization") == [("org_demo", "Demo", None)]
+    assert query(path, "SELECT id, org_id FROM project ORDER BY id") == [("demo", "org_demo"), ("other", "org_demo")]
+
+
+def test_0004_moves_roles_to_the_org_keeping_the_strongest_one(tmp_path):
+    path = control_plane_0003_db(tmp_path)
+
+    db.init_db(str(path))
+
+    assert query(path, "SELECT org_id, person_id, role FROM membership ORDER BY person_id") == [
+        ("org_demo", "per_a", "owner"),
+        ("org_demo", "per_b", "admin"),
+    ]
+
+
+def test_0004_moves_invitations_and_audit_to_the_org(tmp_path):
+    path = control_plane_0003_db(tmp_path)
+
+    db.init_db(str(path))
+
+    assert query(path, "SELECT id, org_id, email, role FROM invitation") == [("inv_1", "org_demo", "c@example.com", "viewer")]
+    assert query(path, "SELECT seq, org_id, project_id, action FROM audit_log") == [(1, "org_demo", "demo", "project.create")]
+
+
+def test_0004_keeps_the_data_and_the_legacy_key_working(tmp_path, clock):
+    path = control_plane_0003_db(tmp_path)
+
+    with TestClient(create_app(make_settings(tmp_path, clock, db_path=str(path), tokens={"tok_demo": "demo"}))) as client:
+        listed = client.get("/v1/blocklist", headers={"Authorization": "Bearer tok_demo"})
+
+    assert listed.status_code == 200
+    assert listed.json()["sessions"] == ["s_att"]
+    assert len(query(path, "SELECT * FROM events")) == 4
+
+
+def test_startup_seeds_legacy_projects_into_org_demo(tmp_path, clock):
+    path = tmp_path / "veridian.db"
+
+    start(tmp_path, clock, db_path=str(path))
+    start(tmp_path, clock, db_path=str(path))
+
+    assert query(path, "SELECT id, name FROM organization") == [("org_demo", "Demo")]
+    assert query(path, "SELECT id, org_id FROM project ORDER BY id") == [("client_a", "org_demo"), ("client_b", "org_demo")]
