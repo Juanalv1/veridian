@@ -323,12 +323,7 @@ class Auth:
 
     def session_router(self) -> APIRouter:
         """Pages for a signed-in person, with or without projects."""
-        router, auth = APIRouter(dependencies=[Depends(self.session_guard)]), self
-
-        @router.get("/sin-proyectos", response_class=HTMLResponse)
-        async def no_projects(request: Request):
-            return auth.templates.TemplateResponse(request, "sin_proyectos.html", {
-                "email": request.session["email"], "csrf": request.session["csrf"]})
+        router = APIRouter(dependencies=[Depends(self.session_guard)])
 
         @router.post("/logout")
         async def logout(request: Request):

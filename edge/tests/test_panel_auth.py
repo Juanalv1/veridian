@@ -253,9 +253,9 @@ def test_a_person_without_projects_gets_the_no_projects_page():
         r = panel.get(path)
         assert r.status_code == 303 and r.headers["location"] == "/sin-proyectos", path
     page = panel.get("/sin-proyectos")
-    assert page.status_code == 200 and "Todavía no perteneces a ninguna organización" in page.text and EMAIL in page.text
+    assert page.status_code == 200 and "¿Cómo se llama tu empresa?" in page.text and EMAIL in page.text
     assert 'action="/logout"' in page.text and 'name="csrf"' in page.text
-    assert engine.requests == []
+    assert engine.requests == []  # the stub refuses the org lookup (no project to name): the step still shows
 
 
 def test_the_no_projects_page_needs_a_session():

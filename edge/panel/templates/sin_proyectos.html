@@ -1,14 +1,23 @@
 {% extends "auth_base.html" %}
-{% block title %}Sin organización{% endblock %}
+{% block title %}Tu empresa{% endblock %}
 {% block content %}
   <div class="auth-heading">
-    <h1>Todavía no perteneces a ninguna organización</h1>
-    <p class="auth-muted">Pide al administrador de tu equipo que te invite a su organización con este correo.</p>
+    <h1>¿Cómo se llama tu empresa?</h1>
+    <p class="auth-muted">Es lo único que te pedimos. Con ese nombre creamos tu organización y tu primer proyecto, y quedas como owner. Después creas una clave para conectar tu app.</p>
   </div>
   <p class="auth-who">{{ email }}</p>
+  {% if pilot %}<p class="auth-error" role="alert">{{ pilot_text }}</p>{% endif %}
+  <form class="acct-form" method="post" action="/sin-proyectos">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field{% if error %} invalid{% endif %}">
+      <label for="company-name">Nombre de la empresa</label>
+      <input id="company-name" type="text" name="name" value="{{ name }}" maxlength="80" required autofocus autocomplete="organization"{% if error %} aria-invalid="true" aria-describedby="company-name-error"{% endif %}>
+      {% if error %}<span id="company-name-error" class="field-error" role="alert">{{ error }}</span>{% endif %}
+    </div>
+    <button class="btn btn-primary" type="submit">Continuar</button>
+  </form>
+  <p class="auth-small">¿Te invitaron a una organización? Cierra sesión y entra con el correo de la invitación.</p>
   <div class="auth-actions">
-    <a class="btn btn-secondary" href="/auth/google">Usar otra cuenta</a>
-    <a class="btn btn-ghost" href="/organizaciones/nueva">Crear organización</a>
     <form method="post" action="/logout">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <button class="btn btn-ghost" type="submit">Cerrar sesión</button>

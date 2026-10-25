@@ -85,16 +85,14 @@ def test_login_errors_use_the_mockup_messages_with_a_lead_in(code, message):
     assert message in html and "No pudiste entrar." in html and 'role="alert"' in html
 
 
-def test_no_organization_page_follows_the_mockup():
+def test_no_organization_page_asks_only_for_the_company_name():
     engine = new_engine(owners=())
     panel = panel_of(engine, email="nobody@example.com", login=False)
     assert sign_in(panel).headers["location"] == "/sin-proyectos"
     html = panel.get("/sin-proyectos").text
-    assert "Todavía no perteneces a ninguna organización" in html
-    assert "Pide al administrador de tu equipo que te invite" in html
-    assert "nobody@example.com" in html and "Usar otra cuenta" in html and "Cerrar sesión" in html
-    assert 'action="/logout"' in html and 'name="csrf"' in html
-    assert 'href="/organizaciones/nueva"' in html
+    assert "¿Cómo se llama tu empresa?" in html and "Nombre de la empresa" in html
+    assert "nobody@example.com" in html and "Cerrar sesión" in html and 'action="/logout"' in html
+    assert 'action="/sin-proyectos"' in html and 'name="csrf"' in html
 
 
 def test_the_no_organization_page_lets_a_person_without_orgs_reach_the_selector_redirect():

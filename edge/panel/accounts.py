@@ -30,9 +30,12 @@ NO_ACCESS_ORG = "No tienes acceso a esa organización."
 PILOT_LIMIT = ("Crear organizaciones está limitado durante el piloto. "
                "Si necesitas una, escríbenos a [correo de soporte].")
 NAME_ORG_ERROR = "Escribe un nombre para la organización (hasta 80 caracteres)."
+NAME_COMPANY_ERROR = "Escribe el nombre de tu empresa (hasta 80 caracteres)."
 NAME_PROJECT_ERROR = "Escribe un nombre para el proyecto (hasta 80 caracteres)."
 MODE_ERROR = "Elige cómo empieza el proyecto."
 CREATE_PROJECT_FORBIDDEN = "Solo un admin u owner puede crear proyectos en esta organización."
+WELCOME = "Listo: creamos «{name}» y su primer proyecto. Crea tu primera clave para conectar tu app."
+FIRST_PROJECT_FAILED = ("Creamos tu organización, pero no su primer proyecto. Créalo aquí para seguir.")
 MODE_NOT_SAVED = ("El proyecto se creó, pero no se pudo guardar el modo ni el uso de IA. "
                   "Revísalos en los ajustes del proyecto.")
 NAME_MISMATCH = "El nombre no coincide. No se eliminó nada."
@@ -223,6 +226,50 @@ class Accounts:
                 return me.back()
             me.set_current(request, owner["id"], project_id)
             return me.back("/")
+
+        def company_step(request: Request, name: str = "", error: str | None = None, status: int = 200,
+                         pilot: bool = False):
+            return me.render(request, "sin_proyectos.html", {
+                "name": name, "error": error, "pilot": pilot, "pilot_text": PILOT_LIMIT if pilot else ""}, status)
+
+        def has_org_redirect(request: Request) -> RedirectResponse:
+            return me.back("/" if request.session.get("project") else "/proyectos")
+
+        @router.get("/sin-proyectos", response_class=HTMLResponse)
+        async def no_projects(request: Request):
+            """First run: a person with no organization is asked only for the company name. The engine, not the
+            session, says whether they have one."""
+            if await me.load_orgs(request):
+                return has_org_redirect(request)
+            return company_step(request)
+
+        @router.post("/sin-proyectos", response_class=HTMLResponse)
+        async def create_company(request: Request, name: str = Form("")):
+            """The org (person as owner) and its first project, named after the company, in one step."""
+            clean = clean_name(name)
+            if clean is None:
+                return company_step(request, name, NAME_COMPANY_ERROR, 400)
+            orgs = await me.load_orgs(request)
+            if orgs is None:
+                return company_step(request, name, UNREACHABLE, 502)
+            if orgs:
+                return has_org_redirect(request)  # a stale page or a double submit never makes a second org
+            status, org = await me.write(request, "POST", "/v1/orgs", {"name": clean})
+            if status == 403:
+                return company_step(request, name, status=403, pilot=True)
+            if status is None:
+                return company_step(request, name, UNREACHABLE, 502)
+            if status != 201 or not isinstance(org, dict) or not isinstance(org.get("id"), str):
+                return company_step(request, name, engine_error(status), 502)
+            org_id = quote(org["id"], safe="")
+            status, project = await me.write(request, "POST", f"/v1/orgs/{org_id}/projects", {"name": clean})
+            if status != 201 or not isinstance(project, dict) or not isinstance(project.get("id"), str):
+                me.set_current(request, org["id"])
+                me.flash(request, "warn", FIRST_PROJECT_FAILED)
+                return me.back(f"/proyectos/nuevo?org={org_id}")
+            me.set_current(request, org["id"], project["id"])
+            me.flash(request, "ok", WELCOME.format(name=clean))
+            return me.back("/claves")
 
         @router.get("/organizaciones/nueva", response_class=HTMLResponse)
         async def new_org_form(request: Request):
