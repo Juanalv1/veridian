@@ -8,13 +8,16 @@ from fastapi.responses import JSONResponse
 
 from . import db
 from .activity import list_activity
-from .auth import ApiKeyAuth, RateLimited, Unauthorized, project_id_from_request
+from .auth import ApiKeyAuth, Caller, RateLimited, Unauthorized, caller_from_request
 from .check import CheckRequest, check_event
+from .control_api import build_router, install_error_handlers
 from .control_plane.legacy import seed_legacy
+from .control_plane.repository import record_audit
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
 from .notifications.sender import build_webhook_sender, webhook_lifespan
+from .principal import Forbidden, PanelProject, panel_project, sdk_project, shared_project
 from .project_settings import get_project_flags
 from .profile import build_profile, is_blocked
 from .route_classes import RouteClasses
@@ -51,6 +54,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=429, content={"error": "rate_limited"}, headers={"Retry-After": exc.retry_after_header}
         )
 
+    install_error_handlers(app)
+    view = panel_project("view")  # panel only, any member of the project's organization
+
     @app.get("/health")
     def health() -> dict:
         """Liveness probe for the hosting platform. No token: it reveals nothing."""
@@ -58,7 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/events", status_code=202)
     def ingest_events(
-        batch: EventBatch, background_tasks: BackgroundTasks, project_id: str = Depends(project_id_from_request)
+        batch: EventBatch, background_tasks: BackgroundTasks, project_id: str = Depends(sdk_project)
     ) -> dict:
         deviations = []
         with write_lock, db.connect(settings.db_path) as conn:
@@ -75,7 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/check")
     def post_check(
-        body: CheckRequest, background_tasks: BackgroundTasks, project_id: str = Depends(project_id_from_request)
+        body: CheckRequest, background_tasks: BackgroundTasks, project_id: str = Depends(sdk_project)
     ) -> dict:
         """Contract 9: decide a critical request before the app executes it."""
         result = check_event(settings, route_classes, write_lock, project_id, body.event)
@@ -88,8 +94,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_summary(
         since: datetime | None = None,
         until: datetime | None = None,
-        project_id: str = Depends(project_id_from_request),
+        project: PanelProject = Depends(view),
     ):
+        project_id = project.project_id
         until = as_utc(until) if until is not None else settings.clock()
         since = as_utc(since) if since is not None else until - timedelta(hours=24)
         if since >= until:
@@ -98,39 +105,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return build_summary(conn, project_id, since, until)
 
     @app.get("/v1/users")
-    def get_users(project_id: str = Depends(project_id_from_request)) -> dict:
+    def get_users(project: PanelProject = Depends(view)) -> dict:
+        project_id = project.project_id
         with db.connect(settings.db_path) as conn:
             return {"users": list_users(conn, project_id, settings.clock(), settings.learn_delay_min)}
 
     @app.get("/v1/routes")
-    def get_routes(project_id: str = Depends(project_id_from_request)) -> dict:
+    def get_routes(project_id: str = Depends(shared_project)) -> dict:
         """The loaded classification. Global to the engine: every client sees the same list."""
         return {"routes": route_classes.listing(), "default": "normal"}
 
     @app.get("/v1/users/{user_id}/profile")
-    def get_profile(user_id: str, project_id: str = Depends(project_id_from_request)) -> dict:
+    def get_profile(user_id: str, project: PanelProject = Depends(view)) -> dict:
+        project_id = project.project_id
         with db.connect(settings.db_path) as conn:
             profile = build_profile(conn, project_id, user_id, settings.clock(), settings.learn_delay_min)
             return profile.to_dict(blocked=is_blocked(conn, project_id, user_id))
 
     @app.get("/v1/decisions")
     def get_decisions(
-        limit: int = Query(50, ge=1, le=500), project_id: str = Depends(project_id_from_request)
+        limit: int = Query(50, ge=1, le=500), project: PanelProject = Depends(view)
     ) -> dict:
+        project_id = project.project_id
         with db.connect(settings.db_path) as conn:
             return {"decisions": list_decisions(conn, project_id, limit)}
 
     @app.get("/v1/activity")
     def get_activity(
-        limit: int = Query(50, ge=1, le=200), project_id: str = Depends(project_id_from_request)
+        limit: int = Query(50, ge=1, le=200), project: PanelProject = Depends(view)
     ) -> dict:
+        project_id = project.project_id
         with db.connect(settings.db_path) as conn:
             return {"activity": list_activity(conn, project_id, limit)}
 
     @app.post("/v1/decisions/{decision_id}/normal")
-    def post_mark_normal(decision_id: str, project_id: str = Depends(project_id_from_request)):
+    def post_mark_normal(decision_id: str, project: PanelProject = Depends(panel_project("mark_normal"))):
+        """Lifts a block: needs the mark_normal role (decision 3, control_plane/roles.py) and is audited
+        in the same transaction."""
         with write_lock, db.connect(settings.db_path) as conn:
-            result = mark_normal(conn, project_id, decision_id)
+            result = mark_normal(conn, project.project_id, decision_id)
+            if result is not None:
+                record_audit(
+                    conn,
+                    org_id=project.org_id,
+                    project_id=project.project_id,
+                    actor_person_id=project.person_id,
+                    actor_kind="person",
+                    action="decision.mark_normal",
+                    target_type="decision",
+                    target_id=decision_id,
+                    now=settings.clock(),
+                )
         if result is None:
             return JSONResponse(status_code=404, content={"error": "not_found"})
         return result
@@ -142,13 +167,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         sent = request.headers.get("x-veridian-reset-token", "")
         if not settings.reset_token or not hmac.compare_digest(sent.encode(), settings.reset_token.encode()):
             return JSONResponse(status_code=404, content={"error": "not_found"})
-        project_id = project_id_from_request(request)
+        caller: Caller = caller_from_request(request)
+        if caller.kind != "sdk":
+            raise Forbidden()
+        project_id = caller.project_id
         with write_lock, db.connect(settings.db_path) as conn:
             version = reset_client(conn, project_id)
         return {"reset": True, "version": version}
 
     @app.get("/v1/blocklist")
-    def get_blocklist(since: int | None = None, project_id: str = Depends(project_id_from_request)):
+    def get_blocklist(since: int | None = None, project_id: str = Depends(shared_project)):
         with db.connect(settings.db_path) as conn:
             if since is not None and since == current_version(conn, project_id):
                 return Response(status_code=304)
@@ -157,4 +185,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return {"version": current_version(conn, project_id), "users": [], "sessions": [], "ips": []}
             return blocklist(conn, project_id)
 
+    app.include_router(build_router(settings, write_lock))
     return app

@@ -2,7 +2,7 @@ import sqlite3
 from datetime import timedelta
 
 import pytest
-from conftest import AUTH_A, AUTH_B, TOKEN_A, make_event, make_settings, post_events
+from conftest import AUTH_A, AUTH_B, TOKEN_A, make_event, make_settings, post_events, as_panel
 from fastapi.testclient import TestClient
 
 from veridian_engine.api import create_app
@@ -158,7 +158,7 @@ def test_keys_of_two_projects_stay_isolated(make_client, clock):
     client = make_client()
     post_events(client, [make_event("e1", clock(), user_id="u_only_a")], headers=AUTH_A)
 
-    users_b = client.get("/v1/users", headers=AUTH_B).json()
+    users_b = client.get("/v1/users", headers=as_panel(client, AUTH_B)).json()
 
     assert "u_only_a" not in str(users_b)
 

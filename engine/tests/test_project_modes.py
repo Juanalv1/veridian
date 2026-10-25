@@ -1,7 +1,7 @@
 """U14: enforcement = observe and ai_enabled per project (docs/DISENO-PRODUCTO.md, decisions 6 and 10)."""
 
 import pytest
-from conftest import NOW, make_event, make_settings
+from conftest import NOW, make_event, make_settings, as_panel
 from fastapi.testclient import TestClient
 from test_ai_wiring import FakeJudge
 from test_check import CRITICAL, GRAY, check
@@ -40,7 +40,7 @@ def ai_judgments(settings) -> int:
 
 
 def activity_status(client, event_id):
-    items = client.get("/v1/activity", headers={"Authorization": "Bearer tok_a"}).json()["activity"]
+    items = client.get("/v1/activity", headers=as_panel(client, {"Authorization": "Bearer tok_a"})).json()["activity"]
     return {item["event_id"]: item["status"] for item in items}[event_id]
 
 

@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 import pytest
-from conftest import AUTH_A, AUTH_B, NOW, days_ago, iso, make_event, make_settings, post_events
+from conftest import AUTH_A, AUTH_B, NOW, days_ago, iso, make_event, make_settings, post_events, as_panel
 from fastapi.testclient import TestClient
 from test_ai_wiring import NEW_NETWORK, FakeJudge
 from test_decisions import ATTACKER, attack, decisions, seed_owner_history
@@ -27,7 +27,7 @@ def judged_client(tmp_path, clock):
 
 
 def summary(client, headers=AUTH_A, **params):
-    return client.get("/v1/summary", headers=headers, params=params)
+    return client.get("/v1/summary", headers=as_panel(client, headers), params=params)
 
 
 def today(client, headers=AUTH_A):
@@ -36,7 +36,7 @@ def today(client, headers=AUTH_A):
 
 
 def users(client, headers=AUTH_A):
-    return client.get("/v1/users", headers=headers)
+    return client.get("/v1/users", headers=as_panel(client, headers))
 
 
 # --- summary ---
@@ -113,7 +113,7 @@ def test_summary_counts_decisions_and_active_blocks(client):
     assert body["reviewed_by_ai"] == 0
 
     [decision] = decisions(client)
-    client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
 
     body = today(client)
     # The decision still happened in the range; it is just no longer active.
@@ -272,7 +272,7 @@ def test_users_blocked_user_returns_to_normal_after_mark_normal(client):
     assert [user["user_id"] for user in users(client).json()["users"]] == ["u_42", "u_17"]
 
     [decision] = decisions(client)
-    client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
 
     listed = users(client).json()["users"]
     assert [user["user_id"] for user in listed] == ["u_17", "u_42"]

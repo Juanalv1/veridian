@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import AUTH_A, AUTH_B, NOW, days_ago, make_event, make_settings, post_events
+from conftest import AUTH_A, AUTH_B, NOW, days_ago, make_event, make_settings, post_events, as_panel
 from veridian_engine.api import create_app
 
 
@@ -67,8 +67,8 @@ def test_reset_wipes_only_the_callers_client(reset_client):
     old_version = reset_client.get("/v1/blocklist", headers=AUTH_A).json()["version"]
     assert old_version == 1
     b_before = {
-        "profile": reset_client.get("/v1/users/u_42/profile", headers=AUTH_B).json(),
-        "decisions": reset_client.get("/v1/decisions", headers=AUTH_B).json(),
+        "profile": reset_client.get("/v1/users/u_42/profile", headers=as_panel(reset_client, AUTH_B)).json(),
+        "decisions": reset_client.get("/v1/decisions", headers=as_panel(reset_client, AUTH_B)).json(),
         "blocklist": reset_client.get("/v1/blocklist", headers=AUTH_B).json(),
     }
 
@@ -76,7 +76,7 @@ def test_reset_wipes_only_the_callers_client(reset_client):
     assert response.status_code == 200
     assert response.json() == {"reset": True, "version": old_version + 1}
 
-    profile = reset_client.get("/v1/users/u_42/profile", headers=AUTH_A).json()
+    profile = reset_client.get("/v1/users/u_42/profile", headers=as_panel(reset_client, AUTH_A)).json()
     assert profile == {
         "user_id": "u_42",
         "history_days": 0,
@@ -87,7 +87,7 @@ def test_reset_wipes_only_the_callers_client(reset_client):
         "usual_max_rate_per_min": 0,
         "state": "normal",
     }
-    assert reset_client.get("/v1/decisions", headers=AUTH_A).json() == {"decisions": []}
+    assert reset_client.get("/v1/decisions", headers=as_panel(reset_client, AUTH_A)).json() == {"decisions": []}
     assert reset_client.get("/v1/blocklist", headers=AUTH_A).json() == {
         "version": old_version + 1,
         "users": [],
@@ -99,8 +99,8 @@ def test_reset_wipes_only_the_callers_client(reset_client):
     assert polled.status_code == 200
     assert polled.json()["sessions"] == []
 
-    assert reset_client.get("/v1/users/u_42/profile", headers=AUTH_B).json() == b_before["profile"]
-    assert reset_client.get("/v1/decisions", headers=AUTH_B).json() == b_before["decisions"]
+    assert reset_client.get("/v1/users/u_42/profile", headers=as_panel(reset_client, AUTH_B)).json() == b_before["profile"]
+    assert reset_client.get("/v1/decisions", headers=as_panel(reset_client, AUTH_B)).json() == b_before["decisions"]
     assert reset_client.get("/v1/blocklist", headers=AUTH_B).json() == b_before["blocklist"]
 
 

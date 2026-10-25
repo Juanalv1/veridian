@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from conftest import make_event, make_settings
+from conftest import make_event, make_settings, as_panel
 from fastapi.testclient import TestClient
 
 from veridian_engine import db
@@ -413,7 +413,7 @@ def read_all(path: Path, tmp_path: Path, clock) -> dict:
         "/v1/profile/u_42",
     )
     with demo_client(path, tmp_path, clock) as client:
-        return {endpoint: client.get(endpoint, headers=DEMO_AUTH).json() for endpoint in endpoints}
+        return {endpoint: client.get(endpoint, headers=as_panel(client, DEMO_AUTH)).json() for endpoint in endpoints}
 
 
 def test_migrated_demo_database_serves_the_same_responses(tmp_path, clock):

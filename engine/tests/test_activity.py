@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from conftest import AUTH_A, AUTH_B, NOW, make_event, post_events
+from conftest import AUTH_A, AUTH_B, NOW, make_event, post_events, as_panel
 from test_ai_wiring import NEW_NETWORK, FakeJudge, make_client  # noqa: F401 (fixture)
 from test_decisions import ATTACKER, attack, decisions, seed_owner_history
 
@@ -20,7 +20,7 @@ ITEM_KEYS = {
 
 
 def activity(client, headers=AUTH_A, **params):
-    response = client.get("/v1/activity", headers=headers, params=params)
+    response = client.get("/v1/activity", headers=as_panel(client, headers), params=params)
     assert response.status_code == 200
     return response.json()["activity"]
 
@@ -85,7 +85,7 @@ def test_attack_scenario_verdicts(client):
 
 def test_block_marked_normal_returns_to_normal(client):
     decision_id = blocked_scenario(client)
-    assert client.post(f"/v1/decisions/{decision_id}/normal", headers=AUTH_A).status_code == 200
+    assert client.post(f"/v1/decisions/{decision_id}/normal", headers=as_panel(client, AUTH_A)).status_code == 200
     items = by_id(activity(client))
     assert items["a2"]["verdict"] == "normal"
     assert items["a2"]["decision_id"] == decision_id
@@ -129,7 +129,7 @@ def test_default_limit_is_50(client):
 
 def test_limit_bounds(client):
     for limit in (0, 201):
-        response = client.get("/v1/activity", headers=AUTH_A, params={"limit": limit})
+        response = client.get("/v1/activity", headers=as_panel(client, AUTH_A), params={"limit": limit})
         assert response.status_code == 422
     assert len(activity(client, limit=1)) == 0
 
@@ -143,7 +143,7 @@ def test_client_isolation(client):
 
 def test_requires_token(client):
     assert client.get("/v1/activity").status_code == 401
-    bad = client.get("/v1/activity", headers={"Authorization": "Bearer nope"})
+    bad = client.get("/v1/activity", headers=as_panel(client, {"Authorization": "Bearer nope"}))
     assert bad.status_code == 401
     assert bad.json() == {"error": "unauthorized"}
 

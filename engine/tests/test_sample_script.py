@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 
-from conftest import AUTH_A, NOW, make_settings, post_events
+from conftest import AUTH_A, NOW, make_settings, post_events, as_panel
 from fastapi.testclient import TestClient
 from test_ai_wiring import FakeJudge
 
@@ -21,12 +21,12 @@ def test_sample_scenario_blocks_only_the_attacker(client):
     script = load_script()
     history = script.owner_history(NOW, run_id="t1")
     assert post_events(client, history).json() == {"accepted": len(history)}
-    assert client.get("/v1/decisions", headers=AUTH_A).json()["decisions"] == []
+    assert client.get("/v1/decisions", headers=as_panel(client, AUTH_A)).json()["decisions"] == []
 
     attack = script.attacker_events(NOW, run_id="t1")
     assert post_events(client, attack).status_code == 202
 
-    [decision] = client.get("/v1/decisions", headers=AUTH_A).json()["decisions"]
+    [decision] = client.get("/v1/decisions", headers=as_panel(client, AUTH_A)).json()["decisions"]
     assert decision["decision"] == "block"
     listed = client.get("/v1/blocklist", headers=AUTH_A).json()
     assert listed["sessions"] == ["s_attacker_t1"]

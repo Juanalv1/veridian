@@ -7,14 +7,17 @@ counted per source IP and per visible key prefix; past the threshold the caller 
 `RateLimited` before any key work. Legacy `VERIDIAN_TOKENS` tokens have no visible
 prefix, so they are only limited by IP.
 
-Every authenticated caller is an `sdk` principal. The design restricts `sdk` keys to
-the SDK endpoints, but the panel still reads with the same token until the `panel`
-principal (U6) exists, so panel endpoints keep accepting `sdk` keys for now.
+Two kinds of caller (docs/DISENO-PRODUCTO.md, "Cómo se autentica el panel contra el motor"):
+`panel`, whose Bearer is one of `Settings.panel_tokens` (compared in constant time, checked
+first), and `sdk`, whose Bearer is a project's API key. Which endpoints accept which kind,
+and the panel's actor and role, are decided in `principal.py`.
 """
 
+import hmac
 import math
 import sqlite3
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import Request
@@ -54,6 +57,15 @@ def client_ip(request: Request, trusted_proxies: int) -> str:
     return entries[-trusted_proxies]
 
 
+@dataclass(frozen=True)
+class Caller:
+    kind: str  # "sdk" | "panel"
+    project_id: str | None = None  # the key's project, for "sdk" only
+
+
+PANEL = Caller(kind="panel")
+
+
 class ApiKeyAuth:
     def __init__(self, settings: Settings):
         self._settings = settings
@@ -64,7 +76,7 @@ class ApiKeyAuth:
         self._last_written: dict[str, datetime] = {}
         self._lock = threading.Lock()
 
-    def project_id(self, request: Request) -> str:
+    def caller(self, request: Request) -> Caller:
         scheme, _, raw = request.headers.get("Authorization", "").partition(" ")
         token = raw.strip() if scheme.lower() == "bearer" else ""
         ip = f"ip:{client_ip(request, self._settings.trusted_proxies)}"
@@ -76,13 +88,21 @@ class ApiKeyAuth:
             if decision.blocked:
                 raise RateLimited(decision.retry_after)
 
+        if token and self._is_panel(token):
+            return PANEL
         resolution = self._resolve(token) if token else None
         if resolution is None or not resolution.ok:
             for limiter, source in limits:
                 limiter.record_failure(source)
             raise Unauthorized()
         self._touch(resolution.key_id)
-        return resolution.project_id
+        return Caller(kind="sdk", project_id=resolution.project_id)
+
+    def _is_panel(self, token: str) -> bool:
+        presented = token.encode()
+        # Every configured credential is compared, so the time does not tell which one matched.
+        matches = [hmac.compare_digest(presented, panel.encode()) for panel in self._settings.panel_tokens]
+        return any(matches)
 
     def _resolve(self, token: str):
         with db.connect(self._settings.db_path) as conn:
@@ -102,5 +122,5 @@ class ApiKeyAuth:
             pass  # bookkeeping only: a busy database must not fail an authenticated request
 
 
-def project_id_from_request(request: Request) -> str:
-    return request.app.state.auth.project_id(request)
+def caller_from_request(request: Request) -> Caller:
+    return request.app.state.auth.caller(request)

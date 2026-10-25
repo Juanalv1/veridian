@@ -20,6 +20,40 @@ TOKEN_B = "tok_b"
 AUTH_A = {"Authorization": f"Bearer {TOKEN_A}"}
 AUTH_B = {"Authorization": f"Bearer {TOKEN_B}"}
 
+# The panel principal (docs/DISENO-PRODUCTO.md): service credential + actor + project.
+PANEL_TOKEN = "panel-test-secret"
+PANEL_AUTH = {"Authorization": f"Bearer {PANEL_TOKEN}"}
+# Bootstrap owner in every test engine: on login it owns org "Demo", which holds the legacy projects.
+TEST_OWNER_EMAIL = "owner@test.example"
+
+
+def login(client: TestClient, sub: str, email: str, name: str | None = "Test") -> dict:
+    response = client.post("/v1/people/login", json={"google_sub": sub, "email": email, "name": name}, headers=PANEL_AUTH)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def acting(person_id: str, project_id: str | None = None) -> dict:
+    headers = {**PANEL_AUTH, "X-Veridian-Actor": person_id}
+    if project_id is not None:
+        headers["X-Veridian-Project"] = project_id
+    return headers
+
+
+def as_panel(client: TestClient, headers: dict = AUTH_A) -> dict:
+    """Panel-principal headers reading the project that `headers` (an SDK key) belongs to, acting
+    as the test owner. Data reads are panel-only; the SDK headers stay the way tests name a project.
+    Headers that are not a known SDK key are returned unchanged (401 cases)."""
+    token = headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    project_id = client.app.state.settings.tokens.get(token)
+    if project_id is None:
+        return headers
+    person_id = getattr(client, "_test_owner_id", None)
+    if person_id is None:
+        person_id = login(client, "sub-test-owner", TEST_OWNER_EMAIL)["person"]["id"]
+        client._test_owner_id = person_id
+    return acting(person_id, project_id)
+
 
 class FakeClock:
     def __init__(self, now: datetime):
@@ -71,6 +105,8 @@ def make_settings(tmp_path, clock, **overrides) -> Settings:
         "routes_file": str(ROUTES_FILE),
         "learn_delay_min": 10,
         "clock": clock,
+        "panel_tokens": (PANEL_TOKEN,),
+        "bootstrap_owners": frozenset({TEST_OWNER_EMAIL}),
     }
     fields.update(overrides)
     return Settings(**fields)

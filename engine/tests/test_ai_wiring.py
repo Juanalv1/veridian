@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 import pytest
-from conftest import NOW, ROUTES_FILE, TOKEN_A, TOKEN_B, make_event, post_events
+from conftest import NOW, make_event, make_settings, post_events
 from fastapi.testclient import TestClient
 from test_decisions import ATTACKER, attack, blocklist, decisions, seed_owner_history
 
@@ -38,14 +38,7 @@ def make_client(tmp_path, clock):
     clients = []
 
     def factory(judge):
-        settings = Settings(
-            db_path=str(tmp_path / "veridian.db"),
-            tokens={TOKEN_A: "client_a", TOKEN_B: "client_b"},
-            routes_file=str(ROUTES_FILE),
-            learn_delay_min=10,
-            clock=clock,
-            judge=judge,
-        )
+        settings = make_settings(tmp_path, clock, judge=judge)
         test_client = TestClient(create_app(settings))
         clients.append(test_client)
         return test_client, settings

@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 
-from conftest import AUTH_B, NOW, ROUTES_FILE, days_ago, make_event, post_events
+from conftest import AUTH_B, NOW, ROUTES_FILE, days_ago, make_event, post_events, as_panel
 
 from veridian_engine.route_classes import RouteClasses
 
@@ -40,7 +40,7 @@ def test_route_keys_without_method_are_rejected(tmp_path):
 
 def test_profile_shape_matches_contract(client):
     seed_history(client)
-    response = client.get("/v1/users/u_42/profile", headers={"Authorization": "Bearer tok_a"})
+    response = client.get("/v1/users/u_42/profile", headers=as_panel(client, {"Authorization": "Bearer tok_a"}))
     assert response.status_code == 200
     assert response.json() == {
         "user_id": "u_42",
@@ -56,21 +56,21 @@ def test_profile_shape_matches_contract(client):
 
 def test_ipv6_network_is_a_64(client):
     post_events(client, [make_event("v6", days_ago(1), ip="2001:db8:1:2:3:4:5:6")])
-    profile = client.get("/v1/users/u_42/profile", headers={"Authorization": "Bearer tok_a"}).json()
+    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, {"Authorization": "Bearer tok_a"})).json()
     assert profile["networks"] == ["2001:db8:1:2::/64"]
 
 
 def test_events_within_learn_delay_are_not_learned(client, clock):
     post_events(client, [make_event("recent", NOW - timedelta(minutes=5), route="/reports")])
     headers = {"Authorization": "Bearer tok_a"}
-    assert client.get("/v1/users/u_42/profile", headers=headers).json()["routes"] == []
+    assert client.get("/v1/users/u_42/profile", headers=as_panel(client, headers)).json()["routes"] == []
 
     clock.now = NOW + timedelta(minutes=6)
-    assert client.get("/v1/users/u_42/profile", headers=headers).json()["routes"] == ["GET /reports"]
+    assert client.get("/v1/users/u_42/profile", headers=as_panel(client, headers)).json()["routes"] == ["GET /reports"]
 
 
 def test_unknown_user_has_empty_profile(client):
-    profile = client.get("/v1/users/nobody/profile", headers={"Authorization": "Bearer tok_a"}).json()
+    profile = client.get("/v1/users/nobody/profile", headers=as_panel(client, {"Authorization": "Bearer tok_a"})).json()
     assert profile == {
         "user_id": "nobody",
         "history_days": 0,
@@ -85,7 +85,7 @@ def test_unknown_user_has_empty_profile(client):
 
 def test_profile_is_isolated_per_client(client):
     seed_history(client)
-    profile = client.get("/v1/users/u_42/profile", headers=AUTH_B).json()
+    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_B)).json()
     assert profile["routes"] == [] and profile["history_days"] == 0
 
 
@@ -95,6 +95,6 @@ def test_profile_requires_token(client):
 
 def test_profile_routes_keep_method_apart(client):
     post_events(client, [make_event("g", days_ago(2), method="GET", route="/payouts/bank-account")])
-    profile = client.get("/v1/users/u_42/profile", headers={"Authorization": "Bearer tok_a"}).json()
+    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, {"Authorization": "Bearer tok_a"})).json()
     assert profile["routes"] == ["GET /payouts/bank-account"]
     assert "POST /payouts/bank-account" not in profile["routes"]

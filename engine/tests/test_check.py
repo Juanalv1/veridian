@@ -5,7 +5,7 @@ import time
 from datetime import timedelta
 
 import pytest
-from conftest import AUTH_A, AUTH_B, NOW, make_event, make_settings, post_events
+from conftest import AUTH_A, AUTH_B, NOW, make_event, make_settings, post_events, as_panel
 from fastapi.testclient import TestClient
 from test_ai_wiring import FakeJudge, raising_judge
 from test_decisions import ATTACKER, blocklist, decisions, seed_owner_history
@@ -282,7 +282,7 @@ def test_sync_judge_from_env_uses_the_sync_model(monkeypatch):
 
 
 def activity_status(client, event_id):
-    items = client.get("/v1/activity", headers=AUTH_A).json()["activity"]
+    items = client.get("/v1/activity", headers=as_panel(client, AUTH_A)).json()["activity"]
     return {item["event_id"]: item["status"] for item in items}[event_id]
 
 

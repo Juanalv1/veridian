@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from conftest import AUTH_A, AUTH_B, NOW, days_ago, make_event, post_events
+from conftest import AUTH_A, AUTH_B, NOW, days_ago, make_event, post_events, as_panel
 
 ATTACKER = {"session_id": "s_evil", "ip": "203.0.113.9", "device_id": "d_evil"}
 
@@ -23,7 +23,7 @@ def attack(client, prefix="a", **overrides):
 
 
 def decisions(client, headers=AUTH_A):
-    return client.get("/v1/decisions", headers=headers).json()["decisions"]
+    return client.get("/v1/decisions", headers=as_panel(client, headers)).json()["decisions"]
 
 
 def blocklist(client, headers=AUTH_A, since=None):
@@ -65,7 +65,7 @@ def test_acceptance_scenario(client):
 
     listed = blocklist(client).json()
     assert listed == {"version": 1, "users": [], "sessions": ["s_evil"], "ips": ["203.0.113.9"]}
-    profile = client.get("/v1/users/u_42/profile", headers=AUTH_A).json()
+    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()
     assert profile["state"] == "blocked"
 
     # The same session hitting the critical route again does not create a second decision.
@@ -75,11 +75,11 @@ def test_acceptance_scenario(client):
     assert blocklist(client).json()["version"] == 1
 
     # Marking it normal removes the block and bumps the version.
-    response = client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
+    response = client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
     assert response.status_code == 200
     listed = blocklist(client).json()
     assert listed == {"version": 2, "users": [], "sessions": [], "ips": []}
-    assert client.get("/v1/users/u_42/profile", headers=AUTH_A).json()["state"] == "normal"
+    assert client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()["state"] == "normal"
 
     # The middleware is already up to date.
     not_modified = blocklist(client, since=2)
@@ -116,7 +116,7 @@ def test_events_in_block_decision_are_not_learned(client, clock):
     seed_owner_history(client)
     attack(client)
     clock.now = NOW + timedelta(days=1)
-    profile = client.get("/v1/users/u_42/profile", headers=AUTH_A).json()
+    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()
     assert "POST /payouts/bank-account" not in profile["routes"]
     assert "203.0.113.0/24" in profile["networks"]  # the /login event is not part of the decision
 
@@ -125,8 +125,8 @@ def test_events_of_decision_marked_normal_are_learned_immediately(client):
     seed_owner_history(client)
     attack(client)
     [decision] = decisions(client)
-    client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
-    profile = client.get("/v1/users/u_42/profile", headers=AUTH_A).json()
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
+    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()
     assert "POST /payouts/bank-account" in profile["routes"]
     assert "203.0.113.0/24" in profile["networks"]
 
@@ -135,13 +135,13 @@ def test_marking_normal_twice_does_not_bump_version_again(client):
     seed_owner_history(client)
     attack(client)
     [decision] = decisions(client)
-    client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
-    client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
     assert blocklist(client).json()["version"] == 2
 
 
 def test_unknown_decision_returns_404(client):
-    assert client.post("/v1/decisions/d_999/normal", headers=AUTH_A).status_code == 404
+    assert client.post("/v1/decisions/d_999/normal", headers=as_panel(client, AUTH_A)).status_code == 404
 
 
 def test_decisions_are_newest_first_and_limited(client):
@@ -150,9 +150,9 @@ def test_decisions_are_newest_first_and_limited(client):
         attack(client, prefix=f"s{index}", session_id=f"s_evil_{index}")
     listed = decisions(client)
     assert [d["event_ids"] for d in listed] == [["s22"], ["s12"], ["s02"]]
-    limited = client.get("/v1/decisions", headers=AUTH_A, params={"limit": 2}).json()["decisions"]
+    limited = client.get("/v1/decisions", headers=as_panel(client, AUTH_A), params={"limit": 2}).json()["decisions"]
     assert len(limited) == 2
-    assert client.get("/v1/decisions", headers=AUTH_A, params={"limit": 0}).status_code == 422
+    assert client.get("/v1/decisions", headers=as_panel(client, AUTH_A), params={"limit": 0}).status_code == 422
 
 
 def test_client_isolation(client):
@@ -161,8 +161,8 @@ def test_client_isolation(client):
     [decision] = decisions(client)
     assert decisions(client, headers=AUTH_B) == []
     assert blocklist(client, headers=AUTH_B).json() == {"version": 0, "users": [], "sessions": [], "ips": []}
-    assert client.get("/v1/users/u_42/profile", headers=AUTH_B).json()["state"] == "normal"
-    assert client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_B).status_code == 404
+    assert client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_B)).json()["state"] == "normal"
+    assert client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_B)).status_code == 404
     assert blocklist(client).json()["version"] == 1
 
 
@@ -177,7 +177,7 @@ def test_decision_status_follows_mark_normal(client):
     attack(client)
     [decision] = decisions(client)
     assert decision["status"] == "open"
-    client.post(f"/v1/decisions/{decision['id']}/normal", headers=AUTH_A)
+    client.post(f"/v1/decisions/{decision['id']}/normal", headers=as_panel(client, AUTH_A))
     [decision] = decisions(client)
     assert decision["status"] == "marked_normal"
 

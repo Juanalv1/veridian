@@ -27,6 +27,17 @@ def parse_tokens(raw: str) -> dict[str, str]:
     return tokens
 
 
+def parse_panel_tokens(single: str, many: str) -> tuple[str, ...]:
+    """VERIDIAN_PANEL_TOKEN plus the comma list VERIDIAN_PANEL_TOKENS, without blanks or repeats."""
+    tokens = [single.strip()] + [token.strip() for token in many.split(",")]
+    return tuple(dict.fromkeys(token for token in tokens if token))
+
+
+def parse_emails(raw: str) -> frozenset[str]:
+    """Comma-separated emails, compared lowercase."""
+    return frozenset(email.strip().lower() for email in raw.split(",") if email.strip())
+
+
 @dataclass
 class Settings:
     db_path: str
@@ -63,6 +74,13 @@ class Settings:
     webhook_poll_s: float = 5.0
     # Base URL of the panel, for the payload's panel_url.
     panel_base_url: str = ""
+    # Service credentials of the panel (current and previous, to rotate without a cut). Empty: no panel.
+    # The most sensitive secret of the system: never log it, never reuse it as a project key.
+    panel_tokens: tuple[str, ...] = ()
+    # Verified emails that, on login, become owner of every organization without an owner.
+    bootstrap_owners: frozenset[str] = frozenset()
+    # Verified emails allowed to create organizations (open decision 2, provisional). Empty: nobody.
+    org_creators: frozenset[str] = frozenset()
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -89,6 +107,11 @@ class Settings:
             trusted_proxies=int(os.environ.get("VERIDIAN_TRUSTED_PROXIES", "0")),
             webhooks=os.environ.get("VERIDIAN_WEBHOOKS", "on").strip().lower() not in ("off", "0", "false", "no"),
             panel_base_url=os.environ.get("VERIDIAN_PANEL_URL", "").strip(),
+            panel_tokens=parse_panel_tokens(
+                os.environ.get("VERIDIAN_PANEL_TOKEN", ""), os.environ.get("VERIDIAN_PANEL_TOKENS", "")
+            ),
+            bootstrap_owners=parse_emails(os.environ.get("VERIDIAN_BOOTSTRAP_OWNERS", "")),
+            org_creators=parse_emails(os.environ.get("VERIDIAN_ORG_CREATORS", "")),
         )
 
 

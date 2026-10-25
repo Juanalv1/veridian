@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 import pytest
-from conftest import AUTH_A, NOW, days_ago, make_event, make_settings, post_events
+from conftest import AUTH_A, NOW, days_ago, make_event, make_settings, post_events, as_panel
 from fastapi.testclient import TestClient
 from test_ai_wiring import NEW_NETWORK, FakeJudge
 from test_decisions import blocklist, decisions, seed_owner_history
@@ -85,7 +85,7 @@ def test_user_with_a_high_usual_rate_does_not_spike(judged_client):
     post_events(seeder, burst("fast", 40, days_ago(2, hour=9), session_id="s_fast_old"))
     judge = FakeJudge()
     client = judged_client(judge)
-    profile = client.get("/v1/users/u_42/profile", headers=AUTH_A).json()
+    profile = client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()
     assert profile["usual_max_rate_per_min"] == 40
 
     post_events(client, burst("b", 50, NOW))
@@ -188,9 +188,9 @@ def test_unusual_hour_is_false_without_history(judged_client):
 
 def test_profile_endpoint_includes_usual_max_rate(judged_client):
     client = judged_client(None)
-    assert client.get("/v1/users/u_42/profile", headers=AUTH_A).json()["usual_max_rate_per_min"] == 0
+    assert client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()["usual_max_rate_per_min"] == 0
     seed_owner_history(client)
-    assert client.get("/v1/users/u_42/profile", headers=AUTH_A).json()["usual_max_rate_per_min"] == 1
+    assert client.get("/v1/users/u_42/profile", headers=as_panel(client, AUTH_A)).json()["usual_max_rate_per_min"] == 1
 
 
 def test_rate_settings_from_env(monkeypatch):

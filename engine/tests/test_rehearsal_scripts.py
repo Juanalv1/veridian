@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from conftest import AUTH_A, NOW, load_script, post_events
+from conftest import AUTH_A, NOW, load_script, post_events, as_panel
 
 ROUTES = "POST /login,GET /invoices,GET /invoices/{id}"
 
@@ -24,13 +24,13 @@ def test_seed_history_builds_the_presenters_profile(client):
         assert len(batch) <= 1000
         assert post_events(client, batch).json() == {"accepted": len(batch)}
 
-    profile = client.get("/v1/users/u_presenter/profile", headers=AUTH_A).json()
+    profile = client.get("/v1/users/u_presenter/profile", headers=as_panel(client, AUTH_A)).json()
     assert profile["networks"] == ["200.44.32.0/24"]
     assert profile["hours"] == [13, 14, 15, 16]
     assert profile["routes"] == ["GET /invoices", "GET /invoices/{id}", "POST /login"]
     assert profile["devices"] == ["d_presenter"]
     assert profile["history_days"] == 14
-    assert client.get("/v1/decisions", headers=AUTH_A).json() == {"decisions": []}
+    assert client.get("/v1/decisions", headers=as_panel(client, AUTH_A)).json() == {"decisions": []}
 
 
 def test_seed_history_covers_weekends_and_is_old_enough_to_learn():
