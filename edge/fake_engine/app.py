@@ -438,6 +438,7 @@ class Project:
     retention_days: int = 90
     enforcement: str = "observe"
     ai_enabled: bool = True
+    deleted_at: str | None = None
 
     def public(self) -> dict:
         return {"id": self.id, "org_id": self.org_id, "name": self.name, "retention_days": self.retention_days,
@@ -453,6 +454,7 @@ class Organization:
     created_at: str
     members: dict[str, str] = field(default_factory=dict)  # person_id -> role
     invitations: list[dict] = field(default_factory=list)  # {email, role, expires_at, accepted_at}
+    deleted_at: str | None = None  # logical delete: the org is gone for every endpoint
 
     def has_owner(self) -> bool:
         return "owner" in self.members.values()
@@ -591,6 +593,8 @@ def create_app(
     def authorize_org(person: Person, org_id: str | None, minimum: Role) -> Organization:
         """The organization, if the person is a member with at least `minimum`. Unknown org = foreign = 403."""
         org = orgs.get(org_id or "")
+        if org is not None and org.deleted_at is not None:
+            org = None
         role = org.members.get(person.id) if org else None
         if org is None or role is None or ROLE_RANK[role] < ROLE_RANK[minimum]:
             raise Forbidden()
@@ -639,14 +643,17 @@ def create_app(
         if kind_of(authorization)[0] != "panel":
             raise Forbidden()
 
+    def live_projects(org: Organization) -> list[Project]:
+        return [p for p in projects.values() if p.org_id == org.id and p.deleted_at is None]
+
     def project_refs(org: Organization) -> list[dict]:
-        return [{"id": p.id, "name": p.name} for p in projects.values() if p.org_id == org.id]
+        return [{"id": p.id, "name": p.name} for p in live_projects(org)]
 
     def org_view(org: Organization, person: Person) -> dict:
         return {"id": org.id, "name": org.name, "role": org.members[person.id], "projects": project_refs(org)}
 
     def listing(person: Person) -> list[dict]:
-        return [org_view(o, person) for o in orgs.values() if person.id in o.members]
+        return [org_view(o, person) for o in orgs.values() if person.id in o.members and o.deleted_at is None]
 
     def project_view(project: Project, person: Person) -> dict:
         return {**project.public(), "role": orgs[project.org_id].members[person.id]}
@@ -749,6 +756,8 @@ def create_app(
         if body.name:
             person.name = body.name
         for org in orgs.values():
+            if org.deleted_at is not None:
+                continue
             if email in owners and not org.has_owner():
                 org.members[person.id] = "owner"
             for inv in org.invitations:
@@ -785,10 +794,18 @@ def create_app(
             org.name = body.name.strip()
         return {**org_view(org, person), "created_at": org.created_at}
 
+    @app.delete("/v1/orgs/{org_id}", status_code=204)
+    def delete_org(org_id: Annotated[str, Path()], person: Actor):
+        org = authorize_org(person, org_id, "owner")
+        if live_projects(org):
+            return JSONResponse({"error": "org_not_empty"}, status_code=409)
+        org.deleted_at = now_iso()
+        return Response(status_code=204)
+
     @app.get("/v1/orgs/{org_id}/projects")
     def get_org_projects(org_id: Annotated[str, Path()], person: Actor):
         org = authorize_org(person, org_id, "viewer")
-        return {"projects": [project_view(p, person) for p in projects.values() if p.org_id == org.id]}
+        return {"projects": [project_view(p, person) for p in live_projects(org)]}
 
     @app.post("/v1/orgs/{org_id}/projects", status_code=201)
     def post_org_project(org_id: Annotated[str, Path()], body: ProjectIn, person: Actor):
