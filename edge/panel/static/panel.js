@@ -32,8 +32,22 @@
     var active = document.activeElement;
     return !(pointerDown || document.hidden || (active && active.closest && active.closest("form")));
   };
-  document.addEventListener("htmx:afterSwap", function () { localize(document); renderConn(); });
+  // New rows: remember the row ids on screen; after a swap, rows with an unseen id get
+  // `is-new` (CSS animates them). The first page load only records, nothing animates.
+  // Keyed by data-row, not id: htmx copies the old attributes onto same-id elements while it
+  // settles, which would carry `is-new` into the next poll.
+  var ROWS = "[data-row]";
+  var seen = new Set();
+  function markNew(animate) {
+    document.querySelectorAll(ROWS).forEach(function (el) {
+      if (seen.has(el.dataset.row)) return;
+      seen.add(el.dataset.row);
+      if (animate) el.classList.add("is-new");
+    });
+  }
+  document.addEventListener("htmx:afterSwap", function () { localize(document); renderConn(); markNew(true); });
   localize(document);
+  markNew(false);
 
   // In-flight state of the mark-normal button (htmx disables it via hx-disabled-elt).
   function isMark(el) { return el && el.matches && el.matches("button.btn[hx-post]"); }

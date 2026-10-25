@@ -604,3 +604,34 @@ def test_feed_css_keeps_normal_rows_quiet_and_block_rows_loud():
     assert re.search(r"\.row\.k-block \{[^}]*border-left-color:var\(--state-block\)", css)
     assert re.search(r"\.row\.k-alert \{[^}]*var\(--state-review\)", css)
     assert "box-shadow" not in css and "--viridian" not in css.split(".feed")[1]
+
+
+# --- new rows enter smoothly -----------------------------------------------
+
+
+def test_activity_rows_have_a_stable_key_from_the_event_id():
+    html = stub_panel([], activity=[act("e_9"), act("e_8")]).get("/").text
+    # data-row, not id: htmx copies old attributes onto same-id elements while settling
+    assert 'data-row="ev-e_9"' in html and 'data-row="ev-e_8"' in html and 'id="ev-' not in html
+
+
+def test_decision_list_fallback_rows_have_a_stable_key_from_the_decision_id():
+    html = stub_panel([dec(id="d_7")], activity=None).get("/").text
+    assert 'data-row="dc-d_7"' in html
+
+
+def test_script_marks_only_unseen_rows_as_new_after_a_swap_never_on_first_load():
+    js = TestClient(create_app("http://engine", TOKEN)).get("/static/panel.js").text
+    assert "is-new" in js and "htmx:afterSwap" in js
+    # first load only records the ids already on screen
+    assert re.search(r"seen\s*=\s*new Set", js) and "markNew" in js
+
+
+def test_css_animates_new_rows_with_height_fade_slide_and_respects_reduced_motion():
+    css = TestClient(create_app("http://engine", TOKEN)).get("/static/panel.css").text
+    assert "@keyframes row-in" in css and "@keyframes row-flash" in css
+    assert re.search(r"\.row\.is-new,\s*\.item\.is-new \{[^}]*animation:[^;}]*row-in 220ms var\(--ease-out\)", css)
+    assert re.search(r"max-height:\s*0", css) and "translateY(-6px)" in css
+    assert re.search(r"\.k-block\.is-new \{[^}]*row-flash", css)
+    reduced = css.split("prefers-reduced-motion: reduce")[1]
+    assert "animation:none" in reduced.replace(" ", "")

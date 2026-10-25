@@ -69,6 +69,18 @@
   .consequence { font-size:15px; color:var(--muted); }
   .note { padding:16px 18px; border-radius:var(--radius-md); border:1px solid var(--line); color:var(--muted); }
   .note.warn { color:var(--state-review); } .note.err { color:var(--state-block); }
+  /* New rows (marked by panel.js, never on first load): grow from 0 height while fading and
+     sliding in, so the rows below glide down instead of jumping. */
+  @keyframes row-in {
+    from { max-height:0; padding-top:0; padding-bottom:0; opacity:0; transform:translateY(-6px); }
+    to { max-height:8rem; opacity:1; transform:none; }
+  }
+  @keyframes row-flash { from { background-color:color-mix(in srgb, var(--state-block) 16%, transparent); } }
+  .row.is-new, .item.is-new { overflow:hidden; animation:row-in 220ms var(--ease-out); }
+  .k-block.is-new { animation:row-in 220ms var(--ease-out), row-flash 1.2s var(--ease-out); }
+  @media (prefers-reduced-motion: reduce) {
+    .row.is-new, .item.is-new, .k-block.is-new { animation:none; }
+  }
   @media (max-width:960px) {
     /* A long feed must not push the verdict below the fold when the columns stack. */
     .feed { order:1; max-width:none; flex-basis:100%; }
