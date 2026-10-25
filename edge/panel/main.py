@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
+from datetime import datetime
+
 import httpx
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -52,8 +54,31 @@ def _decorate(d: dict) -> dict:
     d["new_device"] = bool(signals.get("new_device")) and bool(access.get("device_id"))
     path = signals.get("path") or []
     d["path"] = " → ".join(str(p) for p in path) if path else ""
+    took = _detected_in(d.get("ts"), access.get("ts"))
+    d["detected"] = (f"Detectado y bloqueado en {took}" if d.get("decision") == "block" else f"Detectado en {took}") if took else ""
     d["blocks_ip"] = access.get("ip") if d.get("decision") == "block" else None
     return d
+
+
+def _detected_in(decision_ts, access_ts) -> str:
+    """Seconds from the triggering access to the decision, in Spanish ("" if unknown).
+
+    This measures detection only: the block itself is applied on the user's next
+    request, after the middleware's blocklist poll (~2 s).
+    """
+    try:
+        secs = (datetime.fromisoformat(decision_ts) - datetime.fromisoformat(access_ts)).total_seconds()
+    except (TypeError, ValueError):
+        return ""
+    if secs < 0:
+        return ""
+    if secs < 10 and round(secs, 1) < 10:
+        return f"{secs:.1f}".replace(".", ",") + " s"
+    whole = round(secs)
+    if whole < 60:
+        return f"{whole} s"
+    minutes, rest = divmod(whole, 60)
+    return f"{minutes} min {rest} s" if rest else f"{minutes} min"
 
 
 def _hours(hours: list) -> str:

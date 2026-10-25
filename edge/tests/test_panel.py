@@ -1,3 +1,4 @@
+import pytest
 import re
 import httpx
 from fastapi.testclient import TestClient
@@ -421,3 +422,34 @@ def test_mark_normal_is_the_primary_button_and_disables_itself_in_flight():
     css = panel.get("/static/panel.css").text
     for old in ("#111010", "#49d08b", "#ff4d4d", "Urbanist", "JetBrains"):
         assert old not in css
+
+
+def _access(ts):
+    return {"ip": "203.0.113.9", "ts": ts, "method": "POST", "route": "/x"}
+
+
+@pytest.mark.parametrize("access_ts,expected", [
+    ("2026-10-26T10:14:02Z", "Detectado y bloqueado en 3 s"),
+    ("2026-10-26T10:14:04.2Z", "Detectado y bloqueado en 0,8 s"),
+    ("2026-10-26T10:13:00Z", "Detectado y bloqueado en 1 min 5 s"),
+    ("2026-10-26T10:13:55Z", "Detectado y bloqueado en 10 s"),
+])
+def test_detection_time_is_shown_with_spanish_format(access_ts, expected):
+    r = stub_panel([dec(access=_access(access_ts))]).get("/")
+    assert expected in r.text
+
+
+def test_detection_time_wording_for_non_block():
+    r = stub_panel([dec(decision="alert", access=_access("2026-10-26T10:14:02Z"))]).get("/")
+    assert "Detectado en 3 s" in r.text and "bloqueado en" not in r.text
+
+
+@pytest.mark.parametrize("access", [None, {"ip": "1.1.1.1"}, _access("2026-10-26T10:14:09Z"), _access("garbage")])
+def test_detection_time_hidden_when_missing_negative_or_invalid(access):
+    r = stub_panel([dec(access=access) if access is not None else dec()]).get("/")
+    assert "Detectado" not in r.text
+
+
+def test_detection_time_is_muted_evidence_not_the_accent():
+    r = stub_panel([dec(access=_access("2026-10-26T10:14:02Z"))]).get("/")
+    assert 'class="detected"' in r.text
