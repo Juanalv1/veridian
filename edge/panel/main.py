@@ -4,10 +4,9 @@ Env: VERIDIAN_URL (engine base URL), VERIDIAN_TOKEN (Bearer token).
 """
 
 import os
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlencode
-
-from datetime import datetime
 
 import httpx
 from fastapi import FastAPI, Form, Request
@@ -73,7 +72,8 @@ def _detected_in(decision_ts, access_ts) -> str:
     if secs < 0:
         return ""
     if secs < 10 and round(secs, 1) < 10:
-        return f"{secs:.1f}".replace(".", ",") + " s"
+        text = f"{secs:.1f}".replace(".", ",")
+        return text.removesuffix(",0") + " s"
     whole = round(secs)
     if whole < 60:
         return f"{whole} s"
