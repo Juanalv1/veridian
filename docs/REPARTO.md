@@ -175,6 +175,48 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 - **`routes` incluye el método** (`"GET /invoices"`), igual que la clasificación de rutas: `GET` y `POST` sobre la misma ruta son usos distintos.
 - **`hours` va en UTC,** igual que `ts`: horas enteras de 0 a 23 (`[9, 13]` = de 09:00 a 13:00 UTC). El panel las convierte a la hora local de quien mira.
 
+### 5. Actividad: motor → panel (propuesto por Dev 2, pendiente de Dev 1)
+
+`GET /v1/activity?limit=50`
+
+Los últimos accesos del cliente, **todos**, no solo los que generaron una decisión. Sirve para que el panel muestre que Veridian vigila todo el tráfico y que la IA solo actúa ante lo raro (paso 1 del guion de la demo: "en el panel: normal").
+
+```json
+{
+  "activity": [
+    {
+      "event_id": "e_01J9ZK3T",
+      "ts": "2026-10-26T10:14:03Z",
+      "user_id": "u_42",
+      "session_id": "s_8f1",
+      "ip": "203.0.113.9",
+      "device_id": "d_77a",
+      "method": "POST",
+      "route": "/payouts/bank-account",
+      "verdict": "block",
+      "decision_id": "d_311"
+    },
+    {
+      "event_id": "e_01J9ZK2A",
+      "ts": "2026-10-26T10:13:58Z",
+      "user_id": "u_42",
+      "session_id": "s_7c2",
+      "ip": "190.202.14.7",
+      "device_id": "d_9f3",
+      "method": "GET",
+      "route": "/invoices",
+      "verdict": "normal",
+      "decision_id": null
+    }
+  ]
+}
+```
+
+- **Orden:** de la más nueva a la más vieja. `limit` entre 1 y 200, por defecto 50.
+- **`verdict`:** `normal` (sin decisión, o `allow`) | `review` (`alert` o `step_up`) | `block`. Si la decisión fue marcada como normal, vuelve a `normal`.
+- **`decision_id`:** la decisión que generó ese acceso, o `null`. El panel enlaza la fila con el detalle.
+- **Lo que no incluye:** `user_agent` ni `bytes`; nunca cuerpos ni datos de clientes, igual que el contrato 1.
+
 ### Solo para ensayos: reinicio
 
 `POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_ALLOW_RESET=true`; si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
