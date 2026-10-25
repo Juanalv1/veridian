@@ -43,7 +43,10 @@ Qué decidimos y por qué. Las cifras y fuentes están en [HALLAZGOS.md](HALLAZG
 | **Endpoint crítico + desvío = bloqueo inmediato,** aunque sea una sola petición. | Un cambio de cuenta bancaria no necesita volumen para ser grave. |
 | **Una ráfaga de pedidos (ritmo de script) = bloqueo por regla,** aunque venga de la red y el dispositivo del dueño. Se bloquea la sesión; la IP solo si la red es nueva. | La IA respondía `step_up`, y el middleware no pide segundo factor: el script seguía descargando. La regla lo frena de forma determinista; la IA solo lo explica. |
 | **Se bloquea la sesión y la IP del atacante, no el usuario.** | El atacante usa la misma credencial que el dueño: bloquear el usuario también deja afuera a la víctima. |
-| **El primer hito bloquea la siguiente petición, no la sospechosa.** | Envío y consulta en segundo plano cada ~2 s, sin frenar la app. La consulta síncrona para rutas críticas queda como mejora. |
+| **Las rutas críticas se deciden antes de ejecutarse (consulta síncrona); el resto se bloquea en la petición siguiente.** | En el ensayo del 2026-10-25 el atacante cambió la cuenta bancaria y recién después quedó bloqueado: el daño ya estaba hecho. El rollback se descartó porque Veridian no ve los datos ni sabe deshacer, y hay daños que no se deshacen (pagos, correos, descargas). |
+| **En la consulta síncrona, la regla decide lo obvio al instante y la IA decide los casos grises en el momento (tope ~10 s).** | Sacar a la IA de la decisión le quitaba el valor al producto. El dueño legítimo no espera: sin desvío no se consulta la IA. |
+| **Si el motor no responde, la ruta crítica pasa (*fail-open*).** | Coherente con "si Veridian se cae, tu app sigue funcionando". |
+| **Las redes se comparan por `/24`, no por proveedor.** | En el ensayo, el teléfono del atacante salió del mismo rango grande (`186.164.x`) que la laptop del dueño (`186.167.x`). Comparar por `/16` o por proveedor habría ocultado el ataque. El costo: con datos móviles o CGNAT, el dueño aparece desde redes "nuevas" y genera alertas (no bloqueos). |
 
 ## Pitch y demo
 

@@ -39,11 +39,28 @@ Referencia reutilizable en el repo de Centinela:
     - paso 2 (dueño en otra red): `alert` en 10 de 10 corridas;
     - paso 3 (atacante): `block` en 10 de 10 corridas.
   - **La explicación de la IA llega entre 3 y 12 s después;** el bloqueo es inmediato.
+- **Primer ensayo real (2026-10-25),** con la app, el middleware, el motor y el panel en Render, el dueño en una laptop y el atacante en un teléfono con datos móviles:
+  - **El atacante quedó bloqueado:**
+    - la decisión llegó 1 s después de cambiar la cuenta;
+    - al reintentar recibió `403`;
+    - la explicación es de la IA.
+  - **Pero el cambio de cuenta se aplicó.** Se corrigió con la consulta síncrona (contrato 9), que falta conectar en el middleware.
+  - **La IP pública del dueño rotó entre 3 redes en minutos:** `38.121.211.x`, `186.167.82.x` y `186.167.53.x`. El primer acceso de cada sesión salió `review`.
+    - En la demo, el presentador usa una red estable.
+    - En la calibración, se navega unos minutos y se siembran todas las IPs.
+  - **Por cada ataque, el panel muestra una escalada** `review` → `step_up` → `block`, en 3 o 4 decisiones. Puede contarse como "respuesta por grados", pero el panel tiene que mostrarlo claro.
+- **Consulta síncrona contra Render** (sin middleware, haciendo de middleware):
+  - dueño `allow` en 0,4 s;
+  - caso obvio `block` en 0,6 s;
+  - casos grises `block` por la IA en 3,0 y 7,8 s.
+  - Una sola corrida por caso: falta medir la estabilidad.
 - **Tiempo de instalación** del middleware en una app nueva.
 
 ## Riesgos
 
 - **La IA no es determinista:** puede bloquear un uso legítimo en vivo.
+- **Dueño con dispositivo nuevo en una ruta crítica:** en la prueba síncrona, la IA bloqueó un acceso desde la red del dueño con un dispositivo nuevo. Si el dueño estrena laptop y cambia la cuenta bancaria, queda bloqueado.
+- **Token del cliente `demo` expuesto** en una conversación de trabajo: rotarlo antes de la demo (Render: `VERIDIAN_TOKENS` del motor y `VERIDIAN_TOKEN` de la app y el panel).
 - **Si la IA no le gana a un puntaje sin IA,** el mensaje se limita a "entiende tu sistema y explica".
 - **Datos personales:** las IPs cuentan como datos personales en muchas leyes. Hay que cuidar la retención y el cifrado.
 - **Claves de integraciones:** no hay persona a quien pedirle un segundo factor; habría que escalar al administrador.
