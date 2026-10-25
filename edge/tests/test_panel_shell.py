@@ -352,9 +352,9 @@ def test_rutas_lists_the_engines_classification_grouped_by_class():
     assert "Pronto aquí" not in main
 
 
-def test_rutas_says_it_is_configured_in_the_engine_and_read_only():
+def test_rutas_no_longer_says_it_is_read_only():
     t = text(rutas_main(full()))
-    assert "se configura en el motor" in t and "solo lectura" in t
+    assert "se configura en el motor" not in t and "solo lectura" not in t
 
 
 def test_rutas_skips_an_empty_class():

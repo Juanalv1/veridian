@@ -312,7 +312,11 @@ La clasificación de rutas que el motor está usando, para que el panel la muest
 - **Por proyecto (U7):**
   - cada proyecto tiene su clasificación en `route_rules`; la regla de bloqueo y `/v1/check` leen la del proyecto;
   - la respuesta es la del proyecto del llamante: la clave `sdk`, o el panel con `X-Veridian-Project` y rol `viewer`;
-  - `routes.yaml` es la plantilla: los proyectos existentes la reciben al arrancar el motor y los nuevos al crearse. Un proyecto al que se le vació la lista sigue vacío.
+  - `routes.yaml` describe la app de demo: solo lo reciben los proyectos que ya existían sin reglas al arrancar el motor (los del demo). Un proyecto nuevo empieza vacío (todo `normal`). Un proyecto al que se le vació la lista sigue vacío.
+  - el panel edita la lista en `/rutas` (admin u owner; un viewer la ve sin controles):
+    - `PUT /v1/projects/{id}/routes/rule` con `{"method","route","class"}` agrega o cambia una ruta; auditado como `routes.rule_set`;
+    - `DELETE /v1/projects/{id}/routes/rule?method=&route=` la devuelve a `normal` (`404` si no estaba clasificada); auditado como `routes.rule_deleted`. Si la ruta está en el catálogo del SDK, queda una regla `normal` del admin para que la IA no la vuelva a clasificar;
+    - las dos responden con la misma forma que `GET /v1/routes`. El middleware toma el cambio en su próxima lectura (cada 30 s por defecto, `ROUTES_POLL_INTERVAL` del SDK).
 - **Orden:** primero `critical`, después `sensitive`; dentro de cada clase, por ruta y luego por método.
 - **Solo lo clasificado:** las rutas `normal` no se listan. Cualquier ruta que no aparezca recibe la clase `default`.
 - **`route`:** la plantilla, igual que en el contrato 1.

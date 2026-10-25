@@ -10,6 +10,7 @@ GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET add GitHub sign-in; without both it st
 
 import asyncio
 import dataclasses
+import re
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -189,6 +190,13 @@ DEFAULT_UTC_OFFSET_MIN = -240  # Caracas, until the browser tells its own (cooki
 NO_USERS = "El motor todavía no entrega la lista de usuarios."
 NO_ROUTES_ENDPOINT = "Este motor no expone su clasificación de rutas."
 ROUTE_GROUPS = (("critical", "Críticas"), ("sensitive", "Sensibles"))
+ROUTE_CLASS_LABELS = {"critical": "crítica", "sensitive": "sensible", "normal": "normal"}
+ROUTE_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+ROUTE_RE = re.compile(r"^/\S{0,299}$")
+ROUTE_INVALID = "La ruta tiene que empezar con / y no llevar espacios (por ejemplo /payouts/{id})."
+ROUTE_FORBIDDEN = "Tu rol no permite cambiar la clasificación. Solo un admin u owner puede hacerlo."
+ROUTE_GONE = "Esa ruta ya no estaba clasificada."
+ROUTE_FAILED = "No se pudo guardar el cambio. Inténtalo de nuevo."
 
 
 def _utc_offset(request: Request) -> int:
@@ -477,14 +485,56 @@ def create_app(engine_url: str | None = None, token: str | None = None,
 
     async def render_routes(request: Request):
         t0 = time.perf_counter()
+        role_lookup = asyncio.ensure_future(accounts.role(request))  # viewers get the list without the controls
         decisions, engine_error, activity, blocklist, (routes,) = await core(load_routes())
+        role = await role_lookup
         engine_ms = (time.perf_counter() - t0) * 1000
         groups = None if routes is None else [
             (label, rows) for cls, label in ROUTE_GROUPS
-            if (rows := [f"{x.get('method')} {x.get('route')}" for x in routes if x["class"] == cls])]
+            if (rows := [{"method": str(x.get("method")), "route": str(x.get("route")), "class": cls}
+                         for x in routes if x["class"] == cls])]
         return await page(request, "rutas.html", "rutas", {
             "groups": groups, "no_endpoint": NO_ROUTES_ENDPOINT, "engine_error": engine_error, "refresh_url": "/rutas",
+            "can_edit": role != "viewer", "methods": ROUTE_METHODS, "class_labels": ROUTE_CLASS_LABELS,
             **_shell(decisions, activity)}, engine_ms, time.perf_counter())
+
+    def route_rule_path() -> str:
+        return f"/v1/projects/{quote(auth_module.current.get().project, safe='')}/routes/rule"
+
+    def route_refused(status: int | None) -> str:
+        return ROUTE_FORBIDDEN if status == 403 else ROUTE_GONE if status == 404 else             ROUTE_INVALID if status == 422 else ROUTE_FAILED
+
+    @panel.post("/rutas/guardar")
+    async def save_route(request: Request, method: str = Form(""), route: str = Form(""), route_class: str = Form("", alias="class")):
+        route = route.strip()
+        if method not in ROUTE_METHODS or not ROUTE_RE.match(route) or route_class not in ROUTE_CLASS_LABELS:
+            accounts.flash(request, "err", ROUTE_INVALID)
+            return accounts.back("/rutas")
+        status, _ = await accounts.write(request, "PUT", route_rule_path(),
+                                         {"method": method, "route": route, "class": route_class})
+        if status == 200:
+            accounts.flash(request, "ok", f"Ruta guardada: {method} {route} es {ROUTE_CLASS_LABELS[route_class]}.")
+        else:
+            accounts.flash(request, "err", route_refused(status))
+        return accounts.back("/rutas")
+
+    @panel.post("/rutas/quitar")
+    async def remove_route(request: Request, method: str = Form(""), route: str = Form("")):
+        if method not in ROUTE_METHODS or not ROUTE_RE.match(route):
+            accounts.flash(request, "err", ROUTE_INVALID)
+            return accounts.back("/rutas")
+        r = None
+        try:
+            r = await client.delete(f"{base}{route_rule_path()}", params={"method": method, "route": route},
+                                    headers=engine_headers())
+        except httpx.HTTPError:
+            pass
+        cache.invalidate()
+        if r is not None and r.status_code == 200:
+            accounts.flash(request, "ok", f"Ruta quitada: {method} {route} ahora es normal.")
+        else:
+            accounts.flash(request, "err", route_refused(None if r is None else r.status_code))
+        return accounts.back("/rutas")
 
     @panel.get("/", response_class=HTMLResponse)
     async def resumen(request: Request):

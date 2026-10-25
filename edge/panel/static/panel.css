@@ -217,6 +217,8 @@
   .routes-group h2 { margin:0; }
   .route-row { padding:14px 20px; font-size:15px; overflow-wrap:anywhere; }
   .route-row + .route-row { border-top:1px solid var(--line); }
+  .route-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; }
+  .route-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
   .users-row { grid-template-columns:minmax(0, 1fr) auto auto; }
   .clip { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; }
   .muted-time { font-size:13px; color:var(--muted); }

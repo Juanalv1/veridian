@@ -10,6 +10,33 @@
   {% if groups is none %}
     {% if not engine_error %}<div class="note">{{ no_endpoint }}</div>{% endif %}
   {% else %}
+    {% if can_edit %}
+    <section class="tm-card" aria-labelledby="route-add-title">
+      <h2 id="route-add-title" class="tm-h2">Agregar ruta</h2>
+      <form class="tm-invite" method="post" action="/rutas/guardar">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="field tm-role">
+          <label for="route-method">Método</label>
+          <select id="route-method" name="method">
+            {% for m in methods %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field tm-grow">
+          <label for="route-path">Plantilla de ruta</label>
+          <input id="route-path" class="mono" type="text" name="route" placeholder="/payouts/{id}" maxlength="300" required autocomplete="off">
+        </div>
+        <div class="field tm-role">
+          <label for="route-class">Clase</label>
+          <select id="route-class" name="class">
+            <option value="critical">Crítica</option>
+            <option value="sensitive">Sensible</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Agregar</button>
+      </form>
+      <p class="acct-small">Usa la plantilla tal como la declara tu app (por ejemplo /payouts/{id}), no una URL con valores. El middleware toma los cambios en menos de un minuto.</p>
+    </section>
+    {% endif %}
     {% if not groups %}
     <div class="note">Ninguna ruta está clasificada: todas se tratan como normales.</div>
     {% else %}
@@ -17,14 +44,39 @@
     <section class="routes-group">
       <h2>{{ label }}</h2>
       <div class="box">
-        {% for r in rows %}<div class="route-row mono">{{ r }}</div>{% endfor %}
+        {% for r in rows %}
+        <div class="route-row">
+          <span class="mono">{{ r.method }} {{ r.route }}</span>
+          {% if can_edit %}
+          <span class="route-actions">
+            <form class="tm-inline" method="post" action="/rutas/guardar">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="method" value="{{ r.method }}">
+              <input type="hidden" name="route" value="{{ r.route }}">
+              <label><span class="vh">Clase de {{ r.method }} {{ r.route }}</span>
+                <select name="class">
+                  {% for value in ("critical", "sensitive") %}<option value="{{ value }}"{% if value == r.class %} selected{% endif %}>{{ class_labels[value]|capitalize }}</option>{% endfor %}
+                </select>
+              </label>
+              <button class="btn btn-secondary" type="submit">Cambiar</button>
+            </form>
+            <form class="tm-inline" method="post" action="/rutas/quitar">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <input type="hidden" name="method" value="{{ r.method }}">
+              <input type="hidden" name="route" value="{{ r.route }}">
+              <button class="btn btn-ghost" type="submit">Quitar<span class="vh"> {{ r.method }} {{ r.route }}</span></button>
+            </form>
+          </span>
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
     </section>
     {% endfor %}
     {% endif %}
     <div class="routes-foot">
       {% if groups %}<p class="muted-time">Todas las demás rutas se tratan como normales.</p>{% endif %}
-      <p class="muted-time">La clasificación se configura en el motor y aquí es solo lectura.</p>
+      {% if not can_edit %}<p class="muted-time">Solo un admin u owner puede cambiar la clasificación.</p>{% endif %}
     </div>
   {% endif %}
 </main>

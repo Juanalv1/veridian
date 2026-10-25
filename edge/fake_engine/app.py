@@ -160,6 +160,12 @@ def unsafe_url_reason(url: str) -> str | None:
     return None
 
 
+class RouteRuleIn(BaseModel):
+    method: str = Field(pattern=r"^[A-Z]+$", max_length=10)
+    route: str = Field(pattern=r"^/\S*$", max_length=300)
+    route_class: Literal["critical", "sensitive", "normal"] = Field(alias="class")
+
+
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
@@ -881,9 +887,7 @@ def create_app(
             return JSONResponse({"error": "invalid_body"}, status_code=422)
         return {"received": len(routes), "to_classify": 0}
 
-    @app.get("/v1/routes")
-    def get_routes(st: SharedState):
-        """Contract 8: classified routes only, critical first, then by route and method."""
+    def route_listing(st: ClientState) -> dict:
         rank = {"critical": 0, "sensitive": 1}
         rows = []
         for key, route_class in st.routes.items():
@@ -892,6 +896,32 @@ def create_app(
                 rows.append({"method": method, "route": route, "class": route_class})
         rows.sort(key=lambda r: (rank[r["class"]], r["route"], r["method"]))
         return {"routes": rows, "default": "normal"}
+
+    @app.get("/v1/routes")
+    def get_routes(st: SharedState):
+        """Contract 8: classified routes only, critical first, then by route and method."""
+        return route_listing(st)
+
+    @app.put("/v1/projects/{project_id}/routes/rule", dependencies=[Depends(panel_only)])
+    def put_route_rule(project_id: Annotated[str, Path()], body: RouteRuleIn, person: Actor):
+        project = authorize(person, project_id, "admin")
+        project.state.routes[f"{body.method} {body.route}"] = body.route_class
+        record(orgs[project.org_id], person, "routes.rule_set", "project", project.id, project.id,
+               {"method": body.method, "route": body.route, "class": body.route_class})
+        return route_listing(project.state)
+
+    @app.delete("/v1/projects/{project_id}/routes/rule", dependencies=[Depends(panel_only)])
+    def delete_route_rule(project_id: Annotated[str, Path()], person: Actor,
+                          method: Annotated[str, Query(pattern=r"^[A-Z]+$")],
+                          route: Annotated[str, Query(pattern=r"^/\S*$")]):
+        project = authorize(person, project_id, "admin")
+        key = f"{method} {route}"
+        if project.state.routes.get(key, "normal") == "normal":
+            raise NotFound()
+        del project.state.routes[key]
+        record(orgs[project.org_id], person, "routes.rule_deleted", "project", project.id, project.id,
+               {"method": method, "route": route})
+        return route_listing(project.state)
 
     @app.post("/v1/decisions/{decision_id}/normal")
     def post_normal(decision_id: str, st: AdminState, person: Actor,
@@ -1188,7 +1218,9 @@ def create_app(
     def post_org_project(org_id: Annotated[str, Path()], body: ProjectIn, person: Actor):
         org = authorize_org(person, org_id, "admin")
         pid = "p_" + secrets.token_hex(4)
-        project = Project(id=pid, org_id=org.id, name=body.name.strip(), state=new_state(), created_at=now_iso())
+        state = new_state()
+        state.routes = {}  # a new project starts empty: the default routes describe the demo app only
+        project = Project(id=pid, org_id=org.id, name=body.name.strip(), state=state, created_at=now_iso())
         projects[pid] = project
         return project_view(project, person)
 
