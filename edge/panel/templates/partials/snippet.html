@@ -13,12 +13,6 @@
   </div>
   <div class="sn-step">
     <div class="sn-step-head">
-      <span class="sn-name">¿Prefieres que lo haga tu agente de código? La clave no va en el prompt.</span>
-      <button class="btn btn-secondary" type="button" data-agent-prompt data-copy="{{ agent_prompt }}" hidden>Copiar prompt para tu agente</button>
-    </div>
-  </div>
-  <div class="sn-step">
-    <div class="sn-step-head">
       <span class="sn-name"><b>1</b> Pon la clave en el entorno de tu app, nunca en el código</span>
       <button class="btn btn-secondary" type="button" data-copy-from="snippet-env" hidden>Copiar</button>
     </div>
@@ -34,7 +28,7 @@
     </div>
     <div class="sn-step">
       <div class="sn-step-head">
-        <span class="sn-name"><b>3</b> Agrega el middleware (FastAPI, Starlette o cualquier app ASGI)</span>
+        <span class="sn-name"><b>3</b> Agrega el middleware</span>
         <button class="btn btn-secondary" type="button" data-copy-from="snippet-python" hidden>Copiar código</button>
       </div>
       <pre class="tm-snippet"><code id="snippet-python"><span class="k">from</span> fastapi <span class="k">import</span> FastAPI
@@ -51,9 +45,8 @@ app.add_middleware(
 )</code></pre>
     </div>
     <div class="sn-step">
-      <p class="tm-reveal-text">La sesión se detecta sola y Veridian solo recibe un hash, nunca el valor. Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</p>
-      <p class="tm-reveal-text"><code>trusted_proxies</code> es cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1). Con 0 usa la IP de la conexión e ignora X-Forwarded-For, que cualquiera puede escribir.</p>
-      <p class="tm-reveal-text">Para comprobar la conexión, entra a tu app con un usuario: en unos segundos el acceso aparece en Actividad y el panel marca Conectado.</p>
+      <p class="meta sn-note">La sesión se detecta sola y solo se envía un hash. Si Veridian no responde, tu app sigue funcionando.</p>
+      <p class="meta sn-note"><code>trusted_proxies</code>: cuántos proxies tuyos hay delante de la app (Render, un balanceador: 1).</p>
     </div>
   </div>
   <div role="tabpanel" id="snippet-panel-node" aria-labelledby="snippet-tab-node" class="sn-panel" hidden>
@@ -66,7 +59,7 @@ app.add_middleware(
     </div>
     <div class="sn-step">
       <div class="sn-step-head">
-        <span class="sn-name"><b>3</b> Agrega el middleware (Express)</span>
+        <span class="sn-name"><b>3</b> Agrega el middleware</span>
         <button class="btn btn-secondary" type="button" data-copy-from="snippet-node" hidden>Copiar código</button>
       </div>
       <pre class="tm-snippet"><code id="snippet-node"><span class="k">import</span> express <span class="k">from</span> 'express';
@@ -88,10 +81,13 @@ app.use(
 app.listen(3000);</code></pre>
     </div>
     <div class="sn-step">
-      <p class="tm-reveal-text">La sesión se detecta sola y Veridian solo recibe un hash, nunca el valor. Si Veridian no responde, tu app sigue funcionando: deja pasar todas las peticiones.</p>
-      <p class="tm-reveal-text">Registra Veridian después del middleware que identifica a tu usuario (Passport, express-session) y antes de tus rutas. <code>trustedProxies</code> es cuántos proxies tuyos hay delante de la app (un balanceador, Render, Heroku: 1); con 0 se ignora X-Forwarded-For, que cualquiera puede escribir.</p>
-      <p class="tm-reveal-text">Para comprobar la conexión, entra a tu app con un usuario: en unos segundos el acceso aparece en Actividad y el panel marca Conectado. ¿Usas Next.js? Mira el README de <code>veridian-sdk/next</code> en npm.</p>
+      <p class="meta sn-note">La sesión se detecta sola y solo se envía un hash. Si Veridian no responde, tu app sigue funcionando.</p>
+      <p class="meta sn-note">Regístralo después del middleware que identifica al usuario. ¿Next.js? Usa <code>veridian-sdk/next</code> (ver su README).</p>
     </div>
+  </div>
+  <div class="sn-agent">
+    <p class="meta">¿Prefieres que lo haga tu agente de código? El prompt no lleva la clave.</p>
+    <button class="btn btn-secondary" type="button" data-agent-prompt data-copy="{{ agent_prompt }}" hidden>Copiar prompt para tu agente</button>
   </div>
 </div>
 {%- endmacro %}

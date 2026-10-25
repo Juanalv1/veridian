@@ -432,7 +432,16 @@ def test_the_explanations_live_in_prose_not_in_the_code(source):
         code = re.search(r'<code id="%s"[^>]*>(.*?)</code>' % code_id, page, flags=re.S).group(1)
         assert "hash" not in visible_text(code) and "Actividad" not in visible_text(code)
     prose = visible_text(page)
-    assert "hash" in prose and "Actividad" in prose and "trusted_proxies" in prose
+    assert "hash" in prose and "trusted_proxies" in prose
+
+
+def test_the_panel_snippet_keeps_the_notes_short_and_the_agent_row_last():
+    page = PANEL_SNIPPET.read_text(encoding="utf-8")
+    notes = re.findall(r'<p class="meta sn-note">(.*?)</p>', page, flags=re.S)
+    assert len(notes) == 4 and all(len(visible_text(n)) <= 140 for n in notes)
+    assert "Actividad" not in visible_text(page)
+    assert "cualquier app ASGI" not in page
+    assert page.index("data-agent-prompt") > page.index('id="snippet-node"')
 
 
 # --- a refused blocklist poll is visible ---------------------------------------------------------

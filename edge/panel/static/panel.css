@@ -434,6 +434,10 @@ select:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
 .sn-step-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .sn-name { font-size:16px; font-weight:600; color:var(--ink); }
 .sn-name b { display:inline-grid; place-items:center; width:20px; height:20px; margin-right:6px; border-radius:var(--radius-pill); border:1px solid var(--line); color:var(--ink); font-family:var(--font-mono); font-size:12px; font-weight:500; }
+.sn-note { margin:0; font-size:14px; line-height:1.5; }
+.sn-agent { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding-top:12px; border-top:1px solid var(--line); }
+.sn-agent .meta { margin:0; font-size:14px; flex:1 1 240px; }
+.sn-agent .btn { white-space:nowrap; }
 .tm-saved { align-self:flex-start; color:var(--ink); border-color:var(--viridian); }
 .tm-muted { color:var(--muted); }
 .tm-revoked th, .tm-revoked td { color:var(--muted); }
