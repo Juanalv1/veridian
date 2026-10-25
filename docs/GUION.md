@@ -24,7 +24,7 @@ Slides 1 a 4: 45-50 s (medido en voz alta: 48,5 s, 2026-10-25).
 
 > Y se integra en tu backend en solo tres líneas de código: le dices cómo identificas al usuario y, en la primera ejecución, clasifica automáticamente todas tus rutas.
 >
-> Así, cualquiera puede detener a quien usa credenciales que no son suyas, sin tener que montar toda una infraestructura de seguridad.
+> Así, cualquiera puede proteger las cuentas de sus usuarios, sin tener que montar toda una infraestructura de seguridad.
 >
 > Ahora, veámoslo en vivo.
 
