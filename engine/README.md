@@ -30,9 +30,11 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `ANTHROPIC_API_KEY` | | Enables the AI judge. Without it the engine is rule-only: the critical block, no AI decisions |
 | `VERIDIAN_MODEL` | `claude-opus-5-5` | Model used by the AI judge |
 
+They can also live in a `.env` file (git-ignored), found by searching upward from the working directory. Real environment variables take precedence.
+
 ## AI judge
 
-A deviation is an event with a new network, a new device (non-empty `device_id` not in the profile), or a never-used `critical`/`sensitive` route. The critical rule still blocks synchronously; after the `202`, the judge runs in the background (one call per session per batch) and either replaces the block's rationale or records an `allow`/`alert`/`step_up`/`block` decision (at most one of each kind per session; a blocked session gets no more). A judge failure never breaks ingestion.
+A deviation is an event with a new network, a new device (non-empty `device_id` not in the profile), or a never-used `critical`/`sensitive` route. The critical rule still blocks synchronously; after the `202`, the judge runs in the background and either replaces the block's rationale or records an `allow`/`alert`/`step_up`/`block` decision. Each session is judged once; it is judged again only on a rule block or a never-used `critical`/`sensitive` route, and a blocked session gets no more decisions. A judge failure never breaks ingestion.
 
 ## Tests
 
