@@ -42,6 +42,6 @@ Contenido mínimo del aviso: qué pasó, qué datos y proyectos, qué se hizo, a
 
 ## Mientras tanto (hoy)
 
-- El único borrado es `reset_client` (`engine/veridian_engine/decisions.py:140-149`) vía `POST /v1/admin/reset`, que borra todo un cliente y solo existe con `VERIDIAN_ALLOW_RESET=true`. Para un usuario concreto no hay mecanismo; requeriría editar la base a mano, y no se documenta aquí por ser propenso a errores.
+- El único borrado es `reset_client` (`engine/veridian_engine/decisions.py:140-149`) vía `POST /v1/admin/reset`, que borra todo un cliente y solo existe con `VERIDIAN_RESET_TOKEN` definido y el header `X-Veridian-Reset-Token`. Para un usuario concreto no hay mecanismo; requeriría editar la base a mano, y no se documenta aquí por ser propenso a errores.
 - No hay registro de auditoría ni retención automática (`DATOS.md`).
-- Antes de aceptar un cliente real: apagar `VERIDIAN_ALLOW_RESET` (T1 de `odd/tasks/edge-product-accounts.md`, bloqueado hasta que exista U13).
+- Antes de aceptar un cliente real: dejar `VERIDIAN_RESET_TOKEN` sin definir (T1 de `odd/tasks/edge-product-accounts.md`, bloqueado hasta que exista U13).

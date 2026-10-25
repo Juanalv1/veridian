@@ -37,7 +37,7 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_TRUSTED_PROXIES` | `0` | Proxies that append to `X-Forwarded-For`; the auth failure limit counts per real client IP (the entry that many from the right). `0` uses the connection address |
 | `VERIDIAN_SYNC_MODEL` | `claude-haiku-5-5` | Model for the judge inside `POST /v1/check`, where the request waits |
 | `VERIDIAN_SYNC_JUDGE_TIMEOUT_S` | `10` | Seconds `POST /v1/check` waits for the judge on a gray deviation before its fallback decides |
-| `VERIDIAN_ALLOW_RESET` | `false` | `true` enables `POST /v1/admin/reset` (demo rehearsals only) |
+| `VERIDIAN_RESET_TOKEN` | empty | Secret that enables `POST /v1/admin/reset`, sent as header `X-Veridian-Reset-Token` (demo rehearsals only; empty = endpoint hidden) |
 
 They can also live in a `.env` file (git-ignored), found by searching upward from the working directory. Real environment variables take precedence.
 
@@ -78,7 +78,7 @@ It prints the blocklist (attacker session and IP) and the block decision. With `
 
 ## Demo rehearsal
 
-With `VERIDIAN_ALLOW_RESET=true` on the engine (otherwise the endpoint answers 404), each rehearsal starts from a clean client. Both scripts read `VERIDIAN_BASE_URL` and `VERIDIAN_TOKEN` from the environment or a `.env`, and never print the token.
+With `VERIDIAN_RESET_TOKEN` set on the engine (otherwise, or with a wrong secret, the endpoint answers 404), each rehearsal starts from a clean client. The scripts read `VERIDIAN_BASE_URL` and `VERIDIAN_TOKEN` (and, for the reset, `VERIDIAN_RESET_TOKEN`) from the environment or a `.env`, and never print the tokens.
 
 1. Reset: `py -3.12 engine/scripts/reset_client.py` deletes this token's client events and decisions (so its profiles) and empties its blocklist, keeping the version moving forward. It asks you to type the base URL, or pass `--yes`.
 2. Seed the presenter's history with the event wifi IP measured that morning (see `docs/DEMO.md`), every day including weekends, at the demo hours in UTC:

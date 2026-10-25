@@ -45,8 +45,9 @@ class Settings:
     sync_judge: Callable[[dict, dict], Any] | None = None
     # Seconds POST /v1/check waits for the judge on a gray deviation before the fallback decides.
     sync_judge_timeout_s: float = 10.0
-    # Demo rehearsals only: enables POST /v1/admin/reset. Keep off for real customers.
-    allow_reset: bool = False
+    # Demo rehearsals only: secret that enables POST /v1/admin/reset (sent as X-Veridian-Reset-Token).
+    # Empty keeps the endpoint hidden. Leave unset for real customers. Never log it.
+    reset_token: str = ""
     # Failed authentications per source (IP, key prefix) within the window before 429.
     # Unmeasured starting points: tune them against real traffic.
     auth_max_failures_per_ip: int = 30
@@ -73,7 +74,7 @@ class Settings:
             judge=default_judge(),
             sync_judge=default_sync_judge(),
             sync_judge_timeout_s=float(os.environ.get("VERIDIAN_SYNC_JUDGE_TIMEOUT_S", "10")),
-            allow_reset=os.environ.get("VERIDIAN_ALLOW_RESET", "").strip().lower() == "true",
+            reset_token=os.environ.get("VERIDIAN_RESET_TOKEN", "").strip(),
             auth_max_failures_per_ip=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_IP", "30")),
             auth_max_failures_per_prefix=int(os.environ.get("VERIDIAN_AUTH_MAX_FAILURES_PER_PREFIX", "10")),
             auth_failure_window_s=float(os.environ.get("VERIDIAN_AUTH_FAILURE_WINDOW_S", "60")),

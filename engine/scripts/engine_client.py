@@ -28,10 +28,14 @@ def add_connection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--token", default=os.environ.get("VERIDIAN_TOKEN"), help="never printed")
 
 
-def request(base_url: str, token: str, method: str, path: str, body: dict | None = None):
+def request(
+    base_url: str, token: str, method: str, path: str, body: dict | None = None, headers: dict | None = None
+):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(base_url.rstrip("/") + path, data=data, method=method)
     req.add_header("Authorization", f"Bearer {token}")
+    for name, value in (headers or {}).items():
+        req.add_header(name, value)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:

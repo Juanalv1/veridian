@@ -71,7 +71,7 @@ def test_reset_script_refuses_without_confirmation(monkeypatch, capsys):
     monkeypatch.setattr(reset, "request", lambda *args, **kwargs: calls.append(args) or (200, {}))
     monkeypatch.setattr("builtins.input", lambda prompt="": "https://wrong.example")
 
-    code = reset.main(["--base-url", "https://engine.example", "--token", "secret-token"])
+    code = reset.main(["--base-url", "https://engine.example", "--token", "secret-token", "--reset-token", "rs"])
 
     assert code == 1
     assert calls == []
@@ -85,10 +85,37 @@ def test_reset_script_resets_with_yes(monkeypatch, capsys):
         reset, "request", lambda *args, **kwargs: calls.append(args) or (200, {"reset": True, "version": 4})
     )
 
-    code = reset.main(["--base-url", "https://engine.example", "--token", "secret-token", "--yes"])
+    code = reset.main(
+        ["--base-url", "https://engine.example", "--token", "secret-token", "--reset-token", "rehearsal-secret", "--yes"]
+    )
 
     assert code == 0
     assert calls == [("https://engine.example", "secret-token", "POST", "/v1/admin/reset")]
     out = capsys.readouterr().out
     assert "secret-token" not in out
+    assert "rehearsal-secret" not in out
     assert "version 4" in out
+
+
+def test_reset_script_sends_the_reset_header_and_reports_404(monkeypatch, capsys):
+    reset = load_script("reset_client")
+    sent = []
+    monkeypatch.setattr(reset, "request", lambda *args, **kwargs: sent.append(kwargs) or (404, "not found"))
+
+    code = reset.main(
+        ["--base-url", "https://engine.example", "--token", "secret-token", "--reset-token", "rehearsal-secret", "--yes"]
+    )
+
+    assert code == 1
+    assert sent == [{"headers": {"X-Veridian-Reset-Token": "rehearsal-secret"}}]
+    captured = capsys.readouterr()
+    assert "reset disabled or reset token wrong" in captured.err
+    assert "rehearsal-secret" not in captured.out + captured.err
+
+
+def test_reset_script_requires_the_reset_token(monkeypatch):
+    reset = load_script("reset_client")
+    monkeypatch.delenv("VERIDIAN_RESET_TOKEN", raising=False)
+    monkeypatch.setattr(reset, "load_dotenv", lambda: None)
+    with pytest.raises(SystemExit):
+        reset.main(["--base-url", "https://engine.example", "--token", "secret-token", "--yes"])

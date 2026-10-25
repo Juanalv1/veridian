@@ -7,9 +7,14 @@ from conftest import AUTH_A, AUTH_B, NOW, days_ago, make_event, make_settings, p
 from veridian_engine.api import create_app
 
 
+RESET_TOKEN = "rehearsal-secret"
+RESET = {"X-Veridian-Reset-Token": RESET_TOKEN}
+AUTH_A_RESET = {**AUTH_A, **RESET}
+
+
 @pytest.fixture
 def reset_client(tmp_path, clock) -> TestClient:
-    with TestClient(create_app(make_settings(tmp_path, clock, allow_reset=True))) as test_client:
+    with TestClient(create_app(make_settings(tmp_path, clock, reset_token=RESET_TOKEN))) as test_client:
         yield test_client
 
 
@@ -33,8 +38,27 @@ def test_reset_is_invisible_when_disabled(client):
     assert client.post("/v1/admin/reset").status_code == 404
 
 
-def test_reset_requires_a_token_when_enabled(reset_client):
-    assert reset_client.post("/v1/admin/reset").status_code == 401
+def test_reset_requires_the_bearer_token_when_enabled(reset_client):
+    assert reset_client.post("/v1/admin/reset", headers=RESET).status_code == 401
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-Veridian-Reset-Token": "wrong"}, {"X-Veridian-Reset-Token": ""}])
+def test_sdk_key_alone_cannot_reset(reset_client, headers):
+    seed_history_and_block(reset_client, AUTH_A)
+    response = reset_client.post("/v1/admin/reset", headers={**AUTH_A, **headers})
+    assert response.status_code == 404
+    assert response.json() == {"error": "not_found"}
+    # Nothing was wiped.
+    assert reset_client.get("/v1/blocklist", headers=AUTH_A).json()["version"] == 1
+
+
+def test_reset_header_without_bearer_does_not_reveal_the_endpoint(reset_client):
+    assert reset_client.post("/v1/admin/reset", headers={"X-Veridian-Reset-Token": "wrong"}).status_code == 404
+
+
+def test_reset_header_is_ignored_when_no_secret_is_configured(client):
+    assert client.post("/v1/admin/reset", headers={**AUTH_A, **RESET}).status_code == 404
+    assert client.post("/v1/admin/reset", headers={**AUTH_A, "X-Veridian-Reset-Token": ""}).status_code == 404
 
 
 def test_reset_wipes_only_the_callers_client(reset_client):
@@ -48,7 +72,7 @@ def test_reset_wipes_only_the_callers_client(reset_client):
         "blocklist": reset_client.get("/v1/blocklist", headers=AUTH_B).json(),
     }
 
-    response = reset_client.post("/v1/admin/reset", headers=AUTH_A)
+    response = reset_client.post("/v1/admin/reset", headers=AUTH_A_RESET)
     assert response.status_code == 200
     assert response.json() == {"reset": True, "version": old_version + 1}
 
@@ -82,6 +106,6 @@ def test_reset_wipes_only_the_callers_client(reset_client):
 
 def test_reset_client_accepts_the_same_event_ids_again(reset_client):
     seed_history_and_block(reset_client, AUTH_A)
-    assert reset_client.post("/v1/admin/reset", headers=AUTH_A).status_code == 200
+    assert reset_client.post("/v1/admin/reset", headers=AUTH_A_RESET).status_code == 200
     history = [make_event(f"h{day}", days_ago(day, hour=9)) for day in range(1, 15)]
     assert post_events(reset_client, history).json() == {"accepted": 14}

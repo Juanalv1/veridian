@@ -237,7 +237,7 @@ Se copia el patrón de Centinela (`web/auth.py`, `web/config.py`, `web/app.py`),
 | **3 Decisiones** | Sin cambio de forma. Solo `panel`. `POST /v1/decisions/{id}/normal` exige rol `admin` (decisión 3) y escribe `AuditLog`. |
 | **4 Perfil, 5 Actividad, 6 Resumen, 7 Usuarios** | Sin cambio de forma. Solo `panel`. |
 | **8 Rutas** | Ya no es "el mismo contenido para todos". Es por proyecto. Se añade `PUT` para admins. El middleware lo lee con su clave (`sdk`) y el panel con `X-Veridian-Project` y rol `viewer` (página Rutas). |
-| **Solo para ensayos: reinicio** | **Se elimina** `POST /v1/admin/reset` y `VERIDIAN_ALLOW_RESET`. Lo reemplaza `DELETE /v1/projects/{id}/data` (contrato 14), con rol `owner` y auditoría. |
+| **Solo para ensayos: reinicio** | **Se elimina** `POST /v1/admin/reset` y `VERIDIAN_RESET_TOKEN` (antes `VERIDIAN_ALLOW_RESET`). Lo reemplaza `DELETE /v1/projects/{id}/data` (contrato 14), con rol `owner` y auditoría. |
 
 ### Contratos nuevos
 

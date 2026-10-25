@@ -335,7 +335,7 @@ Respuesta `200`:
 
 ### Solo para ensayos: reinicio
 
-`POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_ALLOW_RESET=true`; si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
+`POST /v1/admin/reset` borra los eventos, las decisiones y lo aprendido del cliente dueño del token, y deja su lista de bloqueos vacía. No toca a otros clientes. Viene apagado: solo existe con `VERIDIAN_RESET_TOKEN` definido en el motor y el header `X-Veridian-Reset-Token` con ese valor (además del Bearer normal); si no, responde `404`. La `version` no vuelve a 0: sube en uno, así el middleware que consulta con `since=<versión vieja>` recibe la lista vacía y no un `304`. Responde `{"reset": true, "version": <n>}`.
 
 ## Primer hito de cada dev
 

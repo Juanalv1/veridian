@@ -1,3 +1,4 @@
+import hmac
 import threading
 from datetime import datetime, timedelta
 
@@ -131,8 +132,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/admin/reset")
     def post_reset(request: Request):
-        """Rehearsal-only wipe of the caller's data. Hidden (404 before auth) unless enabled."""
-        if not settings.allow_reset:
+        """Rehearsal-only wipe of the caller's data. Hidden (404 before auth) unless a reset secret
+        is configured and sent in X-Veridian-Reset-Token."""
+        sent = request.headers.get("x-veridian-reset-token", "")
+        if not settings.reset_token or not hmac.compare_digest(sent.encode(), settings.reset_token.encode()):
             return JSONResponse(status_code=404, content={"error": "not_found"})
         project_id = project_id_from_request(request)
         with write_lock, db.connect(settings.db_path) as conn:

@@ -4,7 +4,7 @@ Estado a 2026-10-25. "Hoy" es lo que hace el código; "planeado" es el diseño (
 
 ## Retención hoy
 
-**No hay retención ni borrado automático.** Ningún dato se borra con el tiempo. La única forma de borrar es `reset_client` (`engine/veridian_engine/decisions.py:140-149`), expuesta en `POST /v1/admin/reset` solo si `VERIDIAN_ALLOW_RESET=true` (hoy `"true"` en `render.yaml`, pensado solo para ensayos de la demo). Borra todo un cliente, no un usuario.
+**No hay retención ni borrado automático.** Ningún dato se borra con el tiempo. La única forma de borrar es `reset_client` (`engine/veridian_engine/decisions.py:140-149`), expuesta en `POST /v1/admin/reset` solo si `VERIDIAN_RESET_TOKEN` está definido y se envía en `X-Veridian-Reset-Token` (secreto de ensayos de la demo, `sync: false` en `render.yaml`). Borra todo un cliente, no un usuario.
 
 ## Tablas del motor (`engine/veridian_engine/db.py`)
 
