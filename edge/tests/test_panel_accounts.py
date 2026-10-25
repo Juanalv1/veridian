@@ -700,3 +700,42 @@ def test_viewer_targets_and_focus_are_44px_in_css():
     for selector in (".switcher", ".proj", ".org", ".field input[type=text]", ".choice"):
         assert selector in css, selector
     assert "min-height:44px" in css.replace(" ", "")
+
+
+# --- switching a project between enforce and observe ------------------------------------------------
+
+
+def test_an_owner_switches_a_project_between_observe_and_enforce():
+    engine = new_engine()
+    panel = panel_of(engine)
+    pid = project_a(engine)
+    assert engine.state.projects[pid].enforcement == "enforce"  # seeded projects block
+    page = panel.get(f"/proyectos?org={org_a(engine)}").text
+    assert f'action="/proyectos/{pid}/modo"' in page and "Pasar a solo observar" in page
+
+    r = panel.post(f"/proyectos/{pid}/modo", data={"enforcement": "observe"})
+    assert r.status_code == 303 and r.headers["location"] == f"/proyectos?org={org_a(engine)}"
+    assert engine.state.projects[pid].enforcement == "observe"
+    page = panel.get(r.headers["location"]).text
+    assert "ahora solo observa" in text(page) and "Activar bloqueo" in page
+
+    panel.post(f"/proyectos/{pid}/modo", data={"enforcement": "enforce"})
+    assert engine.state.projects[pid].enforcement == "enforce"
+
+
+def test_a_viewer_gets_no_mode_switch_and_a_forged_one_is_refused():
+    engine = new_engine()
+    viewer = member_panel(engine, org_a(engine), "viewer")
+    pid = project_a(engine)
+    assert "/modo" not in viewer.get(f"/proyectos?org={org_a(engine)}").text
+    viewer.post(f"/proyectos/{pid}/modo", data={"enforcement": "observe"})
+    assert engine.state.projects[pid].enforcement == "enforce"
+
+
+@pytest.mark.parametrize("value", ["", "yolo"])
+def test_an_unknown_mode_changes_nothing(value):
+    engine = new_engine()
+    panel = panel_of(engine)
+    pid = project_a(engine)
+    panel.post(f"/proyectos/{pid}/modo", data={"enforcement": value})
+    assert engine.state.projects[pid].enforcement == "enforce"

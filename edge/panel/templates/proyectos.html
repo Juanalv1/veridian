@@ -59,6 +59,20 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
           </button>
         </form>
+        {% if can_create_project and p.mode %}
+        <form class="proj-mode" method="post" action="/proyectos/{{ p.id|urlencode }}/modo">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          {% if p.mode[1] == 'observe' %}
+          <input type="hidden" name="enforcement" value="enforce">
+          <span class="acct-small">Solo observa: registra los accesos sospechosos, pero no los frena.</span>
+          <button class="btn btn-secondary" type="submit">Activar bloqueo<span class="vh"> en {{ p.name }}</span></button>
+          {% else %}
+          <input type="hidden" name="enforcement" value="observe">
+          <span class="acct-small">Bloquea los accesos sospechosos.</span>
+          <button class="btn btn-ghost" type="submit">Pasar a solo observar<span class="vh"> en {{ p.name }}</span></button>
+          {% endif %}
+        </form>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>

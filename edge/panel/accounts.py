@@ -41,6 +41,9 @@ MODE_NOT_SAVED = ("El proyecto se creó, pero no se pudo guardar el modo ni el u
 NAME_MISMATCH = "El nombre no coincide. No se eliminó nada."
 ORG_NOT_EMPTY = "La organización todavía tiene proyectos. Elimínalos primero, uno por uno."
 DELETE_FORBIDDEN = "Solo un owner puede eliminar la organización."
+MODE_SAVED = {"enforce": "«{name}» ahora bloquea: Veridian frena los accesos sospechosos.",
+              "observe": "«{name}» ahora solo observa: Veridian registra, pero no bloquea nada."}
+MODE_FORBIDDEN = "Solo un admin u owner puede cambiar el modo de un proyecto."
 
 
 def engine_error(status: int) -> str:
@@ -341,6 +344,31 @@ class Accounts:
                 me.flash(request, "warn", MODE_NOT_SAVED)
             me.set_current(request, found["id"], pid)
             return me.back("/")
+
+        @router.post("/proyectos/{project_id}/modo")
+        async def set_mode(request: Request, project_id: str, enforcement: str = Form("")):
+            """Switch a project between enforce and observe (PATCH /v1/projects/{id}); the engine checks the role."""
+            orgs = await me.load_orgs(request)
+            if orgs is None:
+                me.flash(request, "err", UNREACHABLE)
+                return me.back()
+            org = next((o for o in orgs if any(p["id"] == project_id for p in o["projects"])), None)
+            if org is None:
+                me.flash(request, "err", NO_ACCESS_PROJECT)
+                return me.back()
+            back = f"/proyectos?org={quote(org['id'], safe='')}"
+            if enforcement not in MODES:
+                me.flash(request, "err", MODE_ERROR)
+                return me.back(back)
+            status, _ = await me.write(request, "PATCH", f"/v1/projects/{quote(project_id, safe='')}",
+                                       {"enforcement": enforcement})
+            if status == 200:
+                name = next(p["name"] for p in org["projects"] if p["id"] == project_id)
+                me.flash(request, "ok", MODE_SAVED[enforcement].format(name=name))
+            else:
+                me.flash(request, "err", UNREACHABLE if status is None else MODE_FORBIDDEN if status == 403
+                         else engine_error(status))
+            return me.back(back)
 
         @router.post("/organizaciones/{org_id}/eliminar")
         async def delete_org(request: Request, org_id: str, confirm: str = Form("")):
