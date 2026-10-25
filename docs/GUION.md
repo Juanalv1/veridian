@@ -20,7 +20,7 @@
 
 **[Slide 4: Instalación]**
 
-> Y para todo esto, Veridian se integra en tu backend con tres líneas de código: le dices cómo identificas al usuario, y se encarga del resto, hasta de clasificar tus rutas.
+> Y para todo esto, se integra en tu backend con tres líneas de código: le dices cómo identificas al usuario, y se encarga del resto, hasta de clasificar tus rutas.
 >
 > Ahora, veámoslo en vivo.
 
