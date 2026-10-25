@@ -14,11 +14,9 @@
 
 **[Slide 3: Cómo funciona]**
 
-> Veridian sí lo comprueba, en cada acceso. Antes de empezar, una IA recorre las rutas de tu API y entiende qué hace cada una para clasificarlas según su impacto: cambiar la cuenta bancaria no es lo mismo que ver una factura. Y Veridian aprende cómo trabajas tú: desde dónde entras, a qué hora y qué rutas usas.
+> Veridian sí lo comprueba, en cada petición. Un filtro la compara con las rutas de tu API y con el comportamiento del usuario.
 >
-> Si un acceso encaja con tu forma de trabajar, pasa sin más. Si no, la IA decide si eres tú en un día distinto o es otra persona: por ejemplo, alguien que entra desde una red nueva y va directo a cambiar la cuenta donde cobras, algo que tú nunca haces.
->
-> En una ruta crítica, el bloqueo llega antes de que la acción se ejecute.
+> Si es normal, pasa directo. Si es rara, la IA decide: si es el dueño, la permite; si es otra persona, la bloquea, antes de que la acción ocurra.
 
 **[Slide 4: Instalación]**
 
