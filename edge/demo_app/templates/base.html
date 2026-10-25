@@ -7,12 +7,20 @@
 <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
 </head>
 <body>
-<header><div class="bar">
-  <span class="logo">Facturas Demo</span>
+<header class="top"><div class="bar">
+  <a class="logo" href="{{ '/invoices' if user else '/login' }}">
+    <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5z" fill="currentColor" opacity=".18"/><path d="M5 2.5h7l3.5 3.5v11.5H5z M12 2.5V6h3.5 M7.5 10h5 M7.5 13h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    Facturas Demo
+  </a>
   {% if user %}
-  <nav><a href="/invoices">Facturas</a><a href="/invoices/export">Exportar CSV</a><a href="/payouts/bank-account">Cuenta de cobros</a></nav>
-  <span class="who">{{ user.name }}</span>
-  <form class="inline" method="post" action="/logout"><button class="link" type="submit">Salir</button></form>
+  <nav aria-label="Principal">
+    <a href="/invoices"{% if active == "invoices" %} aria-current="page"{% endif %}>Facturas</a>
+    <a href="/payouts/bank-account"{% if active == "bank" %} aria-current="page"{% endif %}>Cuenta de cobros</a>
+  </nav>
+  <div class="account">
+    <span class="who"><strong>{{ user.name }}</strong><span>{{ user.company }}</span></span>
+    <form class="inline" method="post" action="/logout"><button class="link" type="submit">Salir</button></form>
+  </div>
   {% endif %}
 </div></header>
 <main>{% block content %}{% endblock %}</main>

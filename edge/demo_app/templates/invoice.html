@@ -1,14 +1,19 @@
 {% extends "base.html" %}
-{% block title %}{{ invoice.number }}{% endblock %}
+{% block title %}Factura {{ invoice.number }}{% endblock %}
 {% block content %}
+<a class="back" href="/invoices">
+  <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  Facturas
+</a>
 <div class="card">
-  <p><a href="/invoices">← Facturas</a></p>
-  <h1>Factura {{ invoice.number }}</h1>
-  <p><span class="badge {{ invoice.status }}">{{ invoice.status }}</span></p>
-  <table>
-    <tr><th>Cliente</th><td>{{ invoice.client }}</td></tr>
-    <tr><th>Fecha</th><td>{{ invoice.date }}</td></tr>
-    <tr><th>Monto</th><td>{{ "%.2f"|format(invoice.amount) }} USD</td></tr>
-  </table>
+  <div class="title-row">
+    <h1>Factura {{ invoice.number }}</h1>
+    <span class="badge {{ invoice.status }}">{{ invoice.status }}</span>
+  </div>
+  <dl class="facts">
+    <div><dt>Cliente</dt><dd>{{ invoice.client }}</dd></div>
+    <div><dt>Fecha de emisión</dt><dd>{{ invoice.date|date_label }}</dd></div>
+    <div><dt>Monto</dt><dd class="amount">{{ invoice.amount|money }} <span>USD</span></dd></div>
+  </dl>
 </div>
 {% endblock %}
