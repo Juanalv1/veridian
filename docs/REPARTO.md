@@ -175,7 +175,7 @@ Lo que toca la app del cliente y lo que se ve en el escenario.
 - **`routes` incluye el método** (`"GET /invoices"`), igual que la clasificación de rutas: `GET` y `POST` sobre la misma ruta son usos distintos.
 - **`hours` va en UTC,** igual que `ts`: horas enteras de 0 a 23 (`[9, 13]` = de 09:00 a 13:00 UTC). El panel las convierte a la hora local de quien mira.
 
-### 5. Actividad: motor → panel (propuesto por Dev 2, pendiente de Dev 1)
+### 5. Actividad: motor → panel
 
 `GET /v1/activity?limit=50`
 
@@ -215,6 +215,7 @@ Los últimos accesos del cliente, **todos**, no solo los que generaron una decis
 - **Orden:** de la más nueva a la más vieja. `limit` entre 1 y 200, por defecto 50.
 - **`verdict`:** `normal` (sin decisión, o `allow`) | `review` (`alert` o `step_up`) | `block`. Si la decisión fue marcada como normal, vuelve a `normal`.
 - **`decision_id`:** la decisión que generó ese acceso, o `null`. El panel enlaza la fila con el detalle.
+- **Accesos posteriores a un bloqueo:** si la sesión tiene un `block` abierto, sus accesos desde ese momento (los que el middleware rechazó con `403`) también salen como `block`, con el `decision_id` de ese bloqueo. Así el panel no muestra como `normal` al atacante ya bloqueado.
 - **Lo que no incluye:** `user_agent` ni `bytes`; nunca cuerpos ni datos de clientes, igual que el contrato 1.
 
 ### Solo para ensayos: reinicio
