@@ -71,6 +71,8 @@ OPERATIONS = [
     ("DELETE", "/v1/projects/{project_id}", "foreign", None),
     ("PUT", "/v1/projects/{project_id}/routes", "foreign", {"routes": []}),
     ("GET", "/v1/orgs/{org_id}/audit", "foreign", None),
+    ("GET", "/v1/orgs/{org_id}/me", "foreign", None),
+    ("PATCH", "/v1/orgs/{org_id}/me", "foreign", {"notify_email": False}),
     ("GET", "/v1/orgs/{org_id}/members", "foreign", None),
     ("PATCH", "/v1/orgs/{org_id}/members/{member_id}", "foreign", {"role": "viewer"}),
     ("DELETE", "/v1/orgs/{org_id}/members/{member_id}", "foreign", None),

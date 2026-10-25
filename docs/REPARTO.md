@@ -413,6 +413,17 @@ Solo `panel`, rol `admin` de la organización del proyecto de la ruta. Un proyec
 - **Prueba:** envía en el momento un evento `webhook.test` (cabecera `X-Veridian-Event: webhook.test`), firmado igual que un bloqueo: `{"id", "type": "webhook.test", "created_at", "project": {"id", "name"}}`. No pasa por la cola, no se reintenta y no aparece en `deliveries`. Un receptor que falla no es un error de la API: `delivered: false` con el motivo.
 - **Auditoría:** `webhook.set` (con la URL, nunca el secreto), `webhook.enable`, `webhook.delete` y `webhook.test` quedan en `audit_log` con el actor.
 
+### Correo de bloqueo y preferencia (U17): panel → motor
+
+Cada `block` encola un correo para cada `owner` y `admin` de la organización del proyecto con `notify_email` activo (por defecto, sí). Usa la misma cola que el webhook, con una fila por destinatario (así un correo que falla se reintenta solo para esa persona) y no necesita webhook. El correo lleva el proyecto, el `user_id`, la ruta, la hora, el motivo y el enlace al panel; **nunca la IP**. En `observe` agrega una línea que dice que el bloqueo no se aplicó. Antes de enviar se vuelve a revisar la preferencia: si alguien la apagó, o ya no es owner ni admin, su correo queda `failed` sin enviarse. Los correos no aparecen en `webhook/deliveries`.
+
+**Sin proveedor** (decisión 4 abierta), el motor usa `NullMailer`: los correos quedan `failed` con `last_error: "no email provider configured"` y no se reintentan. El mismo interruptor del webhook (`VERIDIAN_WEBHOOKS=off`) apaga también el envío de correo.
+
+| Endpoint | Rol | Respuesta |
+|---|---|---|
+| `GET /v1/orgs/{id}/me` | cualquier miembro | `{"org_id", "role", "notify_email"}` |
+| `PATCH /v1/orgs/{id}/me` `{"notify_email"}` | cualquier miembro, solo su propia fila | igual que `GET`. Queda en `audit_log` (`member.notify_email`) |
+
 ### Marcar normal (contrato 3)
 
 `POST /v1/decisions/{id}/normal` es solo `panel` con `X-Veridian-Project` y rol `admin` u `owner`; queda en `audit_log` (`decision.mark_normal`, con el actor) en la misma transacción. Un `viewer` recibe `403`; una decisión inexistente, `404`.

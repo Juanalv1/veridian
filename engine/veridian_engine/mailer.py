@@ -64,13 +64,21 @@ def select_recipients(members: Iterable[Any]) -> list[str]:
     return recipients
 
 
-def build_block_alert(*, project_name: str, decision: Mapping[str, Any], panel_url: str) -> tuple[str, str]:
+def build_block_alert(
+    *, project_name: str, decision: Mapping[str, Any], panel_url: str, enforced: bool = True
+) -> tuple[str, str]:
     """Subject and plain-text body in Spanish. Never includes the IP or request bodies."""
     subject = f"[Veridian] Acceso bloqueado en {project_name}"
+    observed = (
+        []
+        if enforced
+        else ["El proyecto está en modo observe: el bloqueo se registró, pero no se aplicó.", ""]
+    )
     text = "\n".join(
         [
             f"Veridian bloqueó un acceso en el proyecto {project_name}.",
             "",
+            *observed,
             f"Usuario: {decision.get('user_id', '')}",
             f"Ruta: {decision.get('route', '')}",
             f"Hora (UTC): {decision.get('ts', '')}",

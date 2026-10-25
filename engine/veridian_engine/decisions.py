@@ -3,7 +3,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-from .notifications.outbox import enqueue_block_notification
+from .notifications.outbox import enqueue_block_emails, enqueue_block_notification
 
 
 def format_decision_ts(value: datetime) -> str:
@@ -47,6 +47,7 @@ def create_decision(
     if decision == "block":
         # Outbox, same transaction (decision 8: only blocks notify). Sending happens later.
         enqueue_block_notification(conn, project_id, decision_id, ts)
+        enqueue_block_emails(conn, project_id, decision_id, ts)
     return decision_id
 
 

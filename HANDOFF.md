@@ -45,7 +45,7 @@ Las dos líneas casi no tocan los mismos archivos. El punto de contacto es U6: B
 ### Dev B: notificaciones y operación
 
 1. **Hecho (2026-10-25): U12, endpoints del webhook** (contrato 13, documentado en `REPARTO.md`). Los proyectos en `observe` notifican con `decision.enforced: false`; la migración `0006` borró `project.webhook_url` y `project.webhook_secret_enc`.
-2. **U17, conexión del correo.**
+2. **Hecho (2026-10-25): U17, conexión del correo** (documentado en `REPARTO.md`, "Correo de bloqueo y preferencia"). Falta elegir proveedor (decisión 4); hasta entonces los correos quedan `failed`. El panel (Dev 3) puede mostrar el interruptor con `GET`/`PATCH /v1/orgs/{id}/me`. Lo que se pedía:
    - El módulo `engine/veridian_engine/mailer.py` ya existe.
    - Falta encolar `kind='email'` en el mismo outbox del webhook, para los owners y admins con `notify_email`.
    - No hay proveedor real todavía (decisión 4 abierta); usa `NullMailer` en producción hasta que se elija.

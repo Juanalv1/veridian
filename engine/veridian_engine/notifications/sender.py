@@ -39,6 +39,8 @@ DEFAULT_BATCH_SIZE = 50
 
 
 class WebhookSender:
+    KIND = "webhook"
+    THREAD_NAME = "veridian-webhooks"
     def __init__(
         self,
         db_path: str,
@@ -70,7 +72,7 @@ class WebhookSender:
         if self.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="veridian-webhooks", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name=self.THREAD_NAME, daemon=True)
         self._thread.start()
 
     def stop(self, timeout: float = 10.0) -> None:
@@ -93,13 +95,13 @@ class WebhookSender:
         try:
             return self._run_once()
         except Exception:  # noqa: BLE001 - the worker must survive any error
-            log.exception("webhook sender pass failed")
+            log.exception("%s sender pass failed", self.KIND)
             return 0
 
     def _run_once(self) -> int:
         now = self._clock()
         with db.connect(self._db_path) as conn:
-            due = due_notifications(conn, now, self._batch_size)
+            due = due_notifications(conn, now, self._batch_size, kind=self.KIND)
             prepared = {notification.id: self._prepare(conn, notification) for notification in due}
 
         terminal = [p for p in prepared.values() if isinstance(p, Notification)]
@@ -177,12 +179,13 @@ def build_webhook_sender(settings, write_lock: threading.Lock | None = None) -> 
 
 @asynccontextmanager
 async def webhook_lifespan(app):
-    """FastAPI lifespan: the sender in `app.state.webhook_sender` runs while the app does."""
-    sender = getattr(app.state, "webhook_sender", None)
-    if sender is not None:
+    """FastAPI lifespan: the senders in `app.state.webhook_sender` and `app.state.email_sender`
+    run while the app does."""
+    senders = [s for s in (getattr(app.state, "webhook_sender", None), getattr(app.state, "email_sender", None)) if s]
+    for sender in senders:
         sender.start()
     try:
         yield
     finally:
-        if sender is not None:
+        for sender in senders:
             sender.stop()

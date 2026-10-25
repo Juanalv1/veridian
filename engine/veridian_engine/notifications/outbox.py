@@ -8,6 +8,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
+from ..mailer import select_recipients
 from .webhook import Notification, new_notification
 
 TS_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -38,14 +39,48 @@ def enqueue_block_notification(
     ).fetchone()
     if endpoint is None:
         return None
+    notification = new_notification(
+        new_notification_id(), project_id, decision_id, now, enforced=_project_enforces(conn, project_id)
+    )
+    _insert(conn, notification, now)
+    return notification.id
+
+
+def enqueue_block_emails(conn: sqlite3.Connection, project_id: str, decision_id: str, now: datetime) -> list[str]:
+    """Queue one alert email per owner/admin of the project's organization with `notify_email` on."""
+    enforced = _project_enforces(conn, project_id)
+    ids = []
+    for email in select_recipients(notified_members(conn, project_id)):
+        notification = new_notification(
+            new_notification_id(), project_id, decision_id, now, kind="email", enforced=enforced, recipient=email
+        )
+        _insert(conn, notification, now)
+        ids.append(notification.id)
+    return ids
+
+
+def notified_members(conn: sqlite3.Connection, project_id: str) -> list[dict]:
+    """Members of the project's organization with their role and preference, oldest first."""
+    rows = conn.execute(
+        "SELECT p.email, m.role, m.notify_email FROM project pr"
+        " JOIN membership m ON m.org_id = pr.org_id JOIN person p ON p.id = m.person_id"
+        " WHERE pr.id = ? ORDER BY m.created_at, p.id",
+        (project_id,),
+    ).fetchall()
+    return [{"email": row["email"], "role": row["role"], "notify_email": bool(row["notify_email"])} for row in rows]
+
+
+def _project_enforces(conn: sqlite3.Connection, project_id: str) -> bool:
     project = conn.execute("SELECT enforcement FROM project WHERE id = ?", (project_id,)).fetchone()
     # A project without a row enforces (project_settings.get_project_flags).
-    enforced = project is None or project["enforcement"] == "enforce"
-    notification = new_notification(new_notification_id(), project_id, decision_id, now, enforced=enforced)
+    return project is None or project["enforcement"] == "enforce"
+
+
+def _insert(conn: sqlite3.Connection, notification: Notification, now: datetime) -> None:
     created_at = format_ts(now)
     conn.execute(
         "INSERT INTO notifications (id, project_id, kind, decision_id, status, attempts, next_attempt_at,"
-        " last_error, enforced, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " last_error, enforced, recipient, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             notification.id,
             notification.project_id,
@@ -56,11 +91,11 @@ def enqueue_block_notification(
             format_ts(notification.next_attempt_at),
             notification.last_error,
             int(notification.enforced),
+            notification.recipient,
             created_at,
             created_at,
         ),
     )
-    return notification.id
 
 
 def _from_row(row) -> Notification:
@@ -74,6 +109,7 @@ def _from_row(row) -> Notification:
         next_attempt_at=parse_ts(row["next_attempt_at"]),
         last_error=row["last_error"],
         enforced=bool(row["enforced"]),
+        recipient=row["recipient"],
     )
 
 
@@ -102,11 +138,12 @@ def save_notification(conn: sqlite3.Connection, notification: Notification, now:
     )
 
 
-def list_notifications(conn: sqlite3.Connection, project_id: str, limit: int) -> list[dict]:
-    """Newest first; what `GET .../webhook/deliveries` will show."""
+def list_notifications(conn: sqlite3.Connection, project_id: str, limit: int, kind: str = "webhook") -> list[dict]:
+    """Newest first; what `GET .../webhook/deliveries` shows. Email rows (and their recipients)
+    are never listed there."""
     rows = conn.execute(
         "SELECT id, kind, decision_id, status, attempts, next_attempt_at, last_error, created_at, updated_at"
-        " FROM notifications WHERE project_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
-        (project_id, limit),
+        " FROM notifications WHERE project_id = ? AND kind = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+        (project_id, kind, limit),
     ).fetchall()
     return [dict(row) for row in rows]

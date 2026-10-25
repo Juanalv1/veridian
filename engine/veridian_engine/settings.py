@@ -72,6 +72,10 @@ class Settings:
     webhook_transport: Any = None  # None: HttpxTransport
     webhook_resolver: Callable[[str, int], list[str]] | None = None  # None: real DNS
     webhook_poll_s: float = 5.0
+    # Block alert email (U17), sent by a second worker under the same `webhooks` switch.
+    # None: NullMailer, the emails are marked failed ("no email provider configured"):
+    # the provider is open decision 4.
+    mailer: Any = None
     # Base URL of the panel, for the payload's panel_url.
     panel_base_url: str = ""
     # Service credentials of the panel (current and previous, to rotate without a cut). Empty: no panel.

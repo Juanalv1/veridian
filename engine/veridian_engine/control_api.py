@@ -54,6 +54,10 @@ class OrgPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
 
 
+class MyMembershipPatch(BaseModel):
+    notify_email: bool
+
+
 class WebhookIn(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
 
@@ -159,6 +163,29 @@ def build_router(settings: Settings, write_lock: threading.Lock) -> APIRouter:
                 repository.rename_organization(conn, actor_id=person_id, org_id=org_id, name=body.name.strip(),
                                                now=settings.clock())
             return org_view(conn, org_id, person_id, with_created=True)
+
+    def my_membership(conn, org_id: str, person_id: str) -> dict:
+        row = conn.execute("SELECT role, notify_email FROM membership WHERE org_id = ? AND person_id = ?",
+                           (org_id, person_id)).fetchone()
+        return {"org_id": org_id, "role": row["role"], "notify_email": bool(row["notify_email"])}
+
+    @router.get("/v1/orgs/{org_id}/me")
+    def get_my_membership(org_id: str, person_id: str = Depends(panel_actor)) -> dict:
+        with db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "view")
+            return my_membership(conn, org_id, person_id)
+
+    @router.patch("/v1/orgs/{org_id}/me")
+    def patch_my_membership(org_id: str, body: MyMembershipPatch, person_id: str = Depends(panel_actor)) -> dict:
+        """The caller's own block alert email preference (U17), per organization."""
+        with write_lock, db.connect(settings.db_path) as conn:
+            authorize_org(conn, org_id, person_id, "view")
+            conn.execute("UPDATE membership SET notify_email = ? WHERE org_id = ? AND person_id = ?",
+                         (int(body.notify_email), org_id, person_id))
+            repository.record_audit(conn, actor_person_id=person_id, actor_kind="person",
+                                    action="member.notify_email", target_type="person", target_id=person_id,
+                                    now=settings.clock(), meta={"notify_email": body.notify_email}, org_id=org_id)
+            return my_membership(conn, org_id, person_id)
 
     @router.get("/v1/orgs/{org_id}/projects")
     def get_org_projects(org_id: str, person_id: str = Depends(panel_actor)) -> dict:

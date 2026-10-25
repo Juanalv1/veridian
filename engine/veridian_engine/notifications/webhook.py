@@ -342,6 +342,7 @@ class Notification:
     next_attempt_at: datetime | None = None
     last_error: str | None = None
     enforced: bool = True
+    recipient: str | None = None  # email rows only
 
 
 def new_notification(
@@ -351,6 +352,7 @@ def new_notification(
     now: datetime,
     kind: str = "webhook",
     enforced: bool = True,
+    recipient: str | None = None,
 ) -> Notification:
     return Notification(
         id=notification_id,
@@ -359,6 +361,7 @@ def new_notification(
         kind=kind,
         next_attempt_at=now,
         enforced=enforced,
+        recipient=recipient,
     )
 
 

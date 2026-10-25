@@ -17,6 +17,7 @@ from .control_plane.repository import record_audit
 from .decisions import blocklist, current_version, list_decisions, mark_normal, reset_client
 from .events import EventBatch, insert_events
 from .judging import judge_deviations, latest_per_session
+from .notifications.email_sender import build_email_sender
 from .notifications.sender import build_webhook_sender, webhook_lifespan
 from .principal import Forbidden, PanelProject, panel_project, sdk_project, shared_project
 from .project_settings import get_project_flags
@@ -63,6 +64,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.webhook_sender = build_webhook_sender(settings, write_lock)
     # Retention (U13): purges by retention_days and wipes deleted projects; None when off.
     app.state.retention_worker = build_retention_worker(settings, write_lock)
+    # Block alert email to owners/admins (U17), same switch and lifespan.
+    app.state.email_sender = build_email_sender(settings, write_lock)
 
     @app.exception_handler(Unauthorized)
     async def unauthorized_handler(request: Request, exc: Unauthorized) -> JSONResponse:
