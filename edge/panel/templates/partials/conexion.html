@@ -1,0 +1,13 @@
+{# Connection state of the project. While waiting it polls itself; once connected (or unknown) it stops. #}
+<div id="conexion" class="tm-card tm-conn {{ connection }}" role="status"{% if connection == 'waiting' %} hx-get="/claves/conexion" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  {% if connection == 'connected' %}
+  <span class="conn-line"><span class="dot" aria-hidden="true"></span><span class="conn-label">Conectado</span></span>
+  <p class="acct-small">Tu app ya reportó su primer acceso. Veridian empezó a aprender cómo usa cada persona tu app.</p>
+  {% elif connection == 'waiting' %}
+  <span class="conn-line"><span class="dot" aria-hidden="true"></span><span class="conn-label">Esperando el primer evento</span></span>
+  <p class="acct-small">Cuando alguien entre a tu app con el middleware puesto, ese acceso llega aquí y esto pasa a «Conectado». No hace falta recargar.</p>
+  {% else %}
+  <span class="conn-line"><span class="conn-label">No se pudo comprobar la conexión</span></span>
+  <p class="acct-small">El motor no respondió. Recarga la página en unos minutos.</p>
+  {% endif %}
+</div>

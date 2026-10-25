@@ -183,10 +183,17 @@ class Team:
         response.headers["Pragma"] = "no-cache"
         return response
 
+    async def connection(self, request: Request, project: str) -> str:
+        """`connected` once the project has received an access, `waiting` before, `unknown` when the engine cannot
+        say. Read from the activity the panel already uses: one row is enough."""
+        accesses = self.items(await self.fetch(request, "/v1/activity", {"limit": 1}), "activity")
+        return "unknown" if accesses is None else "connected" if accesses else "waiting"
+
     async def keys_page(self, request: Request, ctx: dict, *, created: dict | None = None, error: str | None = None,
                         name: str = "", status: int = 200):
         project = quote(ctx["project"]["id"], safe="")
-        response = await self.fetch(request, f"/v1/projects/{project}/api-keys")
+        response, connection = await asyncio.gather(self.fetch(request, f"/v1/projects/{project}/api-keys"),
+                                                    self.connection(request, project))
         if response is not None and response.status_code == 403:
             return self.no_store(await self.shell(request, "claves.html", "claves", {
                 "denied": True, "org": ctx["org"], "project": ctx["project"]}, 403))
@@ -207,7 +214,7 @@ class Team:
                          "created": f"{short_date(k.get('created_at'))}{who}", "last": last})
         return self.no_store(await self.shell(request, "claves.html", "claves", {
             "denied": False, "org": ctx["org"], "project": ctx["project"], "keys": rows,
-            "any_active": any(r["active"] for r in rows), "created": created, "error": error, "name": name}, status))
+            "any_active": any(r["active"] for r in rows), "connection": connection, "created": created, "error": error, "name": name}, status))
 
     # -- audit ---------------------------------------------------------------------------------------------
 
@@ -343,6 +350,15 @@ class Team:
         async def keys(request: Request):
             early, ctx = await me.where(request)
             return early if early is not None else await me.keys_page(request, ctx)
+
+        @router.get("/claves/conexion", response_class=HTMLResponse)
+        async def connection(request: Request):
+            """The connection state alone, polled by the keys page until the first access arrives."""
+            early, ctx = await me.where(request)
+            if early is not None:
+                return early
+            state = await me.connection(request, ctx["project"]["id"])
+            return me.no_store(me.a.templates.TemplateResponse(request, "partials/conexion.html", {"connection": state}))
 
         @router.post("/claves/nueva", response_class=HTMLResponse)
         async def create_key(request: Request, name: str = Form("")):
