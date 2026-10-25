@@ -72,6 +72,8 @@ OPERATIONS = [
     ("PUT", "/v1/projects/{project_id}/routes", "foreign", {"routes": []}),
     ("GET", "/v1/projects/{project_id}/routes/catalog", "foreign", None),
     ("PUT", "/v1/routes/catalog", "sdk", {"routes": [{"method": "POST", "route": "/payouts/bank-account"}]}),
+    ("DELETE", "/v1/projects/{project_id}/users/{user_id}", "foreign", None),
+    ("DELETE", "/v1/projects/{project_id}/data", "foreign", None),
     ("GET", "/v1/orgs/{org_id}/audit", "foreign", None),
     ("GET", "/v1/orgs/{org_id}/me", "foreign", None),
     ("PATCH", "/v1/orgs/{org_id}/me", "foreign", {"notify_email": False}),

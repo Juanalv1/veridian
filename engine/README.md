@@ -45,6 +45,9 @@ VERIDIAN_TOKEN=dev .venv/Scripts/python -m uvicorn veridian_engine.api:create_ap
 | `VERIDIAN_PANEL_TOKENS` | empty | Extra panel credentials, comma-separated, accepted together with `VERIDIAN_PANEL_TOKEN` (current and previous, to rotate without a cut) |
 | `VERIDIAN_BOOTSTRAP_OWNERS` | empty | Comma-separated emails. On login, such a person becomes owner of every organization that has no owner (for example org `Demo`, created for the legacy projects). An organization that already has an owner is never touched |
 | `VERIDIAN_ORG_CREATORS` | empty | Comma-separated emails allowed to create organizations (`POST /v1/orgs`). Empty: nobody. Provisional (open decision 2). Projects are created by the owners and admins of an organization, without this list |
+| `VERIDIAN_INVITATION_DAYS` | `14` | Days an invitation stays valid (design default, not measured) |
+| `VERIDIAN_RETENTION` | `on` | `off` stops the retention worker (purge by each project's `retention_days`, wipe of deleted projects) |
+| `VERIDIAN_RETENTION_INTERVAL_S` | `3600` | Seconds between retention passes; the first pass runs one interval after start |
 
 ## Callers, organizations and roles
 

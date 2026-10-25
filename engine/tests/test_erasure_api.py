@@ -44,8 +44,8 @@ def member_as(client, role, sub="sub-m", email="m@example.com"):
 
 
 def attack(client, headers=AUTH_A, user_id="u_42"):
-    post_events(client, [make_event(f"h{i}", days_ago(i), user_id=user_id) for i in range(1, 4)], headers=headers)
-    post_events(client, [make_event("x1", NOW, user_id=user_id, ip="203.0.113.9", session_id="s_att", method="POST",
+    post_events(client, [make_event(f"{user_id}_h{i}", days_ago(i), user_id=user_id) for i in range(1, 4)], headers=headers)
+    post_events(client, [make_event(f"{user_id}_x1", NOW, user_id=user_id, ip="203.0.113.9", session_id="s_att", method="POST",
                                     route="/payouts/bank-account")], headers=headers)
 
 
@@ -162,7 +162,9 @@ def test_the_worker_runs_with_the_app_and_can_be_turned_off(tmp_path, clock):
     with TestClient(create_app(make_settings(tmp_path, clock))) as client:
         assert client.app.state.retention_worker.is_alive()
     assert not client.app.state.retention_worker.is_alive()
-    with TestClient(create_app(make_settings(tmp_path / "off", clock, retention=False))) as client:
+    off_dir = tmp_path / "off"
+    off_dir.mkdir()
+    with TestClient(create_app(make_settings(off_dir, clock, retention=False))) as client:
         assert client.app.state.retention_worker is None
 
 

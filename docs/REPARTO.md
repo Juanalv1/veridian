@@ -383,6 +383,11 @@ Solo llamante `panel`. Las formas son las del motor falso (`edge/fake_engine/app
   - Devuelve `{entries, next_before}`, la más nueva primero; `limit` va de 1 a 200 (50 por defecto).
   - Las acciones del motor que el fake no tiene (`org.create`, `project.update`, `project.delete`, `invitation.accept`, `retention.purge`, etc.) salen con su nombre.
   - La migración `0007` renombra las filas escritas antes con los nombres viejos.
+- Contrato 14 (retención y borrado), solo panel:
+  - `DELETE /v1/projects/{id}/users/{user_id}` (admin+) borra los eventos, decisiones y filas auxiliares de ese usuario en ese proyecto. Si tenía un bloqueo abierto, sube la versión del blocklist. La auditoría (`user_data.delete`) guarda el **hash** del `user_id`, no el valor.
+  - `DELETE /v1/projects/{id}/data` (solo owner) borra todos los datos del proyecto. Conserva el proyecto, sus claves y sus rutas, y deja el blocklist vacío con la versión adelantada. Queda en la auditoría como `project_data.delete`.
+  - Ambos responden `{"deleted": {"events": n, "decisions": n}, "version": v}`.
+  - Un hilo de retención purga cada `VERIDIAN_RETENTION_INTERVAL_S` (1 h por defecto) lo que pasó los `retention_days` de cada proyecto. Nunca borra un bloqueo abierto ni sus eventos. También borra los datos de los proyectos eliminados.
 
 ### 12. Claves de API: panel → motor
 
